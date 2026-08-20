@@ -1,0 +1,367 @@
+# Filter monomorphic markers
+
+#' @name filter_monomorphic
+
+#' @title Filter monomorphic markers
+
+#' @description Filter monomorphic markers.
+#' This filter will remove from the dataset
+#' markers with just \emph{one genotype phenotype}:
+#' \itemize{
+#' \item genotypes are ALL homozygotes REF/REF (pp)
+#' \item genotypes are ALL heterozygotes REF/ALT, ALT/REF (pq or qp)
+#' \item genotypes are ALL homozygotes ALT/ALT (qq)
+#' }
+#'
+#' \strong{Filter targets}: SNPs
+#'
+#' \strong{Statistics}: the number of genotype phenotypes
+#'
+#' Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
+#' and might be of interest for users who wants to keep only polymorphic markers in
+#' their dataset.
+
+#' @inheritParams radr_common_arguments
+#' @param filter.monomorphic (optional, logical)
+#' Default: \code{filter.monomorphic = TRUE}.
+#' @param verbose Logical. Display progress messages.
+#' Default: \code{verbose = FALSE}.
+
+#' @details
+#' \strong{Important distinction — genotype-level monomorphism}
+#'
+#' \code{\link{filter_monomorphic}} evaluates monomorphism based on the actual
+#' genotypes stored inside a GDS file. A marker is considered monomorphic when
+#' all non-missing individuals display the \strong{same genotype phenotype}.
+#'
+#' Internally, this is assessed using the variant-level alternate allele dosage
+#' (\code{$dosage_alt}):
+#'
+#' \preformatted{
+#' length(unique(g[!is.na(g)])) == 1
+#' }
+#'
+#' This captures cases such as:
+#' \itemize{
+#'   \item all REF/REF (dosage = 0)
+#'   \item all REF/ALT (dosage = 1)
+#'   \item all ALT/ALT (dosage = 2)
+#' }
+#'
+#' Even if the allele frequency in the population is neither 0 nor 1 (e.g.,
+#' all individuals are REF/ALT heterozygotes), the variant is still considered
+#' genotype-monomorphic.
+#'
+#' This is a \strong{genotype-level} definition of polymorphism, which is more
+#' conservative and more appropriate for downstream population genomics.
+#'
+#' Consequently, \code{\link{filter_monomorphic}} will often identify additional
+#' monomorphic markers that were not removed earlier by
+#' \code{\link{filter_monomorphic_vcf}}, which uses allele-level logic.
+#'
+#' \strong{This discrepancy is by design}.
+
+
+#' @note
+#' \strong{Why results differ between \code{\link{filter_monomorphic_vcf}} and
+#' \code{\link{filter_monomorphic}}}
+#'
+#' These functions intentionally implement two different biological definitions:
+#' \itemize{
+#'   \item \code{\link{filter_monomorphic_vcf}} removes sites that are
+#'   \strong{allele-monomorphic}, based on INFO/AC and INFO/AN.
+#'   \item \code{\link{filter_monomorphic}} removes sites that are
+#'   \strong{genotype-monomorphic}, based on the distribution of genotype
+#'   phenotypes in the GDS.
+#' }
+#'
+#' A variant can contain both REF and ALT alleles (allele-level polymorphism)
+#' but still have only one genotype phenotype across all individuals.
+#' Therefore, it is expected and correct that
+#' \code{\link{filter_monomorphic}} may remove additional markers.
+
+
+#' @return A list with the filtered input, whitelist and blacklist of markers..
+
+#' @export
+#' @rdname filter_monomorphic
+#' @seealso
+#' \code{\link{explore_genomes}},
+#' \code{\link[genometranslator]{read_genome}},
+#' \code{\link[genometranslator]{tidy_genome}}.
+
+#' @examples
+#' \dontrun{
+#' require(SeqArray) # when using gds
+#' mono <- radr::filter_monomorphic(data = "my.radr.gds.rad", verbose = TRUE)
+#' }
+
+#' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
+
+filter_monomorphic <- function(
+  data,
+  filter.monomorphic = TRUE,
+  parallel.core = parallel::detectCores() - 1,
+  verbose = FALSE,
+  ...) {
+
+  ## Test
+  # parallel.core = parallel::detectCores() - 1
+  # verbose = FALSE
+  # path.folder = NULL
+  # parameters = NULL
+  # internal = FALSE
+  # obj.keeper <- c(ls(envir = globalenv()), "data")
+
+  if (filter.monomorphic) {
+    # Common startup -------------------------------------------------------------
+    .start   <- radr_startup(f.name = "filter_monomorphic", verbose = verbose)
+    file.date <- .start$file.date
+    on.exit(radr_teardown(.start), add = TRUE)
+    res <- list()
+
+    # Checking for missing and/or default arguments ------------------------------
+    if (missing(data)) rlang::abort("Input file missing")
+
+    # Function call and dotslist -------------------------------------------------
+    rad.dots <- radr_dots(
+      func.name = as.list(sys.call())[[1]],
+      fd = rlang::fn_fmls_names(),
+      args.list = as.list(environment()),
+      dotslist = rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE),
+      keepers = c("path.folder", "parameters", "internal"),
+      verbose = FALSE
+    )
+
+    # Folders---------------------------------------------------------------------
+    path.folder <- generate_folder(
+      rad.folder = "filter_monomorphic",
+      path.folder = path.folder,
+      internal = internal,
+      file.date = file.date,
+      verbose = verbose)
+
+    # write the dots file
+    tgbase::write_tgbase_tsv(
+      data = rad.dots,
+      path.folder = path.folder,
+      filename = "radr_filter_monomorphic_args",
+      date = TRUE,
+      internal = internal,
+      write.message = "Function call and arguments stored in: ",
+      verbose = verbose
+    )
+
+
+    # Detect format --------------------------------------------------------------
+    data.type <- genometranslator::detect_genomic_format(data)
+    if (!data.type %in% c("tbl_df", "fst.file", "SeqVarGDSClass", "gds.file")) {
+      rlang::abort("Input not supported for this function: read function documentation")
+    }
+
+    # GDS
+    if (data.type %in% c("SeqVarGDSClass", "gds.file")) {
+      tgbase::check_package(package = "SeqArray", cran = FALSE, bioc = TRUE)
+
+      if (data.type == "gds.file") {
+        data <- genometranslator::read_genome(data, verbose = verbose)
+        data.type <- "SeqVarGDSClass"
+      }
+
+      # Filter parameter file: generate and initiate -----------------------------
+      filters.parameters <- filter_parameters(
+        generate = TRUE,
+        initiate = TRUE,
+        update = FALSE,
+        parameter.obj = parameters,
+        data = data,
+        path.folder = path.folder,
+        file.date = file.date,
+        internal = internal,
+        verbose = verbose)
+
+      # Scanning for monomorphic markers------------------------------------------
+      n.markers.before <- filters.parameters$info$n.snp
+      bl <- count_monomorphic(x = data, parallel.core = parallel.core)
+      n.markers.removed <- length(bl)
+      want <- c("VARIANT_ID", "MARKERS", "CHROM", "LOCUS", "POS")
+      markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE)
+
+      if (n.markers.removed > 0) {
+        n.markers.after <- n.markers.before - n.markers.removed
+        markers.meta %<>%
+          dplyr::mutate(
+            FILTERS = dplyr::if_else(VARIANT_ID %in% bl, "filter.monomorphic", FILTERS)
+          )
+        tgbase::write_tgbase_tsv(
+          data = markers.meta %>% dplyr::filter(FILTERS == "filter.monomorphic"),
+          path.folder = path.folder,
+          filename = "blacklist.monomorphic.markers",
+          date = TRUE,
+          internal = internal,
+          write.message = "standard",
+          verbose = verbose
+        )
+
+
+        # wl %<>% dplyr::filter(!MARKERS %in% bl$MARKERS)
+
+
+        # Update GDS
+        genometranslator::update_genome_gds(
+          gds = data,
+          node.name = "markers.meta",
+          value = markers.meta,
+          sync = TRUE,
+          verbose = verbose
+        )
+      }
+
+      # write the whitelist even if no blacklist...
+      tgbase::write_tgbase_tsv(
+        data = markers.meta %>% dplyr::filter(FILTERS == "whitelist"),
+        path.folder = path.folder,
+        filename = "whitelist.polymorphic.markers",
+        date = TRUE,
+        internal = internal,
+        write.message = "standard",
+        verbose = verbose
+      )
+    } else {# tidy data
+      # Import data ---------------------------------------------------------------
+      if (is.vector(data)) data <- genometranslator::read_genome(data = data, import.metadata = TRUE)
+      data.type <- "tbl_df"
+
+      # Keep whitelist and blacklist (same = same space used)
+      wl <- genometranslator::separate_markers(
+        data = data,
+        sep = NULL,
+        markers.meta.lists.only = TRUE,
+        generate.markers.metadata = FALSE
+      )
+      data %<>% dplyr::left_join(wl, by = intersect(colnames(data), colnames(wl)))
+
+      # Filter parameter file: generate and initiate ------------------------------------------
+      filters.parameters <- filter_parameters(
+        generate = TRUE,
+        initiate = TRUE,
+        update = FALSE,
+        parameter.obj = parameters,
+        data = data,
+        path.folder = path.folder,
+        file.date = file.date,
+        internal = internal,
+        verbose = verbose)
+
+      # Scanning for monomorphic markers------------------------------------------
+      if (verbose) message("Scanning for monomorphic markers...")
+      # n.markers.before <- nrow(wl)
+
+      if (tibble::has_name(data, "ALT_DOSAGE")) {
+        bl <- dplyr::select(.data = data, MARKERS, ALT_DOSAGE) %>%
+          dplyr::filter(!is.na(ALT_DOSAGE)) %>%
+          dplyr::distinct(MARKERS, ALT_DOSAGE) %>%
+          dplyr::count(x = ., MARKERS) %>%
+          dplyr::filter(n == 1) %>%
+          dplyr::distinct(MARKERS)
+      } else {
+        bl <- dplyr::select(.data = data, MARKERS, GT) %>%
+          dplyr::filter(GT != "000000") %>%
+          dplyr::distinct(MARKERS, GT) %>%
+          dplyr::mutate(
+            A1 = stringi::stri_sub(GT, 1, 3),
+            A2 = stringi::stri_sub(GT, 4,6)
+          ) %>%
+          dplyr::select(-GT) %>%
+          tidyr::pivot_longer(
+            data = .,
+            cols = -MARKERS,
+            names_to = "ALLELES_GROUP",
+            values_to = "ALLELES"
+          ) %>%
+          dplyr::distinct(MARKERS, ALLELES) %>%
+          dplyr::count(x = ., MARKERS) %>%
+          dplyr::filter(n == 1) %>%
+          dplyr::distinct(MARKERS)
+      }
+      # Remove the markers from the dataset
+      n.markers.removed <- nrow(bl)
+
+      if (n.markers.removed > 0) {
+        data <- dplyr::filter(data, !MARKERS %in% bl$MARKERS)
+        bl <- wl %>% dplyr::filter(MARKERS %in% bl$MARKERS)
+        tgbase::write_tgbase_tsv(
+          data = bl,
+          path.folder = path.folder,
+          filename = "blacklist.monomorphic.markers",
+          date = TRUE,
+          internal = internal,
+          write.message = "standard",
+          verbose = verbose
+        )
+
+      } else {
+        bl <- wl[0,]
+      }
+      # write the whitelist even if no blacklist...
+      wl %<>% dplyr::filter(!MARKERS %in% bl$MARKERS)
+      tgbase::write_tgbase_tsv(
+        data = wl,
+        path.folder = path.folder,
+        filename = "whitelist.polymorphic.markers",
+        date = TRUE,
+        internal = internal,
+        write.message = "standard",
+        verbose = verbose
+      )
+
+    }#Tidy data
+
+    # Filter parameter file: update --------------------------------------------
+    filters.parameters <- filter_parameters(
+      generate = FALSE,
+      initiate = FALSE,
+      update = TRUE,
+      parameter.obj = filters.parameters,
+      data = data,
+      filter.name = "Filter monomorphic markers",
+      param.name = "filter.monomorphic",
+      values = "",
+      path.folder = path.folder,
+      file.date = file.date,
+      internal = internal,
+      verbose = verbose)
+
+    # Return -------------------------------------------------------------------
+    radr_results_message(
+      rad.message = "\nFilter monomorphic markers",
+      filters.parameters,
+      internal,
+      verbose
+    )
+  }
+  return(data)
+}#End filter_monomorphic
+
+#' @title count_monomorphic
+#' @description count monomorphe in gds
+#' @name count_monomorphic
+#' @rdname count_monomorphic
+#' @keywords internal
+#' @export
+count_monomorphic <- function(x, parallel.core = parallel::detectCores() - 1) {
+  if (Sys.info()[['sysname']] == "Windows") parallel.core <- 1
+  variants <- SeqArray::seqGetData(gdsfile = x, var.name = "variant.id")
+  # Function proposed by Xiuwen doesnt work below line 329 it missed some markers
+  # in some datasets...
+  mono <- SeqArray::seqApply(
+    gdsfile = x,
+    var.name = "$dosage_alt",
+    # FUN = function(g) all(g == 1L, na.rm = TRUE),
+    FUN = function(g) length(unique(g[!is.na(g)])) == 1,
+    margin = "by.variant", as.is = "logical",
+    parallel = parallel.core
+  )
+  bl <- variants[mono]
+  return(bl)
+}

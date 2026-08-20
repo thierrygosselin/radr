@@ -1,11 +1,68 @@
 Package: radr
-Title: What the Package Does (One Line, Title Case)
+Type: Package
+Title: Explore, Diagnose and Filter Genomic Data
 Version: 0.0.0.9000
-Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+Date: 2026-08-17
+Authors@R: c(
+  person("Thierry", "Gosselin", email = "thierrygosselin@icloud.com",
+    role = c("aut", "cre"))
+    )
+Maintainer: Thierry Gosselin <thierrygosselin@icloud.com>
+Description: Explores, diagnoses, visualizes, and filters individual genomic
+    data stored in Genomic Data Structure ('GDS') files. Tools identify
+    genotyping problems, unusual samples and markers, population-genetic
+    patterns, and other signals that can influence downstream genomic analyses.
+License: GPL-3
+URL: https://thierrygosselin.github.io/radr/,
+    https://github.com/thierrygosselin/radr
+BugReports: https://github.com/thierrygosselin/radr/issues
+Remotes:
+    thierrygosselin/genometranslator,
+    thierrygosselin/tgbase
+Depends:
+    R (>= 4.4)
+Imports:
+    arrow,
+    carrier,
+    cli,
+    ComplexUpset,
+    data.table,
+    dplyr (>= 1.0.0),
+    gdsfmt,
+    ggplot2,
+    genometranslator,
+    HardyWeinberg,
+    magrittr,
+    matrixStats,
+    parallel,
+    purrr,
+    readr (>= 2.1.0),
+    rlang,
+    scales,
+    SeqArray (>= 1.36.0),
+    stats,
+    stringi,
+    tgbase,
+    tibble,
+    tidyr (>= 1.1.0),
+    tidyselect,
+    utils,
+    vctrs,
+    vroom
+Suggests:
+    adegenet,
+    amap,
+    fst (>= 0.8.4),
+    knitr,
+    quantreg,
+    ragg,
+    rmarkdown,
+    SNPRelate,
+    stringdist
+VignetteBuilder: knitr
 Encoding: UTF-8
+Language: en-US
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 8.1.0
+LazyLoad: yes
+ByteCompile: TRUE
+Config/roxygen2/version: 8.1.0
