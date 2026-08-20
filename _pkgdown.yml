@@ -1,0 +1,98 @@
+url: https://thierrygosselin.github.io/radr/
+
+template:
+  bootstrap: 5
+
+navbar:
+  type: default
+  left:
+  - text: Installation
+    href: index.html
+  - text: Get started
+    href: articles/using_radr.html
+  - text: Reference
+    href: reference/index.html
+  - text: News
+    href: news/index.html
+  right:
+  - icon: fa-github fa-lg
+    aria-label: GitHub
+    href: https://github.com/thierrygosselin/radr
+
+reference:
+
+- title: Core workflow
+  desc: Inspect a new dataset, run guided exploration, and review its state.
+  contents:
+  - explore_genomes
+  - detect_ibm
+  - summarise_genomic_data
+  - radr_dependencies
+
+- title: Diagnose samples and markers
+  desc: Investigate missingness, duplicates, mixed samples, marker behaviour, and data origin before filtering.
+  contents:
+  - detect_all_missing
+  - detect_allele_problems
+  - detect_biallelic_problems
+  - detect_duplicate_genomes
+  - detect_het_outliers
+  - detect_mixed_genomes
+  - detect_paralogs
+  - detect_ref_genome
+
+- title: Filter samples and markers
+  desc: Apply explicit quality-control and marker-selection decisions to GDS data.
+  contents:
+  - filter_individuals
+  - filter_genotyping
+  - filter_coverage
+  - filter_ma
+  - filter_het
+  - filter_fis
+  - filter_hwe
+  - filter_ld
+  - filter_monomorphic
+  - filter_common_markers
+  - filter_dart_reproducibility
+  - filter_snp_number
+  - filter_snp_position_read
+
+- title: Whitelists and blacklists
+  desc: Retain or exclude selected samples, markers, and individual genotypes.
+  contents:
+  - filter_whitelist
+  - filter_blacklist_genotypes
+  - read_blacklist_genotypes
+
+- title: Filter VCF files with bcftools
+  desc: Apply selected filters directly to VCF files before or outside the GDS workflow.
+  contents:
+  - filter_genotyping_vcf
+  - filter_mac_vcf
+  - filter_monomorphic_vcf
+
+- title: Population-genetic summaries
+  desc: Calculate diversity, differentiation, relatedness, and private variation.
+  contents:
+  - allele_frequencies
+  - beta_estimator
+  - ibdg_fh
+  - pi
+  - private_alleles
+  - private_haplotypes
+
+- title: Specialized analyses
+  desc: Investigate specialized marker classes and run external analytical workflows.
+  contents:
+  - detect_microsatellites
+  - sexy_markers
+  - run_bayescan
+  - check_bayescan
+  - install_bayescan
+
+- title: Superseded interfaces
+  desc: Compatibility names retained for older scripts; use the recommended replacement documented on each page.
+  contents:
+  - betas_estimator
+  - radr_pkg_install
