@@ -1,0 +1,257 @@
+# Exploring and filtering genomic data with radr
+
+## Responsibilities of the packages
+
+`radr` begins after genomic data have been imported and standardized.
+[`genometranslator`](https://thierrygosselin.github.io/genometranslator/)
+handles file formats and creates the GDS representation used throughout
+this article. `radr` diagnoses the data and performs deliberate
+filtering. Writers in `genometranslator` do not silently perform
+quality-control filtering.
+
+The examples are not evaluated because they refer to user files.
+
+## Start from sample metadata and an unfiltered GDS
+
+Maintain one authoritative sample metadata table and generate the
+compact strata file from it. The strata file should contain stable
+`INDIVIDUALS` names and the grouping variable required for the current
+analysis. Consult the genometranslator vignette for identifier,
+`NEW_ID`, and DArT `TARGET_ID` recommendations.
+
+``` r
+
+library(radr)
+
+genome <- genometranslator::read_genome(
+  data = "individuals.vcf.gz",
+  strata = "strata.tsv"
+)
+
+genometranslator::summary_gds(genome)
+```
+
+Keep an untouched source file or GDS. Write each filtering stage to a
+new file or retain the generated blacklists and parameter logs so
+decisions can be reviewed and reproduced.
+
+## Inspect missingness before choosing what to remove
+
+A common first question is whether to filter markers or individuals
+first. There is no universal answer because each choice changes
+statistics calculated for the other dimension.
+
+[`detect_ibm()`](https://thierrygosselin.github.io/radr/reference/detect_ibm.md)
+displays the raw variant-by-sample presence/absence pattern. The goal is
+to reveal broad dataset structure, not to identify one labelled marker
+or sample. For the first view, preserve input order: sequencing plates,
+libraries, batches, and processing order can create patterns that
+sorting would hide.
+
+``` r
+
+ibm <- detect_ibm(
+  gds = genome,
+  sort.individuals = "input",
+  sort.markers = "input",
+  filename = "initial_missingness.png"
+)
+```
+
+Interpret broad patterns cautiously:
+
+- vertical bands suggest samples with unusual missingness;
+- horizontal bands suggest marker sets with unusual missingness;
+- rectangular blocks can indicate batches, strata, libraries, or marker
+  panels;
+- isolated patterns can reflect technical problems, biology, or both.
+
+Use marker- or individual-missingness sorting only as a complementary
+second view. A pattern is evidence for investigation, not an automatic
+blacklist.
+
+## Guided exploration
+
+[`explore_genomes()`](https://thierrygosselin.github.io/radr/reference/explore_genomes.md)
+provides an interactive overview for a new dataset and for users
+learning how candidate thresholds affect it:
+
+``` r
+
+screened <- explore_genomes(
+  data = genome,
+  interactive.filter = TRUE
+)
+```
+
+The function creates a dated folder containing arguments, figures,
+helper tables, filters, and summaries. It is opinionated and convenient,
+but it is not “one function to rule them all.” Marker type, sequencing
+design, organism, population structure, and analysis objective determine
+which filters are valid and in which order they should run.
+
+## Build a tailored workflow
+
+After learning the dataset, call individual functions with recorded
+thresholds. The filtering order should express a hypothesis about how
+the data became problematic. The two examples below deliberately use
+opposite orders.
+
+### Marker noise is the dominant problem
+
+Imagine that genotyping parameters were not tailored to the project, or
+that files genotyped separately were combined after variant calling.
+Differences in coverage, callers, parameter settings, reference
+versions, or marker discovery can introduce a large number of
+inconsistently genotyped SNPs. These markers can make otherwise
+acceptable samples appear to have high missingness.
+
+Remove clear marker failures first, then recalculate individual
+statistics:
+
+``` r
+
+markers_first <- genome |>
+  filter_genotyping(
+    interactive.filter = FALSE,
+    filter.genotyping = 0.20
+  ) |>
+  filter_ma(
+    interactive.filter = FALSE,
+    filter.ma = 2
+  ) |>
+  filter_individuals(
+    interactive.filter = FALSE,
+    filter.individuals.missing = 0.30
+  )
+```
+
+This is a downstream repair strategy. When source data are available, a
+consistent joint-genotyping workflow is preferable. At minimum, verify
+that combined files used compatible references, marker definitions,
+callers, filters, and genotype fields. Marker filtering cannot prove
+that batch effects have been removed.
+
+### Poor samples are the dominant problem
+
+Now imagine that the project records already identify failed or weak
+libraries: some samples received few reads, had poor base quality or
+adapter contamination, mapped badly, or had abnormally low coverage.
+Those individuals can introduce missing calls at many markers that
+perform well in the rest of the project.
+
+Remove the failed samples first, then return to
+[`explore_genomes()`](https://thierrygosselin.github.io/radr/reference/explore_genomes.md)
+with the individuals that remain. This resumes the normal guided
+discovery workflow without assuming which marker filter should come
+next:
+
+``` r
+
+samples_first <- genome |>
+  filter_individuals(
+    interactive.filter = FALSE,
+    filter.individuals.missing = 0.50,
+    filter.individuals.coverage.total = c(1e6, Inf)
+  ) |>
+  explore_genomes()
+```
+
+Ideally, these samples are identified before genotyping through FASTQ
+and library QC: read yield, per-base quality, adapter content,
+duplication, contamination, mapping rate, and depth should be reviewed
+with suitable tools and project-specific expectations. Removing them in
+radr is a downstream confirmation and safeguard, not a replacement for
+upstream QC.
+
+The numeric thresholds in both examples are illustrations. Derive
+thresholds from diagnostic figures, project design, sequencing
+expectations, and the requirements of the intended analysis. When
+comparing alternative orders, start each workflow from an independent
+copy of the same unfiltered GDS; do not run one alternative on an object
+already modified by the other.
+
+At each stage, ask what changed:
+
+- Did filtering individuals alter marker missingness or allele counts?
+- Did marker filtering change which individuals appear unusual?
+- Is a signal restricted to one stratum, sequencing batch, or marker
+  class?
+- Does the chosen statistic match the intended downstream analysis?
+
+Re-run the relevant diagnostic after a consequential filter. Avoid
+choosing a threshold solely because it is conventional in another study.
+
+## Detection does not necessarily mean filtering
+
+The `detect_*()` functions investigate particular structures or
+problems:
+
+``` r
+
+duplicates <- detect_duplicate_genomes(data = filtered)
+mixed <- detect_mixed_genomes(data = filtered)
+paralogs <- detect_paralogs(data = filtered)
+```
+
+Review returned tables and figures together with sample metadata. A
+duplicate, sex-linked marker, family group, or biologically divergent
+sample may be important information rather than an error.
+
+## Export only after filtering decisions
+
+Use `genometranslator` to write the final GDS to a downstream format.
+The writer does not silently improve or filter the data:
+
+``` r
+
+genometranslator::write_genome(
+  data = filtered,
+  output = "vcf",
+  filename = "analysis_ready"
+)
+```
+
+Confirm the destination method’s assumptions before export. For example,
+BayeScan, structure-like programs, relatedness software, and LD analyses
+can require different marker, linkage, ploidy, and population
+treatments.
+
+## Dependencies and external tools
+
+Inspect requirements at any time with:
+
+``` r
+
+radr_dependencies()
+```
+
+The diagnostic separates the required package foundation from optional
+components. `SNPRelate` supports LD and IBS workflows; `quantreg` is
+used by
+[`sexy_markers()`](https://thierrygosselin.github.io/radr/reference/sexy_markers.md);
+and `ragg` accelerates PNG output from
+[`detect_ibm()`](https://thierrygosselin.github.io/radr/reference/detect_ibm.md).
+
+VCF-level filtering functions may call the external `bcftools`
+executable, and
+[`run_bayescan()`](https://thierrygosselin.github.io/radr/reference/run_bayescan.md)
+requires BayeScan. Install these through the shared Conda `genomics`
+environment described in the README, then start R or RStudio from that
+activated environment.
+
+## Reproducibility checklist
+
+For a defensible filtering workflow, retain:
+
+- the original genomic and sample metadata files;
+- the standardized strata file;
+- radr argument and filter-parameter logs;
+- generated blacklists and whitelists;
+- diagnostic figures before and after important decisions;
+- the random seed where sampling is used;
+- R, radr, genometranslator, tgbase, and executable versions;
+- the final GDS and the exact export command.
+
+During active development, record the Git commit in addition to the
+package version.

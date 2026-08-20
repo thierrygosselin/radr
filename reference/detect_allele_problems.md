@@ -1,0 +1,129 @@
+# Detect alternate allele problems
+
+Detect alternate allele problems. Used internally in
+[radr](https://github.com/thierrygosselin/radr) and might be of interest
+for users.
+
+The function computes alternate allele counts and looks for alternate
+alleles bellow a certain threshold.
+
+Keeping in mind the overall dataset QC, this function helps to
+understand *potential problems* with **Allele DropOut and Null
+Alleles**. The summary statistics for the markers with problematic
+allele is computed based on coverage and genotype likelihood. This
+function is very fast to highlight: i) bias in representation of allelic
+copies and unequal coverage and ii) type I error during genotyping of
+heterozygote with low coverage data.
+
+## Usage
+
+``` r
+detect_allele_problems(data, allele.threshold = 3, verbose = TRUE, ...)
+```
+
+## Arguments
+
+- data:
+
+  A tidy data frame object in the global environment or a tidy data
+  frame in wide or long format in the working directory. *How to get a
+  tidy data frame ?* Look into genometranslator
+  [`tidy_genome`](https://thierrygosselin.github.io/genometranslator/reference/tidy_genome.html).
+
+- allele.threshold:
+
+  (integer) Threshold of alternate allele copies. Below this threshold
+  markers are blacklisted. Choose this threshold based on your tolerance
+  for uninformative or unreliable information and minor allele
+  frequency. Summary statistics for this blacklist will be calculated.
+  See details for more info. Default: `allele.threshold = 3`.
+
+- verbose:
+
+  Logical. Display progress messages. Default: `verbose = TRUE`.
+
+- ...:
+
+  (optional) Advance mode that allows to pass further arguments for
+  fine-tuning the function (see details).
+
+## Value
+
+A list with summary, plot and blacklist. Summary statistics for the
+blacklisted markers are generated and include coverage and genotype
+likelihood information.
+
+`$alt.allele.count.plot`: Distribution of marker's alternate allele
+number. The shape is usually skewed right.
+
+`$alt.depth.count.distribution.plot`: Distribution of markers alternate
+allele depth (in number of read). The range showed on the plot is
+between 1 and 10, and you decide your tolerance for low coverage and
+good genotype calls.
+
+This plot is associated with `$number.markers`, a table that shows the
+number of markers \<= `allele.threshold `. Also in the table, the range
+of alternate allele read depth (1 to 10), same as plot but showing here
+the the cumulative number of markers. Again, would you trust a marker
+with only 1 alternate allele (an heterozygote individual) with a read
+depth of 1 or 2 ?
+
+## Details
+
+**Under developement, use with caution**
+
+**Input files:** see genometranslator
+[`tidy_genome`](https://thierrygosselin.github.io/genometranslator/reference/tidy_genome.html)
+for detailed information about supported file format.
+
+**allele.threshold**:
+
+An `allele.threshold = 1`, says that you want to check the statistics
+for markers with only 1 copy of the alternate allele. Said differently,
+`allele.threshold = 1` = only 1 heterozygote individual is making this
+marker polymorphic, very thin line if this allele is backed by less than
+3 reads.
+
+Similarly, a `allele.threshold = 2` can represent markers with 2
+heterozygote individuals calling the polymorphic markers or 1 individual
+homozygote for the alternate allele.
+
+Look for problem with :
+
+- read depth/coverage problem
+
+- high imbalance between the alt and ref depth coverage
+
+- genotype likelihood abnormally lower than normal
+
+- alternate allele with NA for read depth information
+
+**Alternate allele with no depth information:** You can highlight those
+problematic genotypes with alt.no.depth \<-
+dplyr::filter(your.object\$allele.summary, is.na(ALLELE_ALT_DEPTH))
+
+Use the summary statistics of the blacklisted markers to refine update
+the blacklist of markers. You can decide to discard the markers or
+blacklist the problematic genotypes. genometranslator
+[`tidy_genome`](https://thierrygosselin.github.io/genometranslator/reference/tidy_genome.html)
+and `genome_translator` allows to erase problematic genotypes using a
+blacklist of genotypes...
+
+## Author
+
+Thierry Gosselin <thierrygosselin@icloud.com>
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+problem <- detect_allele_problems(
+        data = salamander,
+        strata = "strata.salmon.tsv",
+        allele.threshold = 3)
+
+# The default with this function:
+# filter.monomorphic = TRUE # = discarded
+# filter.common.markers = TRUE # markers not in common between pop are discarded
+} # }
+```
