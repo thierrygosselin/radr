@@ -78,7 +78,7 @@ Filter markers based on their genotyping (call) rate, i.e. the proportion of
 non-missing genotypes per marker. This is a convenient way to remove SNPs
 with too much missing data before downstream analyses.
 
-\strong{Filter targets}: SNPs.
+\strong{Filter target:} Markers.
 
 \strong{Statistics}: marker-level missingness
 (\code{MISSING_PROP} from \code{\link{generate_stats}}).

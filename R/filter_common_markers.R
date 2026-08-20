@@ -8,7 +8,7 @@
 #' in common between all strata
 #' (population or any groupings defined in \code{STRATA} column).
 #'
-#' \strong{Filter targets}: SNPs
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: strata genotyping rate per SNPs
 #'

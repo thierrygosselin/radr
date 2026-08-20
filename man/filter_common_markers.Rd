@@ -49,7 +49,7 @@ The function will filter the markers by keeping only those
 in common between all strata
 (population or any groupings defined in \code{STRATA} column).
 
-\strong{Filter targets}: SNPs
+\strong{Filter target:} Markers.
 
 \strong{Statistics}: strata genotyping rate per SNPs
 

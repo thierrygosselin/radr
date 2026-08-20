@@ -9,7 +9,7 @@
 #' This filter is population-agnostic, but still requires a strata
 #' file if a vcf file is used as input.
 #'
-#' \strong{Filter targets}: Markers
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: The number of SNPs per locus.
 

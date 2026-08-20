@@ -66,7 +66,7 @@ With \code{interactive.filter = TRUE}, a list with 4 additionnal objects are gen
 This function is designed to remove/blacklist markers
 based on mean coverage information.
 
-\strong{Filter targets}: SNPs
+\strong{Filter target:} Markers.
 
 \strong{Statistics}: mean coverage
 ( The read depth of individual genotype is averaged across markers).

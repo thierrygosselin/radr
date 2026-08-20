@@ -1,7 +1,11 @@
 # Fis
 #' @title Fis filter
 #' @description
-#' TODO
+#' Filter markers or loci using within-stratum inbreeding-coefficient
+#' statistics.
+#'
+#' **Filter target:** Markers or loci, depending on \code{approach}.
+#'
 #' @param approach Character. By \code{"SNP"} or by \code{"haplotype"}.
 #' The function will consider the SNP or haplotype statistics to filter the marker.
 #' Default: \code{approach = "haplotype"}.

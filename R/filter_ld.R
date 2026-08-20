@@ -2,6 +2,8 @@
 #' @title GBS/RADseq short and long distance linkage disequilibrium pruning
 #' @description SNP short and long distance linkage disequilibrium pruning.
 #'
+#' **Filter target:** Markers.
+#'
 #' What sets appart radr LD pruning is the RADseq data tailored arguments:
 #' \itemize{
 #' \item \strong{minimize short linkage disequilibrium (LD)}:

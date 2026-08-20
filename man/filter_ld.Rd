@@ -74,6 +74,8 @@ The argument \code{filter.long.ld} must be used to generate the blacklist.
 \description{
 SNP short and long distance linkage disequilibrium pruning.
 
+\strong{Filter target:} Markers.
+
 What sets appart radr LD pruning is the RADseq data tailored arguments:
 \itemize{
 \item \strong{minimize short linkage disequilibrium (LD)}:

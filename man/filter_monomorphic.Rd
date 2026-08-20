@@ -41,7 +41,7 @@ markers with just \emph{one genotype phenotype}:
 \item genotypes are ALL homozygotes ALT/ALT (qq)
 }
 
-\strong{Filter targets}: SNPs
+\strong{Filter target:} Markers.
 
 \strong{Statistics}: the number of genotype phenotypes
 

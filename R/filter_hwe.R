@@ -21,6 +21,8 @@
 #'
 #' Prior to HW filtering, I highly recommend removing outlier individuals,
 #' filtering coverage and genotype likelihood (see details).
+#'
+#' **Filter target:** Markers.
 
 
 #' @param data A tidy data frame object in the global environment or

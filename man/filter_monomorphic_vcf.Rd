@@ -78,6 +78,8 @@ fixed for a single ALT allele are dropped as monomorphic.
 The function is intended for use on freshly created VCFs where \code{INFO/AC}
 and \code{INFO/AN} are trustworthy (e.g. direct output from FreeBayes or
 bcftools). It does not inspect genotypes or GDS, only the VCF INFO fields.
+
+\strong{Filter target:} VCF variants.
 }
 \details{
 \strong{Important distinction — allele-level vs genotype-level polymorphism}

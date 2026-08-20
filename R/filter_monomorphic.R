@@ -13,7 +13,7 @@
 #' \item genotypes are ALL homozygotes ALT/ALT (qq)
 #' }
 #'
-#' \strong{Filter targets}: SNPs
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: the number of genotype phenotypes
 #'

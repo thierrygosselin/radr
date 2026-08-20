@@ -66,7 +66,7 @@ assembly artifacts or bad assembly parameters.
 This filter is population-agnostic, but still requires a strata
 file if a vcf file is used as input.
 
-\strong{Filter targets}: Markers
+\strong{Filter target:} Markers.
 
 \strong{Statistics}: The number of SNPs per locus.
 }

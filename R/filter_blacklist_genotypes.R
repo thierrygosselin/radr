@@ -123,6 +123,8 @@ read_blacklist_genotypes <- function(
 #'
 #' This function allows to blacklist/erase/mask genotypes.
 #'
+#' **Filter target:** Individual genotype calls.
+#'
 #' Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
 #' and might be of interest for users.
 #'

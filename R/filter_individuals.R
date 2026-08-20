@@ -12,7 +12,7 @@
 #' \item coverage (total, median, iqr)
 #' }
 #'
-#' \strong{Filter targets}: Individuals
+#' **Filter target:** Individuals.
 #'
 #' \strong{Statistics}: Missingness, heterozygosity and coverage
 #'
@@ -34,10 +34,11 @@
 #' above which the individuals are blacklisted and removed from the dataset.
 #' Default: \code{filter.individuals.heterozygosity = NULL}.
 
-#' @param filter.individuals.coverage.total (optional, string of doubles)
-#' Target the total coverage per samples.
-#' A proportion below and
-#' above which the individuals are blacklisted and removed from the dataset.
+#' @param filter.individuals.coverage.total Optional numeric threshold(s) or
+#'   \code{"outliers"} targeting total coverage per sample. A single numeric
+#'   value is the minimum accepted total coverage. Two numeric values specify
+#'   the accepted lower and upper limits. \code{"outliers"} derives both limits
+#'   from the coverage distribution.
 #' Default: \code{filter.individuals.coverage.total = NULL}.
 
 #' @param filter.individuals.coverage.median (optional, string of integers)
@@ -567,8 +568,13 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
             cov.low <- id.stats$i.stats$OUTLIERS_LOW[3]
             cov.high <- id.stats$i.stats$OUTLIERS_HIGH[3]
             if (verbose) message("\nRemoving outliers individuals based on total coverage statistics: ", cov.low, " / ", cov.high)
-            } else {
-            rlang::abort("Unknown TOTAL coverage thresholds used")
+          } else if (is.numeric(filter.individuals.coverage.total)) {
+            cov.low <- filter.individuals.coverage.total
+            cov.high <- Inf
+            lower.eq <- FALSE
+            higher.eq <- FALSE
+          } else {
+            rlang::abort("Unknown TOTAL coverage threshold used")
           }
         }
 

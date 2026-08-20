@@ -37,10 +37,11 @@ Default: \code{filter.individuals.missing = NULL}.}
 above which the individuals are blacklisted and removed from the dataset.
 Default: \code{filter.individuals.heterozygosity = NULL}.}
 
-\item{filter.individuals.coverage.total}{(optional, string of doubles)
-Target the total coverage per samples.
-A proportion below and
-above which the individuals are blacklisted and removed from the dataset.
+\item{filter.individuals.coverage.total}{Optional numeric threshold(s) or
+\code{"outliers"} targeting total coverage per sample. A single numeric
+value is the minimum accepted total coverage. Two numeric values specify
+the accepted lower and upper limits. \code{"outliers"} derives both limits
+from the coverage distribution.
 Default: \code{filter.individuals.coverage.total = NULL}.}
 
 \item{filter.individuals.coverage.median}{(optional, string of integers)
@@ -73,7 +74,7 @@ Remove individuals with bad QC based on:
 \item coverage (total, median, iqr)
 }
 
-\strong{Filter targets}: Individuals
+\strong{Filter target:} Individuals.
 
 \strong{Statistics}: Missingness, heterozygosity and coverage
 

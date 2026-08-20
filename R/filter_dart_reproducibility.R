@@ -4,7 +4,7 @@
 #' @description This filter removes markers below a certain threshold.
 #' Based on the repoducibility column found in DArT files.
 #'
-#' \strong{Filter targets}: Markers
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: Reproducibility (established by DArT)
 

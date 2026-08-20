@@ -32,6 +32,8 @@ functions.}
 Filter dataset with whitelist of markers
 Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
 and might be of interest for users.
+
+\strong{Filter target:} Markers.
 }
 \examples{
 \dontrun{

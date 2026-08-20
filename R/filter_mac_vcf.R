@@ -25,6 +25,8 @@
 #' or importing into a GDS. For GDS-level MAC filtering based on genotypes,
 #' see \code{\link{filter_ma}}.
 #'
+#' **Filter target:** VCF variants.
+#'
 #' @param vcf (character)
 #' Path to the input VCF (\code{.vcf} or \code{.vcf.gz}).
 #'

@@ -4,7 +4,7 @@
 #' @description This function is designed to remove/blacklist markers
 #' based on mean coverage information.
 #'
-#' \strong{Filter targets}: SNPs
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: mean coverage
 #' ( The read depth of individual genotype is averaged across markers).

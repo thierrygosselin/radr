@@ -18,6 +18,8 @@
 #' This makes the function well suited as a lightweight, VCF-level pruning step
 #' (e.g. before merging scaffold-level VCFs), without opening a GDS.
 #'
+#' **Filter target:** VCF variants.
+#'
 #' @param vcf (character)
 #' Path to the input VCF (\code{.vcf} or \code{.vcf.gz}).
 #'

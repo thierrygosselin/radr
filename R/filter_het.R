@@ -4,6 +4,9 @@
 #' The filter arguments of \code{filter_het} allows you to test rapidly
 #' if departure from realistic expectations of heterozygosity statistics
 #' are a problem in downstream analysis.
+#'
+#' **Filter target:** Individuals and/or markers, depending on the selected
+#' arguments.
 
 #' \enumerate{
 #' \item Highlight outliers individual's observed heterozygosity for a quick

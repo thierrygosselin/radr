@@ -23,6 +23,8 @@
 #' and \code{INFO/AN} are trustworthy (e.g. direct output from FreeBayes or
 #' bcftools). It does not inspect genotypes or GDS, only the VCF INFO fields.
 #'
+#' **Filter target:** VCF variants.
+#'
 #' @param vcf (character)
 #' Path to the input VCF (\code{.vcf} or \code{.vcf.gz}).
 #'

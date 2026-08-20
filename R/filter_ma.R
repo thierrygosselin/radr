@@ -12,7 +12,7 @@
 #' consequently it's important to understand the limite of using the
 #' thresholds to avoid generating biases.
 #'
-#' \strong{Filter targets}: Marker's alternate allele(s)
+#' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: count, frequency or depth of the allele per markers.
 #' This filter as NO concept of strata/populations. It is computed globally.

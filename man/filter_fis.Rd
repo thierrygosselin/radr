@@ -42,7 +42,10 @@ the \code{filename} provided is \code{.rad}.}
 Default: \code{verbose = TRUE}.}
 }
 \description{
-TODO
+Filter markers or loci using within-stratum inbreeding-coefficient
+statistics.
+
+\strong{Filter target:} Markers or loci, depending on \code{approach}.
 }
 \details{
 The Fis calculated uses the ratio of averages (1-mean(Ho)/mean(Hs))

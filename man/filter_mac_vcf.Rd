@@ -85,6 +85,8 @@ This is a lightweight, VCF-level pre-filter that is particularly useful
 to slim down large, noisy VCFs (e.g. per-scaffold outputs) before merging
 or importing into a GDS. For GDS-level MAC filtering based on genotypes,
 see \code{\link{filter_ma}}.
+
+\strong{Filter target:} VCF variants.
 }
 \examples{
 \dontrun{

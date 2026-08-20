@@ -88,6 +88,8 @@ F_MISSING <= genotyping.threshold
 
 This makes the function well suited as a lightweight, VCF-level pruning step
 (e.g. before merging scaffold-level VCFs), without opening a GDS.
+
+\strong{Filter target:} VCF variants.
 }
 \details{
 The function operates entirely at the VCF level:

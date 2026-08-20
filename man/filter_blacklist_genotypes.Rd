@@ -31,6 +31,8 @@ Filter dataset with blacklist of genotypes.
 
 This function allows to blacklist/erase/mask genotypes.
 
+\strong{Filter target:} Individual genotype calls.
+
 Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
 and might be of interest for users.
 }
