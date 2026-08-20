@@ -11,7 +11,7 @@ analysis performs better with the full spectrum of allele frequency,
 consequently it's important to understand the limite of using the
 thresholds to avoid generating biases.
 
-**Filter targets**: Marker's alternate allele(s)
+**Filter target:** Markers.
 
 **Statistics**: count, frequency or depth of the allele per markers.
 This filter as NO concept of strata/populations. It is computed

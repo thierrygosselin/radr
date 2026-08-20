@@ -16,6 +16,8 @@ computed by `bcftools +fill-tags`. A variant is kept if:
 This makes the function well suited as a lightweight, VCF-level pruning
 step (e.g. before merging scaffold-level VCFs), without opening a GDS.
 
+**Filter target:** VCF variants.
+
 ## Usage
 
 ``` r

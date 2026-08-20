@@ -16,8 +16,9 @@ The examples are not evaluated because they refer to user files.
 Maintain one authoritative sample metadata table and generate the
 compact strata file from it. The strata file should contain stable
 `INDIVIDUALS` names and the grouping variable required for the current
-analysis. Consult the genometranslator vignette for identifier,
-`NEW_ID`, and DArT `TARGET_ID` recommendations.
+analysis. Consult the [genometranslator
+vignette](https://thierrygosselin.github.io/genometranslator/articles/using_genometranslator.html)
+for identifier, `NEW_ID`, and DArT `TARGET_ID` recommendations.
 
 ``` r
 
@@ -31,9 +32,18 @@ genome <- genometranslator::read_genome(
 genometranslator::summary_gds(genome)
 ```
 
-Keep an untouched source file or GDS. Write each filtering stage to a
-new file or retain the generated blacklists and parameter logs so
-decisions can be reviewed and reproduced.
+Keep the original genomic source file untouched. A GDS is stateful:
+filtering changes the active samples or markers and records those
+changes in the same backing file. Assigning the result to another R
+object does not create an independent copy of that GDS.
+
+Each filtering stage creates a dated results folder. Depending on the
+function, it contains the function-call arguments, diagnostic figures
+and tables, blacklists, and summaries. The dated
+`filters_parameters_*.tsv` file records the filters and parameter values
+together with before-and-after dimensions and blacklist information.
+Keep these folders with the original source file and sample metadata so
+that filtering decisions can be reviewed and reproduced.
 
 ## Inspect missingness before choosing what to remove
 
@@ -152,7 +162,7 @@ samples_first <- genome |>
   filter_individuals(
     interactive.filter = FALSE,
     filter.individuals.missing = 0.50,
-    filter.individuals.coverage.total = c(1e6, Inf)
+    filter.individuals.coverage.total = 1e6
   ) |>
   explore_genomes()
 ```
@@ -167,9 +177,10 @@ upstream QC.
 The numeric thresholds in both examples are illustrations. Derive
 thresholds from diagnostic figures, project design, sequencing
 expectations, and the requirements of the intended analysis. When
-comparing alternative orders, start each workflow from an independent
-copy of the same unfiltered GDS; do not run one alternative on an object
-already modified by the other.
+comparing alternative orders, create separate physical copies of the
+original GDS file or re-import the untouched source data. Assigning the
+same GDS connection to a different R variable does not create an
+independent copy.
 
 At each stage, ask what changed:
 
@@ -181,6 +192,22 @@ At each stage, ask what changed:
 
 Re-run the relevant diagnostic after a consequential filter. Avoid
 choosing a threshold solely because it is conventional in another study.
+
+## Review active filters
+
+The parameter file documents how the dataset reached its current state.
+To see which individual and marker filters are currently active in the
+GDS metadata, use:
+
+``` r
+
+genometranslator::list_filters(genome)
+```
+
+This current-state summary complements the chronological parameter log.
+Keep both: the active-filter list answers *what is applied now*, whereas
+the dated folders and parameter file document *what was done, in which
+order, and with which thresholds*.
 
 ## Detection does not necessarily mean filtering
 

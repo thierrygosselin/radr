@@ -5,6 +5,9 @@ Observed Heterozygosity based filtering. The filter arguments of
 expectations of heterozygosity statistics are a problem in downstream
 analysis.
 
+**Filter target:** Individuals and/or markers, depending on the selected
+arguments.
+
 1.  Highlight outliers individual's observed heterozygosity for a quick
     diagnostic of mixed samples or poor polymorphism discovery. The
     statistic is also contrasted with missing data to help differentiate

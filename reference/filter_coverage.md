@@ -3,7 +3,7 @@
 This function is designed to remove/blacklist markers based on mean
 coverage information.
 
-**Filter targets**: SNPs
+**Filter target:** Markers.
 
 **Statistics**: mean coverage ( The read depth of individual genotype is
 averaged across markers).

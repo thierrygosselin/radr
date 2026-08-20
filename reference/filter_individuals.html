@@ -5,7 +5,7 @@ heterozygosity
 coverage (total, median, iqr)
 
 
-Filter targets: Individuals
+Filter target: Individuals.
 Statistics: Missingness, heterozygosity and coverage
 Used internally in radr
 and might be of interest for users who wants to blacklist individuals."><meta property="og:description" content="Remove individuals with bad QC based on:
@@ -14,7 +14,7 @@ heterozygosity
 coverage (total, median, iqr)
 
 
-Filter targets: Individuals
+Filter target: Individuals.
 Statistics: Missingness, heterozygosity and coverage
 Used internally in radr
 and might be of interest for users who wants to blacklist individuals."><meta property="og:image" content="https://thierrygosselin.github.io/radr/logo.png"></head><body>
@@ -54,7 +54,7 @@ and might be of interest for users who wants to blacklist individuals."><meta pr
     <p>Remove individuals with bad QC based on:</p><ul><li><p>missingness (genotyping rate)</p></li>
 <li><p>heterozygosity</p></li>
 <li><p>coverage (total, median, iqr)</p></li>
-</ul><p><strong>Filter targets</strong>: Individuals</p>
+</ul><p><strong>Filter target:</strong> Individuals.</p>
 <p><strong>Statistics</strong>: Missingness, heterozygosity and coverage</p>
 <p>Used internally in <a href="https://github.com/thierrygosselin/radr" class="external-link">radr</a>
 and might be of interest for users who wants to blacklist individuals.</p>
@@ -106,10 +106,11 @@ Default: <code>filter.individuals.heterozygosity = NULL</code>.</p></dd>
 
 
 <dt id="arg-filter-individuals-coverage-total">filter.individuals.coverage.total<a class="anchor" aria-label="anchor" href="#arg-filter-individuals-coverage-total"></a></dt>
-<dd><p>(optional, string of doubles)
-Target the total coverage per samples.
-A proportion below and
-above which the individuals are blacklisted and removed from the dataset.
+<dd><p>Optional numeric threshold(s) or
+<code>"outliers"</code> targeting total coverage per sample. A single numeric
+value is the minimum accepted total coverage. Two numeric values specify
+the accepted lower and upper limits. <code>"outliers"</code> derives both limits
+from the coverage distribution.
 Default: <code>filter.individuals.coverage.total = NULL</code>.</p></dd>
 
 

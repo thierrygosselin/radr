@@ -8,7 +8,7 @@ Remove individuals with bad QC based on:
 
 - coverage (total, median, iqr)
 
-**Filter targets**: Individuals
+**Filter target:** Individuals.
 
 **Statistics**: Missingness, heterozygosity and coverage
 
@@ -63,10 +63,11 @@ filter_individuals(
 
 - filter.individuals.coverage.total:
 
-  (optional, string of doubles) Target the total coverage per samples. A
-  proportion below and above which the individuals are blacklisted and
-  removed from the dataset. Default:
-  `filter.individuals.coverage.total = NULL`.
+  Optional numeric threshold(s) or `"outliers"` targeting total coverage
+  per sample. A single numeric value is the minimum accepted total
+  coverage. Two numeric values specify the accepted lower and upper
+  limits. `"outliers"` derives both limits from the coverage
+  distribution. Default: `filter.individuals.coverage.total = NULL`.
 
 - filter.individuals.coverage.median:
 

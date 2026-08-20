@@ -9,7 +9,7 @@ markers with just *one genotype phenotype*:
 
 - genotypes are ALL homozygotes ALT/ALT (qq)
 
-**Filter targets**: SNPs
+**Filter target:** Markers.
 
 **Statistics**: the number of genotype phenotypes
 

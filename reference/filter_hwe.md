@@ -21,6 +21,8 @@ markers under HWD are totally normal.
 Prior to HW filtering, I highly recommend removing outlier individuals,
 filtering coverage and genotype likelihood (see details).
 
+**Filter target:** Markers.
+
 ## Usage
 
 ``` r

@@ -79,9 +79,9 @@ silently perform quality-control filtering.</p>
 <p>Maintain one authoritative sample metadata table and generate the
 compact strata file from it. The strata file should contain stable
 <code>INDIVIDUALS</code> names and the grouping variable required for
-the current analysis. Consult the genometranslator vignette for
-identifier, <code>NEW_ID</code>, and DArT <code>TARGET_ID</code>
-recommendations.</p>
+the current analysis. Consult the <a href="https://thierrygosselin.github.io/genometranslator/articles/using_genometranslator.html" class="external-link">genometranslator
+vignette</a> for identifier, <code>NEW_ID</code>, and DArT
+<code>TARGET_ID</code> recommendations.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://thierrygosselin.github.io/radr/">radr</a></span><span class="op">)</span></span>
 <span></span>
@@ -91,9 +91,17 @@ recommendations.</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/summary_gds.html" class="external-link">summary_gds</a></span><span class="op">(</span><span class="va">genome</span><span class="op">)</span></span></code></pre></div>
-<p>Keep an untouched source file or GDS. Write each filtering stage to a
-new file or retain the generated blacklists and parameter logs so
-decisions can be reviewed and reproduced.</p>
+<p>Keep the original genomic source file untouched. A GDS is stateful:
+filtering changes the active samples or markers and records those
+changes in the same backing file. Assigning the result to another R
+object does not create an independent copy of that GDS.</p>
+<p>Each filtering stage creates a dated results folder. Depending on the
+function, it contains the function-call arguments, diagnostic figures
+and tables, blacklists, and summaries. The dated
+<code>filters_parameters_*.tsv</code> file records the filters and
+parameter values together with before-and-after dimensions and blacklist
+information. Keep these folders with the original source file and sample
+metadata so that filtering decisions can be reviewed and reproduced.</p>
 </div>
 <div class="section level2">
 <h2 id="inspect-missingness-before-choosing-what-to-remove">Inspect missingness before choosing what to remove<a class="anchor" aria-label="anchor" href="#inspect-missingness-before-choosing-what-to-remove"></a>
@@ -198,7 +206,7 @@ marker filter should come next:</p>
 <span>  <span class="fu"><a href="../reference/filter_individuals.html">filter_individuals</a></span><span class="op">(</span></span>
 <span>    interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>    filter.individuals.missing <span class="op">=</span> <span class="fl">0.50</span>,</span>
-<span>    filter.individuals.coverage.total <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1e6</span>, <span class="cn">Inf</span><span class="op">)</span></span>
+<span>    filter.individuals.coverage.total <span class="op">=</span> <span class="fl">1e6</span></span>
 <span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/explore_genomes.html">explore_genomes</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>Ideally, these samples are identified before genotyping through FASTQ
@@ -210,9 +218,10 @@ upstream QC.</p>
 <p>The numeric thresholds in both examples are illustrations. Derive
 thresholds from diagnostic figures, project design, sequencing
 expectations, and the requirements of the intended analysis. When
-comparing alternative orders, start each workflow from an independent
-copy of the same unfiltered GDS; do not run one alternative on an object
-already modified by the other.</p>
+comparing alternative orders, create separate physical copies of the
+original GDS file or re-import the untouched source data. Assigning the
+same GDS connection to a different R variable does not create an
+independent copy.</p>
 <p>At each stage, ask what changed:</p>
 <ul>
 <li>Did filtering individuals alter marker missingness or allele
@@ -229,11 +238,24 @@ study.</p>
 </div>
 </div>
 <div class="section level2">
+<h2 id="review-active-filters">Review active filters<a class="anchor" aria-label="anchor" href="#review-active-filters"></a>
+</h2>
+<p>The parameter file documents how the dataset reached its current
+state. To see which individual and marker filters are currently active
+in the GDS metadata, use:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/list_filters.html" class="external-link">list_filters</a></span><span class="op">(</span><span class="va">genome</span><span class="op">)</span></span></code></pre></div>
+<p>This current-state summary complements the chronological parameter
+log. Keep both: the active-filter list answers <em>what is applied
+now</em>, whereas the dated folders and parameter file document <em>what
+was done, in which order, and with which thresholds</em>.</p>
+</div>
+<div class="section level2">
 <h2 id="detection-does-not-necessarily-mean-filtering">Detection does not necessarily mean filtering<a class="anchor" aria-label="anchor" href="#detection-does-not-necessarily-mean-filtering"></a>
 </h2>
 <p>The <code>detect_*()</code> functions investigate particular
 structures or problems:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">duplicates</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_duplicate_genomes.html">detect_duplicate_genomes</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span>
 <span><span class="va">mixed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_mixed_genomes.html">detect_mixed_genomes</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span>
 <span><span class="va">paralogs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_paralogs.html">detect_paralogs</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span></code></pre></div>
@@ -247,7 +269,7 @@ sample may be important information rather than an error.</p>
 <p>Use <code>genometranslator</code> to write the final GDS to a
 downstream format. The writer does not silently improve or filter the
 data:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/write_genome.html" class="external-link">write_genome</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">filtered</span>,</span>
 <span>  output <span class="op">=</span> <span class="st">"vcf"</span>,</span>
@@ -262,7 +284,7 @@ treatments.</p>
 <h2 id="dependencies-and-external-tools">Dependencies and external tools<a class="anchor" aria-label="anchor" href="#dependencies-and-external-tools"></a>
 </h2>
 <p>Inspect requirements at any time with:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/radr_dependencies.html">radr_dependencies</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>The diagnostic separates the required package foundation from
 optional components. <code>SNPRelate</code> supports LD and IBS

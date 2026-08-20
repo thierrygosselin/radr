@@ -22,6 +22,8 @@ and `INFO/AN` are trustworthy (e.g. direct output from FreeBayes or
 bcftools). It does not inspect genotypes or GDS, only the VCF INFO
 fields.
 
+**Filter target:** VCF variants.
+
 ## Usage
 
 ``` r

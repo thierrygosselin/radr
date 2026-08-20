@@ -3,7 +3,7 @@
 This filter removes markers below a certain threshold. Based on the
 repoducibility column found in DArT files.
 
-**Filter targets**: Markers
+**Filter target:** Markers.
 
 **Statistics**: Reproducibility (established by DArT)
 

@@ -24,6 +24,8 @@ merging or importing into a GDS. For GDS-level MAC filtering based on
 genotypes, see
 [`filter_ma`](https://thierrygosselin.github.io/radr/reference/filter_ma.md).
 
+**Filter target:** VCF variants.
+
 ## Usage
 
 ``` r

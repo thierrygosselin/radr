@@ -1,6 +1,9 @@
 # Fis filter
 
-TODO
+Filter markers or loci using within-stratum inbreeding-coefficient
+statistics.
+
+**Filter target:** Markers or loci, depending on `approach`.
 
 ## Usage
 

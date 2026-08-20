@@ -4,6 +4,8 @@ Filter dataset with whitelist of markers Used internally in
 [radr](https://github.com/thierrygosselin/radr) and might be of interest
 for users.
 
+**Filter target:** Markers.
+
 ## Usage
 
 ``` r

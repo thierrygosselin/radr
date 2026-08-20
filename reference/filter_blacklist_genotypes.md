@@ -4,6 +4,8 @@ Filter dataset with blacklist of genotypes.
 
 This function allows to blacklist/erase/mask genotypes.
 
+**Filter target:** Individual genotype calls.
+
 Used internally in [radr](https://github.com/thierrygosselin/radr) and
 might be of interest for users.
 
