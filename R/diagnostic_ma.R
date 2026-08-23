@@ -3,8 +3,8 @@
 #' @description Minor Allele diagnostic, help choose a filter threshold.
 #' @param data A file in the working directory or object in the global environment
 #' in wide or long (tidy) formats. To import, the function uses
-#' \href{https://github.com/thierrygosselin/radr}{radr}
-#' \code{\link[radr]{read_genome}}.
+#' \href{https://github.com/thierrygosselin/genometranslator}{genometranslator}
+#' \code{\link[genometranslator]{read_genome}}.
 #' \emph{See details of this function for more info}.
 #' @param group.rank (Number) The number of group to class the MAF.
 #' @param filename (optional) Name of the file written to the working directory.

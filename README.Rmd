@@ -117,7 +117,7 @@ genome <- genometranslator::read_genome(
 
 # Preserve the original sample and marker order for the first missingness view
 ibm <- radr::detect_ibm(
-  gds = genome,
+  data = genome,
   filename = "initial_missingness.png"
 )
 

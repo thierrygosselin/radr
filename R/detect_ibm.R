@@ -7,7 +7,7 @@
 #' decide whether individual- or marker-level filtering should be investigated
 #' first.
 #'
-#' @param gds A \code{SeqVarGDSClass} object or a path to a GDS file.
+#' @param data A GDS filepath or an open \code{SeqVarGDSClass} object.
 #'
 #' @param strata (optional) Path to a strata file with a minimum of 2 columns:
 #' \code{INDIVIDUALS} and the grouping column selected in \code{strata.select}.
@@ -35,6 +35,9 @@
 #' @param marker.max (optional, integer) Maximum number of markers plotted.
 #' Default: \code{marker.max = 50000}.
 #'
+#' @param title Optional heatmap title. Use \code{NULL} to omit it.
+#' Default: \code{title = "Identity-by-missingness"}.
+#'
 #' @param filename Optional name for writing the heatmap directly to a PNG file
 #' inside the function results folder.
 #' When no \code{.png} extension is supplied, it is added automatically.
@@ -50,7 +53,8 @@
 #' @param image.res PNG resolution in pixels per inch.
 #' Default: \code{image.res = 150}.
 #'
-#' @param facet (logical) Should the heatmap be faceted by \code{strata.select}?
+#' @param facet (logical) Should multiple groups be labelled above the heatmap
+#' using \code{strata.select}? A redundant single-group label is omitted.
 #' Default: \code{facet = TRUE}.
 #'
 #' @param parallel.core (optional, integer) Number of cores.
@@ -76,6 +80,21 @@
 #' structure that would be obscured by sorting on missingness. The sorted modes
 #' are best used as complementary views after examining the input-order plot.
 #'
+#' @section Further exploration of missing data:
+#' `detect_ibm()` is intentionally a fast, global diagnostic. It helps
+#' reveal broad missingness structure and decide whether marker- or
+#' individual-level filtering should be investigated first.
+#'
+#' For a more detailed investigation, see the
+#' the [grur package](https://thierrygosselin.github.io/grur/), particularly
+#' [`grur::missing_visualization()`](https://thierrygosselin.github.io/grur/reference/missing_visualization.html).
+#' It explores missingness at the individual, marker, and population levels;
+#' examines relationships with biological and technical metadata; and uses
+#' identity-by-missingness ordinations such as PCoA/MDS and RDA to reveal
+#' additional patterns. The accompanying
+#' [missing-data analysis vignette](https://thierrygosselin.github.io/grur/articles/vignette_missing_data_analysis.html)
+#' provides a complete workflow.
+#'
 #' @return A list with:
 #' \itemize{
 #'   \item \code{heatmap}: a \code{ggplot2} object containing the raster
@@ -90,13 +109,14 @@
 #'
 #' @export
 detect_ibm <- function(
-    gds,
+    data,
     strata = NULL,
     strata.select = "STRATA",
     sort.individuals = "input",
     sort.markers = "input",
     sample.max = NULL,
     marker.max = 50000,
+    title = "Identity-by-missingness",
     filename = NULL,
     image.width = 1800L,
     image.height = 2400L,
@@ -116,7 +136,7 @@ detect_ibm <- function(
   file.date <- .start$file.date
   on.exit(tgbase::teardown(.start), add = TRUE)
 
-  if (missing(gds)) rlang::abort("Input gds missing")
+  if (missing(data)) rlang::abort("data is missing")
 
   rad.dots <- radr_dots(
     func.name = as.list(sys.call())[[1]],
@@ -176,6 +196,11 @@ detect_ibm <- function(
     rlang::abort("filename must be NULL or a single non-empty path")
   }
 
+  if (!is.null(title) &&
+      (!is.character(title) || length(title) != 1L || is.na(title))) {
+    rlang::abort("title must be NULL or a single character value")
+  }
+
   image.arguments <- list(
     image.width = image.width,
     image.height = image.height,
@@ -219,13 +244,15 @@ detect_ibm <- function(
 
   gds.opened.here <- FALSE
 
-  if (inherits(gds, "character")) {
-    gds <- SeqArray::seqOpen(gds)
+  if (inherits(data, "character")) {
+    gds <- SeqArray::seqOpen(data)
     gds.opened.here <- TRUE
+  } else {
+    gds <- data
   }
 
   if (!inherits(gds, "SeqVarGDSClass")) {
-    rlang::abort("gds must be a SeqVarGDSClass object or a path to a GDS file")
+    rlang::abort("data must be a GDS filepath or an open SeqVarGDSClass object")
   }
 
   SeqArray::seqFilterPush(gds)
@@ -241,6 +268,15 @@ detect_ibm <- function(
 
   n.samples <- length(sample.ids)
   n.markers <- length(marker.ids)
+
+  format_n <- function(x) format(x, big.mark = ",", scientific = FALSE)
+  if (verbose) {
+    message(
+      "Calculating missingness summaries for ", format_n(n.samples),
+      " samples and ", format_n(n.markers), " markers..."
+    )
+  }
+  summary.start <- proc.time()[["elapsed"]]
 
   chrom <- rep(NA_character_, n.markers)
   pos <- rep(NA_integer_, n.markers)
@@ -295,6 +331,13 @@ detect_ibm <- function(
     MISSING_GENOTYPE_PROP = MISSING_GENOTYPE / INDIVIDUALS_NUMBER,
     PERCENT = round(MISSING_GENOTYPE_PROP * 100, 2)
   )
+  if (verbose) {
+    message(
+      "Missingness summaries calculated [",
+      round(proc.time()[["elapsed"]] - summary.start, 1), "s]"
+    )
+  }
+  summary.start <- NULL
 
   if (is.null(strata)) {
     strata.df <- tibble::tibble(
@@ -388,6 +431,13 @@ detect_ibm <- function(
     verbose = FALSE
   )
 
+  if (verbose) {
+    message(
+      "Preparing heatmap matrix: ", format_n(length(sample.order)),
+      " samples x ", format_n(length(marker.order)), " markers..."
+    )
+  }
+  matrix.start <- proc.time()[["elapsed"]]
   ibm.blocks <- SeqArray::seqApply(
     gds,
     "genotype",
@@ -409,6 +459,13 @@ detect_ibm <- function(
     match(as.character(marker.order), colnames(ibm.matrix)),
     drop = FALSE
   ]
+  if (verbose) {
+    message(
+      "Heatmap matrix prepared [",
+      round(proc.time()[["elapsed"]] - matrix.start, 1), "s]"
+    )
+  }
+  matrix.start <- NULL
 
   # Render the binary matrix directly. The first raster row is drawn at the top,
   # so marker rows are reversed to retain the orientation of the former ggplot
@@ -421,6 +478,17 @@ detect_ibm <- function(
 
   n.samples.plot <- nrow(ibm.matrix)
   n.markers.plot <- ncol(ibm.matrix)
+  plot.subtitle <- paste0(
+    format_n(n.samples.plot), " of ", format_n(n.samples), " samples; ",
+    format_n(n.markers.plot), " of ", format_n(n.markers), " markers | ",
+    "order: samples = ", sort.individuals,
+    ", markers = ", sort.markers
+  )
+  show.strata <- facet &&
+    dplyr::n_distinct(strata.df[[strata.select]]) > 1L
+
+  if (verbose) message("Building heatmap...")
+  heatmap.start <- proc.time()[["elapsed"]]
   legend.data <- tibble::tibble(
     x = 1,
     y = 1,
@@ -450,6 +518,8 @@ detect_ibm <- function(
       )
     ) +
     ggplot2::labs(
+      title = title,
+      subtitle = plot.subtitle,
       x = "Individuals",
       y = "Markers",
       fill = NULL
@@ -473,10 +543,12 @@ detect_ibm <- function(
       axis.ticks.x = ggplot2::element_blank(),
       axis.text.y = ggplot2::element_blank(),
       axis.ticks.y = ggplot2::element_blank(),
-      plot.margin = ggplot2::margin(t = if (facet) 24 else 5.5)
+      plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(hjust = 0.5),
+      plot.margin = ggplot2::margin(t = if (show.strata) 24 else 5.5)
     )
 
-  if (facet) {
+  if (show.strata) {
     strata.plot <- strata.df[
       match(rownames(ibm.matrix), strata.df$INDIVIDUALS),
       strata.select,
@@ -508,6 +580,13 @@ detect_ibm <- function(
         fontface = "bold"
       )
   }
+  if (verbose) {
+    message(
+      "Heatmap built [",
+      round(proc.time()[["elapsed"]] - heatmap.start, 1), "s]"
+    )
+  }
+  heatmap.start <- NULL
 
   image.file <- NULL
   if (!is.null(filename)) {
@@ -517,6 +596,15 @@ detect_ibm <- function(
       filename <- paste0(filename, ".png")
     }
     filename <- file.path(path.folder, basename(filename))
+
+    if (verbose) {
+      message(
+        "Rendering PNG: ", format_n(image.width), " x ",
+        format_n(image.height), " px at ", image.res, " ppi...\n",
+        "    This is usually the slowest step for large heatmaps."
+      )
+    }
+    render.start <- proc.time()[["elapsed"]]
 
     ragg::agg_png(
       filename = filename,
@@ -532,7 +620,13 @@ detect_ibm <- function(
     )
 
     image.file <- normalizePath(filename, mustWork = TRUE)
-    if (verbose) message("Heatmap written: ", basename(image.file))
+    if (verbose) {
+      message(
+        "Heatmap written: ", basename(image.file), " [",
+        round(proc.time()[["elapsed"]] - render.start, 1), "s]"
+      )
+    }
+    render.start <- NULL
   }
 
   return(list(

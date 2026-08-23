@@ -470,7 +470,12 @@ information")
       axis.title.y = ggplot2::element_text(size = 10, face = "bold"),
       axis.text.y = ggplot2::element_text(size = 8)
     ) +
-    ggplot2::geom_hline(mapping = ggplot2::aes(yintercept = HET_MEAN), het.ind.stats, linetype = "dotted", linewidth = 0.6) + #mean
+    ggplot2::geom_hline(
+      mapping = ggplot2::aes(yintercept = HET_MEAN),
+      data = dplyr::filter(het.ind.stats, !is.na(HET_MEAN)),
+      linetype = "dotted",
+      linewidth = 0.6
+    ) + #mean
     # geom_hline(mapping = aes(yintercept = HET_sig_minus), het.ind.stats.pop, linetype = "dashed") + #3 sigma -
     # geom_hline(mapping = aes(yintercept = HET_sig_plus), het.ind.stats.pop, linetype = "dashed") + #3 sigma +
     ggplot2::facet_grid(MISSING_GROUP ~ POP_ID, switch = "x", scales = "free", labeller = ggplot2::labeller(MISSING_GROUP = facet_names))

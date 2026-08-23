@@ -55,7 +55,8 @@
 #' Use the argument filename to write the imported (and maybe further filtered)
 #' tidy genomic data set inside the folder. The filename will be automatically
 #' appended \code{.rad} to it. This file can be used again directly inside this
-#' function and other radr functions. See \code{\link[radr]{read_genome}}.
+#' function and other radr functions. See
+#' \code{\link[genometranslator]{read_genome}}.
 
 
 #' @return A folder generated automatically with date and time,

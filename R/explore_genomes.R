@@ -555,21 +555,30 @@ explore_genomes <- function(
     verbose = verbose
   ))
 
-  # genome_translator-----------------------------------------------------------
-  if (verbose) message("\nTransferring data to genomic converter...")
-  res$output <- genometranslator::genome_translator(
-    data = gds,
-    strata = strata,
-    output = output,
-    parallel.core = parallel.core,
-    filename = filename,
-    verbose = FALSE,
-    path.folder = path.folder,
-    parameters = filters.parameters,
-    filter.common.markers = FALSE,
-    filter.monomorphic = FALSE,
-    internal = TRUE)
-  if (is.null(res$output)) res$output <- "not selected"
+  # Optional output translation -----------------------------------------------
+  if (is.null(output)) {
+    res$output <- "not selected"
+  } else {
+    output.filename <- filename
+    if (is.null(output.filename)) output.filename <- "filtered_genome"
+    output.filename <- file.path(path.folder, basename(output.filename))
+
+    if (verbose) {
+      message(
+        "\nWriting requested genomic output: ",
+        paste(output, collapse = ", ")
+      )
+    }
+    res$output <- genometranslator::genome_translator(
+      data = gds,
+      strata = strata,
+      output = output,
+      parallel.core = parallel.core,
+      filename = output.filename,
+      verbose = verbose
+    )
+    if (is.null(res$output)) res$output <- "written"
+  }
   summary_gds(gds = gds, verbose = TRUE)
   res$gds <- gds
   return(res)

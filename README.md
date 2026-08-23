@@ -7,7 +7,7 @@
 state and is being actively
 developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
 [![packageversion](https://img.shields.io/badge/Package%20version-0.0.0.9000-orange.svg)](commits/main)
-[![Last-changedate](https://img.shields.io/badge/last%20change-2026--08--22-brightgreen.svg)](/commits/main)
+[![Last-changedate](https://img.shields.io/badge/last%20change-2026--08--23-brightgreen.svg)](/commits/main)
 <!-- badges: end -->
 
 `radr` explores, diagnoses, visualizes, and filters individual genomic
@@ -113,7 +113,7 @@ genome <- genometranslator::read_genome(
 
 # Preserve the original sample and marker order for the first missingness view
 ibm <- radr::detect_ibm(
-  gds = genome,
+  data = genome,
   filename = "initial_missingness.png"
 )
 
@@ -145,7 +145,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-22.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-23.
 
 ## Website and support
 

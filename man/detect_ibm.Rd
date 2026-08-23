@@ -5,13 +5,14 @@
 \title{Detect identity-by-missingness structure}
 \usage{
 detect_ibm(
-  gds,
+  data,
   strata = NULL,
   strata.select = "STRATA",
   sort.individuals = "input",
   sort.markers = "input",
   sample.max = NULL,
   marker.max = 50000,
+  title = "Identity-by-missingness",
   filename = NULL,
   image.width = 1800L,
   image.height = 2400L,
@@ -23,7 +24,7 @@ detect_ibm(
 )
 }
 \arguments{
-\item{gds}{A \code{SeqVarGDSClass} object or a path to a GDS file.}
+\item{data}{A GDS filepath or an open \code{SeqVarGDSClass} object.}
 
 \item{strata}{(optional) Path to a strata file with a minimum of 2 columns:
 \code{INDIVIDUALS} and the grouping column selected in \code{strata.select}.
@@ -51,6 +52,9 @@ Default: \code{sample.max = NULL}.}
 \item{marker.max}{(optional, integer) Maximum number of markers plotted.
 Default: \code{marker.max = 50000}.}
 
+\item{title}{Optional heatmap title. Use \code{NULL} to omit it.
+Default: \code{title = "Identity-by-missingness"}.}
+
 \item{filename}{Optional name for writing the heatmap directly to a PNG file
 inside the function results folder.
 When no \code{.png} extension is supplied, it is added automatically.
@@ -66,7 +70,8 @@ Default: \code{image.height = 2400}.}
 \item{image.res}{PNG resolution in pixels per inch.
 Default: \code{image.res = 150}.}
 
-\item{facet}{(logical) Should the heatmap be faceted by \code{strata.select}?
+\item{facet}{(logical) Should multiple groups be labelled above the heatmap
+using \code{strata.select}? A redundant single-group label is omitted.
 Default: \code{facet = TRUE}.}
 
 \item{parallel.core}{(optional, integer) Number of cores.
@@ -116,3 +121,20 @@ sequencing, plates, libraries, or sample processing can expose technical
 structure that would be obscured by sorting on missingness. The sorted modes
 are best used as complementary views after examining the input-order plot.
 }
+\section{Further exploration of missing data}{
+
+\code{detect_ibm()} is intentionally a fast, global diagnostic. It helps
+reveal broad missingness structure and decide whether marker- or
+individual-level filtering should be investigated first.
+
+For a more detailed investigation, see the
+the \href{https://thierrygosselin.github.io/grur/}{grur package}, particularly
+\href{https://thierrygosselin.github.io/grur/reference/missing_visualization.html}{\code{grur::missing_visualization()}}.
+It explores missingness at the individual, marker, and population levels;
+examines relationships with biological and technical metadata; and uses
+identity-by-missingness ordinations such as PCoA/MDS and RDA to reveal
+additional patterns. The accompanying
+\href{https://thierrygosselin.github.io/grur/articles/vignette_missing_data_analysis.html}{missing-data analysis vignette}
+provides a complete workflow.
+}
+

@@ -773,7 +773,8 @@ filter_hwe <- function(
           data.temp = data.temp,
           hw.pop.threshold = hw.pop.threshold,
           path.folder = path.folder,
-          pop.id.levels = pop.id.levels)
+          pop.id.levels = pop.id.levels,
+          verbose = verbose)
 
         # Choosing the last dataset --------------------------------------------
         no.file <- TRUE
@@ -963,6 +964,14 @@ hwe_analysis <- function(x, parallel.core = parallel::detectCores() - 1) {
 #' @description blacklist hw
 #' @rdname blacklist_hw
 #' @keywords internal
+#' @param x HWE summary grouped by significance threshold.
+#' @param unfiltered.data Original tidy genomic data.
+#' @param data.temp Optional data retained outside the HWE calculations.
+#' @param hw.pop.threshold Number of strata allowed to depart from HWE.
+#' @param path.folder Output directory. Default: \code{path.folder = NULL}.
+#' @param pop.id.levels Ordered strata levels.
+#' @param verbose Logical. Display progress messages.
+#' Default: \code{verbose = TRUE}.
 #' @export
 #' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
 
@@ -973,7 +982,8 @@ blacklist_hw <- function(
   hw.pop.threshold,
   path.folder = NULL,
   # filters.parameters.path,
-  pop.id.levels
+  pop.id.levels,
+  verbose = TRUE
 ) {
   if (is.null(path.folder)) path.folder <- getwd()
 
@@ -984,7 +994,8 @@ blacklist_hw <- function(
     x,
     unfiltered.data,
     hw.pop.threshold,
-    path.folder#filters.parameters.path
+    path.folder,
+    verbose
   ) {
 
     if (nrow(x) > 0) {
@@ -1043,7 +1054,7 @@ blacklist_hw <- function(
           filename = rad.filename,
           internal = FALSE,
           write.message = "standard",
-          verbose = TRUE
+          verbose = verbose
         )
 
         whitelist %>%
@@ -1061,7 +1072,7 @@ blacklist_hw <- function(
           filename = rad.filename,
           internal = FALSE,
           write.message = "standard",
-          verbose = TRUE
+          verbose = verbose
         )
 
         whitelist %>%
@@ -1076,10 +1087,12 @@ blacklist_hw <- function(
       .x = ., .f = bl_map,
       unfiltered.data = unfiltered.data,
       hw.pop.threshold = hw.pop.threshold,
-      path.folder = path.folder
+      path.folder = path.folder,
+      verbose = verbose
       )
 
-  return(message("done!"))
+  if (verbose) message("Candidate HWE datasets written")
+  invisible(NULL)
 }#End blacklist_hw
 
 #' @title update filter parameter file

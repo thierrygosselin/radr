@@ -9,8 +9,8 @@ diagnostic_ma(data, group.rank, filename = NULL)
 \arguments{
 \item{data}{A file in the working directory or object in the global environment
 in wide or long (tidy) formats. To import, the function uses
-\href{https://github.com/thierrygosselin/radr}{radr}
-\code{\link[radr]{read_genome}}.
+\href{https://github.com/thierrygosselin/genometranslator}{genometranslator}
+\code{\link[genometranslator]{read_genome}}.
 \emph{See details of this function for more info}.}
 
 \item{group.rank}{(Number) The number of group to class the MAF.}

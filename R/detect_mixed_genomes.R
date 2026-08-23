@@ -447,12 +447,24 @@ detect_mixed_genomes <- function(
         axis.title.y = ggplot2::element_text(size = 10, family = "Helvetica", face = "bold"),
         axis.text.y = ggplot2::element_text(size = 8, family = "Helvetica")
       ) +
-      ggplot2::geom_hline(mapping = ggplot2::aes(yintercept = OUTLIERS_LOW),
-                          het.ind.stats, linetype = "dashed", linewidth = 0.6) + #low
-      ggplot2::geom_hline(mapping = ggplot2::aes(yintercept = MEAN),
-                          het.ind.stats, linetype = "dotted", linewidth = 0.6) +#mean
-      ggplot2::geom_hline(mapping = ggplot2::aes(yintercept = OUTLIERS_HIGH),
-                          het.ind.stats, linetype = "dashed", linewidth = 0.6) + #high
+      ggplot2::geom_hline(
+        mapping = ggplot2::aes(yintercept = OUTLIERS_LOW),
+        data = dplyr::filter(het.ind.stats, !is.na(OUTLIERS_LOW)),
+        linetype = "dashed",
+        linewidth = 0.6
+      ) + #low
+      ggplot2::geom_hline(
+        mapping = ggplot2::aes(yintercept = MEAN),
+        data = dplyr::filter(het.ind.stats, !is.na(MEAN)),
+        linetype = "dotted",
+        linewidth = 0.6
+      ) + #mean
+      ggplot2::geom_hline(
+        mapping = ggplot2::aes(yintercept = OUTLIERS_HIGH),
+        data = dplyr::filter(het.ind.stats, !is.na(OUTLIERS_HIGH)),
+        linetype = "dashed",
+        linewidth = 0.6
+      ) + #high
       ggplot2::facet_grid(MISSING_GROUP ~ factor(STRATA), switch = "x", scales = "free",
                           labeller = ggplot2::labeller(MISSING_GROUP = facet_names))
     # het.manhattan
