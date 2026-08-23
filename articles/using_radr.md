@@ -61,7 +61,7 @@ sorting would hide.
 ``` r
 
 ibm <- detect_ibm(
-  gds = genome,
+  data = genome,
   sort.individuals = "input",
   sort.markers = "input",
   filename = "initial_missingness.png"

@@ -44,10 +44,44 @@
 <span>  <span class="va">data.temp</span>,</span>
 <span>  <span class="va">hw.pop.threshold</span>,</span>
 <span>  path.folder <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  <span class="va">pop.id.levels</span></span>
+<span>  <span class="va">pop.id.levels</span>,</span>
+<span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
+    <div class="section level2">
+    <h2 id="arguments">Arguments<a class="anchor" aria-label="anchor" href="#arguments"></a></h2>
+
+
+<dl><dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
+<dd><p>HWE summary grouped by significance threshold.</p></dd>
+
+
+<dt id="arg-unfiltered-data">unfiltered.data<a class="anchor" aria-label="anchor" href="#arg-unfiltered-data"></a></dt>
+<dd><p>Original tidy genomic data.</p></dd>
+
+
+<dt id="arg-data-temp">data.temp<a class="anchor" aria-label="anchor" href="#arg-data-temp"></a></dt>
+<dd><p>Optional data retained outside the HWE calculations.</p></dd>
+
+
+<dt id="arg-hw-pop-threshold">hw.pop.threshold<a class="anchor" aria-label="anchor" href="#arg-hw-pop-threshold"></a></dt>
+<dd><p>Number of strata allowed to depart from HWE.</p></dd>
+
+
+<dt id="arg-path-folder">path.folder<a class="anchor" aria-label="anchor" href="#arg-path-folder"></a></dt>
+<dd><p>Output directory. Default: <code>path.folder = NULL</code>.</p></dd>
+
+
+<dt id="arg-pop-id-levels">pop.id.levels<a class="anchor" aria-label="anchor" href="#arg-pop-id-levels"></a></dt>
+<dd><p>Ordered strata levels.</p></dd>
+
+
+<dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
+<dd><p>Logical. Display progress messages.
+Default: <code>verbose = TRUE</code>.</p></dd>
+
+</dl></div>
     <div class="section level2">
     <h2 id="author">Author<a class="anchor" aria-label="anchor" href="#author"></a></h2>
     <p>Thierry Gosselin <a href="mailto:thierrygosselin@icloud.com">thierrygosselin@icloud.com</a></p>

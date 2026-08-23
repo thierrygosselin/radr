@@ -14,8 +14,9 @@ diagnostic_ma(data, group.rank, filename = NULL)
 
   A file in the working directory or object in the global environment in
   wide or long (tidy) formats. To import, the function uses
-  [radr](https://github.com/thierrygosselin/radr) `read_genome`. *See
-  details of this function for more info*.
+  [genometranslator](https://github.com/thierrygosselin/genometranslator)
+  [`read_genome`](https://thierrygosselin.github.io/genometranslator/reference/read_genome.html).
+  *See details of this function for more info*.
 
 - group.rank:
 

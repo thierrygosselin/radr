@@ -137,7 +137,7 @@ Use the argument filename to write the imported (and maybe further
 filtered) tidy genomic data set inside the folder. The filename will be
 automatically appended `.rad` to it. This file can be used again
 directly inside this function and other radr functions. See
-`read_genome`.
+[`read_genome`](https://thierrygosselin.github.io/genometranslator/reference/read_genome.html).
 
 ## Author
 

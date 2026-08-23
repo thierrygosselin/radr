@@ -54,13 +54,14 @@ first.</p>
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">detect_ibm</span><span class="op">(</span></span>
-<span>  <span class="va">gds</span>,</span>
+<span>  <span class="va">data</span>,</span>
 <span>  strata <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  strata.select <span class="op">=</span> <span class="st">"STRATA"</span>,</span>
 <span>  sort.individuals <span class="op">=</span> <span class="st">"input"</span>,</span>
 <span>  sort.markers <span class="op">=</span> <span class="st">"input"</span>,</span>
 <span>  sample.max <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  marker.max <span class="op">=</span> <span class="fl">50000</span>,</span>
+<span>  title <span class="op">=</span> <span class="st">"Identity-by-missingness"</span>,</span>
 <span>  filename <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  image.width <span class="op">=</span> <span class="fl">1800L</span>,</span>
 <span>  image.height <span class="op">=</span> <span class="fl">2400L</span>,</span>
@@ -76,8 +77,8 @@ first.</p>
     <h2 id="arguments">Arguments<a class="anchor" aria-label="anchor" href="#arguments"></a></h2>
 
 
-<dl><dt id="arg-gds">gds<a class="anchor" aria-label="anchor" href="#arg-gds"></a></dt>
-<dd><p>A <code>SeqVarGDSClass</code> object or a path to a GDS file.</p></dd>
+<dl><dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
+<dd><p>A GDS filepath or an open <code>SeqVarGDSClass</code> object.</p></dd>
 
 
 <dt id="arg-strata">strata<a class="anchor" aria-label="anchor" href="#arg-strata"></a></dt>
@@ -118,6 +119,11 @@ Default: <code>sample.max = NULL</code>.</p></dd>
 Default: <code>marker.max = 50000</code>.</p></dd>
 
 
+<dt id="arg-title">title<a class="anchor" aria-label="anchor" href="#arg-title"></a></dt>
+<dd><p>Optional heatmap title. Use <code>NULL</code> to omit it.
+Default: <code>title = "Identity-by-missingness"</code>.</p></dd>
+
+
 <dt id="arg-filename">filename<a class="anchor" aria-label="anchor" href="#arg-filename"></a></dt>
 <dd><p>Optional name for writing the heatmap directly to a PNG file
 inside the function results folder.
@@ -142,7 +148,8 @@ Default: <code>image.res = 150</code>.</p></dd>
 
 
 <dt id="arg-facet">facet<a class="anchor" aria-label="anchor" href="#arg-facet"></a></dt>
-<dd><p>(logical) Should the heatmap be faceted by <code>strata.select</code>?
+<dd><p>(logical) Should multiple groups be labelled above the heatmap
+using <code>strata.select</code>? A redundant single-group label is omitted.
 Default: <code>facet = TRUE</code>.</p></dd>
 
 
@@ -188,6 +195,23 @@ both individuals and markers. This is intentional: ordering inherited from
 sequencing, plates, libraries, or sample processing can expose technical
 structure that would be obscured by sorting on missingness. The sorted modes
 are best used as complementary views after examining the input-order plot.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="further-exploration-of-missing-data">Further exploration of missing data<a class="anchor" aria-label="anchor" href="#further-exploration-of-missing-data"></a></h2>
+
+
+<p><code>detect_ibm()</code> is intentionally a fast, global diagnostic. It helps
+reveal broad missingness structure and decide whether marker- or
+individual-level filtering should be investigated first.</p>
+<p>For a more detailed investigation, see the
+the <a href="https://thierrygosselin.github.io/grur/" class="external-link">grur package</a>, particularly
+<a href="https://thierrygosselin.github.io/grur/reference/missing_visualization.html" class="external-link"><code>grur::missing_visualization()</code></a>.
+It explores missingness at the individual, marker, and population levels;
+examines relationships with biological and technical metadata; and uses
+identity-by-missingness ordinations such as PCoA/MDS and RDA to reveal
+additional patterns. The accompanying
+<a href="https://thierrygosselin.github.io/grur/articles/vignette_missing_data_analysis.html" class="external-link">missing-data analysis vignette</a>
+provides a complete workflow.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

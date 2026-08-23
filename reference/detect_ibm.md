@@ -11,13 +11,14 @@ investigated first.
 
 ``` r
 detect_ibm(
-  gds,
+  data,
   strata = NULL,
   strata.select = "STRATA",
   sort.individuals = "input",
   sort.markers = "input",
   sample.max = NULL,
   marker.max = 50000,
+  title = "Identity-by-missingness",
   filename = NULL,
   image.width = 1800L,
   image.height = 2400L,
@@ -31,9 +32,9 @@ detect_ibm(
 
 ## Arguments
 
-- gds:
+- data:
 
-  A `SeqVarGDSClass` object or a path to a GDS file.
+  A GDS filepath or an open `SeqVarGDSClass` object.
 
 - strata:
 
@@ -70,6 +71,11 @@ detect_ibm(
   (optional, integer) Maximum number of markers plotted. Default:
   `marker.max = 50000`.
 
+- title:
+
+  Optional heatmap title. Use `NULL` to omit it. Default:
+  `title = "Identity-by-missingness"`.
+
 - filename:
 
   Optional name for writing the heatmap directly to a PNG file inside
@@ -92,7 +98,8 @@ detect_ibm(
 
 - facet:
 
-  (logical) Should the heatmap be faceted by `strata.select`? Default:
+  (logical) Should multiple groups be labelled above the heatmap using
+  `strata.select`? A redundant single-group label is omitted. Default:
   `facet = TRUE`.
 
 - parallel.core:
@@ -148,3 +155,19 @@ inherited from sequencing, plates, libraries, or sample processing can
 expose technical structure that would be obscured by sorting on
 missingness. The sorted modes are best used as complementary views after
 examining the input-order plot.
+
+## Further exploration of missing data
+
+`detect_ibm()` is intentionally a fast, global diagnostic. It helps
+reveal broad missingness structure and decide whether marker- or
+individual-level filtering should be investigated first.
+
+For a more detailed investigation, see the the [grur
+package](https://thierrygosselin.github.io/grur/), particularly
+[`grur::missing_visualization()`](https://thierrygosselin.github.io/grur/reference/missing_visualization.html).
+It explores missingness at the individual, marker, and population
+levels; examines relationships with biological and technical metadata;
+and uses identity-by-missingness ordinations such as PCoA/MDS and RDA to
+reveal additional patterns. The accompanying [missing-data analysis
+vignette](https://thierrygosselin.github.io/grur/articles/vignette_missing_data_analysis.html)
+provides a complete workflow.
