@@ -138,11 +138,9 @@ filter_het(
 
 - filename:
 
-  (optional) The function uses
-  [`write.fst`](http://www.fstpackage.org/reference/write_fst.md), to
-  write the tidy data frame in the folder created in the working
-  directory. The file extension appended to the `filename` provided is
-  `.rad`. Default: `filename = NULL`.
+  Optional prefix for writing the filtered tidy genomic data as an Arrow
+  Parquet file. The extension `.arrow.parquet` is appended. Default:
+  `filename = NULL`.
 
 - parallel.core:
 
@@ -160,67 +158,15 @@ filter_het(
 
 ## Value
 
-The function returns inside the global environment a list with 15
-objects, the objects names are found by using `names(your.list.name)`:
-
-1.  filtered tidy data frame: `$tidy.filtered.het`
-
-2.  whitelist of markers:`$whitelist.markers`
-
-3.  the strata:`$strata`
-
-4.  the filters parameters used:`$filters.parameters`
-
-5.  the individual's heterozigosity:`$individual.heterozigosity`
-
-6.  the heterozygosity statistics per populations and
-    overall:`$heterozygosity.statistics`
-
-7.  the blacklisted individuals based on the individual's
-    heterozigosity:`$blacklist.ind.het`
-
-8.  a list containing the helper tables:`$helper.table.het`
-
-9.  the boxplot of individual observed
-    heterozygosity:`$individual.heterozygosity.boxplot`
-
-10. the manhattan plot of individual
-    heterozygosity:`$individual.heterozygosity.manhattan.plot`
-
-11. the boxplot of observed heterozygosity averaged across markers and
-    pop:`$markers.pop.heterozygosity.boxplot`
-
-12. the density plot of observed heterozygosity averaged across markers
-    and pop:`$markers.pop.heterozygosity.density.plot`
-
-13. the manhattan plot of observed heterozygosity averaged across
-    markers and pop:`$markers.pop.heterozygosity.manhattan.plot`
-
-14. the relationship between the number of SNPs on a locus and locus
-    observed heterozygosity statistics:`$snp.per.locus.het.plot`
-
-15. the relationship between locus coverage (read depth) and locus
-    observed heterozygosity statistics:`$het.cov.plot`
-
-16. whitelist of markers:`$whitelist.markers`
-
-17. whitelist of markers:`$whitelist.markers`
-
-In the working directory, output is conditional to `interactive.filter`
-argument
+A named list containing the filtered tidy data (`tidy.filtered.het`),
+marker whitelist and blacklist, strata, filtering parameters, individual
+and marker heterozygosity statistics, blacklisted individuals, helper
+tables, and the generated diagnostic plots. Use `names(result)` to
+inspect all available components. Unlike the newer metadata-only GDS
+filters, this function currently returns its filtered genomic data in
+the `tidy.filtered.het` component.
 
 ## Details
-
-**Interactive version**
-
-There are 4 steps in the interactive version to visualize and filter the
-data based heterozygosity statistics:
-
-Step 1. Individual's observed heterozygosity: outliers that might
-represent mixed samples Step 2. Blacklist outliers based on a proportion
-threshold of mean observed heterozygosity Step 3. Observed
-heterozygosity statistics per populations and overall Step 4: Blacklist
-markers based on observed heterozygosity
 
 **outlier.pop.threshold**
 
@@ -277,6 +223,52 @@ observed heterozygosity in one run with: radr `filter_het`.
   poor polymorphism discovery or a biological reason (highly inbred
   individual, etc.).
 
+## Interactive version
+
+The interactive workflow has four stages:
+
+1.  Inspect individual heterozygosity Manhattan and box plots for
+    unusually high or low samples and compare the pattern with
+    missingness.
+
+2.  Enter the minimum individual heterozygosity threshold, where 0 turns
+    off the lower filter, followed by the maximum threshold, where 1
+    turns off the upper filter.
+
+3.  Choose `"haplotype"` or `"SNP"`, then choose `"overall"` or `"pop"`.
+    Haplotype filtering evaluates consistency among SNPs on a locus; SNP
+    filtering treats variants independently.
+
+4.  Enter `het.threshold`. With the haplotype approach, also enter
+    `het.dif.threshold`. With the population approach, enter
+    `outlier.pop.threshold`, the number of outlier populations
+    tolerated.
+
+The console explains each threshold immediately before requesting it and
+shows examples of its effect. Use `interactive.filter = FALSE` with
+explicit threshold and approach arguments for a reproducible analysis.
+
 ## See also
 
 [plot_density_distribution_het](https://thierrygosselin.github.io/radr/reference/plot_density_distribution_het.md)
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+genome <- genometranslator::read_genome("my_genome.gds")
+
+# Inspect individual and marker heterozygosity and choose thresholds.
+het_result <- radr::filter_het(data = genome)
+
+# Reproducible SNP-level filtering across the complete dataset.
+het_result <- radr::filter_het(
+  data = genome,
+  interactive.filter = FALSE,
+  ind.heterozygosity.threshold = c(0.02, 0.08),
+  het.approach = c("SNP", "overall"),
+  het.threshold = 0.60
+)
+filtered_genome <- het_result$tidy.filtered.het
+} # }
+```

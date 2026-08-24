@@ -5,8 +5,8 @@ coverage information.
 
 **Filter target:** Markers.
 
-**Statistics**: mean coverage ( The read depth of individual genotype is
-averaged across markers).
+**Statistics**: Mean marker coverage. Genotype read depth is averaged
+across active individuals for each marker.
 
 ## Usage
 
@@ -42,8 +42,8 @@ filter_coverage(
   - character string `filter.coverage = "outliers"` will use as
     thresholds the lower and higher outlier values in the box plot.
 
-  - integers string `filter.coverage = c(10, 200)`. For the marker's
-    mean coverage lower and upper bound.
+  - numeric vector `filter.coverage = c(10, 200)` for the marker
+    mean-coverage lower and upper bounds.
 
   Default: `filter.coverage = NULL`.
 
@@ -68,31 +68,12 @@ filter_coverage(
 
 ## Value
 
-With `interactive.filter = FALSE`, a list in the global environment,
-with 7 objects:
+The filtered data in the same representation as the input. GDS marker
+metadata and active variants are updated in place, so the underlying GDS
+file is modified. Coverage tables, figures, marker lists, and filtering
+parameters are written to the function output folder when applicable.
 
-1.  \$tidy.filtered.mac
-
-2.  \$whitelist.markers
-
-3.  \$blacklist.markers
-
-4.  \$mac.data
-
-5.  \$filters.parameters
-
-With `interactive.filter = TRUE`, a list with 4 additionnal objects are
-generated.
-
-1.  \$distribution.mac.global
-
-2.  \$distribution.mac.local
-
-3.  \$mac.global.summary
-
-4.  \$mac.helper.table
-
-## Advance mode
+## Advanced mode
 
 *dots-dots-dots ...* allows to pass several arguments for fine-tuning
 the function:
@@ -112,14 +93,16 @@ the function:
 
 ## Interactive version
 
-To help choose a threshold for the local and global MAF use the
-interactive version.
+The interactive mode first calculates marker coverage, writes and
+displays the coverage distribution and helper plots, and then asks:
 
-2 steps in the interactive version:
+1.  `"Choose the min mean coverage threshold (e.g. 7 or 10):"`
 
-Step 1. Visualization and helper table.
+2.  `"Choose the max mean coverage threshold (e.g. 100 or 300):"`
 
-Step 2. Filtering markers based on mean coverage
+Markers outside the inclusive interval are blacklisted. Use
+`interactive.filter = FALSE` with an explicit two-value
+`filter.coverage` for a reproducible analysis.
 
 ## Author
 
@@ -129,6 +112,17 @@ Thierry Gosselin <thierrygosselin@icloud.com>
 
 ``` r
 if (FALSE) { # \dontrun{
-# The minumum
+genome <- genometranslator::read_genome("my_genome.gds")
+
+# Inspect marker coverage and choose lower and upper limits interactively.
+genome <- radr::filter_coverage(data = genome)
+
+# Alternatively, start from a separate unfiltered GDS for a scripted run.
+scripted_genome <- genometranslator::read_genome("my_genome_scripted.gds")
+scripted_genome <- radr::filter_coverage(
+  data = scripted_genome,
+  interactive.filter = FALSE,
+  filter.coverage = c(10, 200)
+)
 } # }
 ```

@@ -97,19 +97,25 @@ functions.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list in the global environment with 6 objects:</p><ol><li><p>$whitelist.markers</p></li>
-<li><p>$blacklist.markers</p></li>
-<li><p>$filters.parameters</p></li>
-</ol><p>The object can be isolated in separate object outside the list by
-following the example below.</p>
+    <p>The filtered data in the same representation as the input. GDS
+marker metadata and active variants are updated in place. Diagnostic files,
+marker lists, and filtering parameters are written to the output folder.</p>
     </div>
     <div class="section level2">
-    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p><strong>Interactive version</strong></p>
-<p>There are 2 steps in the interactive version to visualize and filter
-the data based on the reproducibility value:</p>
-<p>Step 1. Visualization using a box plot</p>
-<p>Step 2. Choose the filtering threshold</p>
+    <h2 id="interactive-version">Interactive version<a class="anchor" aria-label="anchor" href="#interactive-version"></a></h2>
+
+
+
+<p>The function first displays and writes the DArT reproducibility distribution
+and helper outputs. It then asks the following questions:</p><ol><li><p><code>"Do you still want to blacklist markers? (y/n):"</code></p></li>
+<li><p>If yes, choose <code>1</code> to use the lower boxplot-outlier statistic or
+<code>2</code> to enter a threshold.</p></li>
+<li><p>With option 2, answer
+<code>"Enter the proportion threshold (0-1), the minimum reproducibility tolerated:"</code>.</p></li>
+</ol><p>Markers with reproducibility below the selected threshold are blacklisted.
+Answering no leaves the data unchanged. Use
+<code>interactive.filter = FALSE</code> with an explicit
+<code>filter.reproducibility</code> for a reproducible analysis.</p>
     </div>
 
     <div class="section level2">
@@ -121,6 +127,7 @@ the data based on the reproducibility value:</p>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">turtle.filtered</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_dart_reproducibility</span><span class="op">(</span></span></span>
 <span class="r-in"><span>    data <span class="op">=</span> <span class="va">spotted.cod</span>,</span></span>
+<span class="r-in"><span>    interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span></span>
 <span class="r-in"><span>    filter.reproducibility <span class="op">=</span> <span class="fl">0.97</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>

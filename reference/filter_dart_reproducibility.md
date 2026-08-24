@@ -58,27 +58,27 @@ filter_dart_reproducibility(
 
 ## Value
 
-A list in the global environment with 6 objects:
+The filtered data in the same representation as the input. GDS marker
+metadata and active variants are updated in place. Diagnostic files,
+marker lists, and filtering parameters are written to the output folder.
 
-1.  \$whitelist.markers
+## Interactive version
 
-2.  \$blacklist.markers
+The function first displays and writes the DArT reproducibility
+distribution and helper outputs. It then asks the following questions:
 
-3.  \$filters.parameters
+1.  `"Do you still want to blacklist markers? (y/n):"`
 
-The object can be isolated in separate object outside the list by
-following the example below.
+2.  If yes, choose `1` to use the lower boxplot-outlier statistic or `2`
+    to enter a threshold.
 
-## Details
+3.  With option 2, answer
+    `"Enter the proportion threshold (0-1), the minimum reproducibility tolerated:"`.
 
-**Interactive version**
-
-There are 2 steps in the interactive version to visualize and filter the
-data based on the reproducibility value:
-
-Step 1. Visualization using a box plot
-
-Step 2. Choose the filtering threshold
+Markers with reproducibility below the selected threshold are
+blacklisted. Answering no leaves the data unchanged. Use
+`interactive.filter = FALSE` with an explicit `filter.reproducibility`
+for a reproducible analysis.
 
 ## Examples
 
@@ -90,6 +90,7 @@ spotted.cod <- genometranslator::read_dart(
 )
 turtle.filtered <- radr::filter_dart_reproducibility(
     data = spotted.cod,
+    interactive.filter = FALSE,
     filter.reproducibility = 0.97
 )
 } # }

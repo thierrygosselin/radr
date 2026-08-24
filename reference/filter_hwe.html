@@ -114,10 +114,8 @@ filtering coverage and genotype likelihood (see details).</p>
 
 
 <dl><dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
-<dd><p>A tidy data frame object in the global environment or
-a tidy data frame in wide or long format in the working directory.
-<em>How to get a tidy data frame ?</em>
-Look into <span class="pkg">genometranslator</span> <code><a href="https://thierrygosselin.github.io/genometranslator/reference/tidy_genome.html" class="external-link">tidy_genome</a></code>.</p></dd>
+<dd><p>A GDS file or connection, or a supported tidy genomic object.
+Use <code><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></code> to import genomic files.</p></dd>
 
 
 <dt id="arg-interactive-filter">interactive.filter<a class="anchor" aria-label="anchor" href="#arg-interactive-filter"></a></dt>
@@ -153,7 +151,7 @@ However, to get a final filtered object associated with the output of the
 function, user need to choose one
 of the 5 mid p-value:</p><ul><li><p><code>1</code> = 0.05</p></li>
 <li><p><code>2</code> = 0.01</p></li>
-<li><p><code>3</code> = 0.0001</p></li>
+<li><p><code>3</code> = 0.001</p></li>
 <li><p><code>4</code> = 0.0001</p></li>
 <li><p><code>5</code> = 0.00001</p></li>
 </ul><p>.
@@ -162,10 +160,9 @@ Default: <code>midp.threshold = 4L</code>.</p></dd>
 
 
 <dt id="arg-filename">filename<a class="anchor" aria-label="anchor" href="#arg-filename"></a></dt>
-<dd><p>(optional) The function uses <code><a href="http://www.fstpackage.org/reference/write_fst.html" class="external-link">write.fst</a></code>,
-to write the tidy data frame in
-the folder created in the working directory. The file extension appended to
-the <code>filename</code> provided is <code>.rad</code>.
+<dd><p>Optional output prefix reserved for compatibility. HWE
+candidate datasets currently use standardized descriptive filenames in the
+function output folder.
 Default: <code>filename = NULL</code>.</p></dd>
 
 
@@ -186,22 +183,11 @@ functions.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list in the global environment objects:</p><ol><li><p>$path.folder: the path to the folder generated.</p></li>
-<li><p>$hw.pop.threshold: the number of populations tolerated to be in HWD before
-blacklisting the markers.</p></li>
-<li><p>$plot.hwd.thresholds: useful figure that highlight the number of markers
-blacklisted based on the number of populations in HWD and mid p-value thresholds.</p></li>
-<li><p>$plot.tern: ternary plot of markers (currently unavailable until ggtern is updated).</p></li>
-<li><p>$hw.manhattan: manhattan plot of markers in Hardy-Weinberg disequilibrium.</p></li>
-<li><p>$hwe.pop.sum: a summary tibble with populations, number of markers in total,
-number of markers monomorphic for the populations,
-number of markers in Hardy-Weinberg Equilibrium (HWE),
-number of markers in Hardy-Weinberg Dquilibrium (HWD) with all the different
-mid p-values observed on the data.</p></li>
-<li><p>$midp.threshold: the mid p-value threshold chosen for the final dataset (next)</p></li>
-<li><p>$tidy.hw.filtered: the final filtered dataset (oter datasets <code>.rad</code>
-are generated automatically by the function, check the folder)</p></li>
-</ol><p>Written in the folder:</p><ol><li><p>genotypes.summary.tsv: A tibble with these columns:
+    <p>The filtered data. For GDS workflows, marker filtering metadata is
+synchronized with the selected HWE result. HWE summaries, plots, candidate
+datasets, marker lists, and filtering parameters are written to the output
+folder so threshold sensitivity can be reviewed.</p>
+<p>Written in the folder:</p><ol><li><p>genotypes.summary.tsv: A tibble with these columns:
 <code>MARKERS, STRATA, HET, HOM_ALT, HOM_REF, MISSING, N,
 FREQ_ALT, FREQ_REF, FREQ_HET, FREQ_HOM_REF_O, FREQ_HET_O, FREQ_HOM_ALT_O,
 FREQ_HOM_REF_E, FREQ_HET_E, FREQ_HOM_ALT_E, N_HOM_REF_EXP,
@@ -217,8 +203,8 @@ blacklisted based on the number of populations in HWD and mid p-value thresholds
 <li><p>hwd.plot.blacklist.markers.pdf: useful figure that highlight the number of markers
 blacklisted based on the number of populations in HWD and mid p-value thresholds.</p></li>
 <li><p>hwe.manhattan.plot.pdf: manhattan plot of markers in Hardy-Weinberg disequilibrium.</p></li>
-<li><p>tidy.filtered.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.rad: several
-tidy dataset filtered with different mid p value and populations in HWD thresholds</p></li>
+<li><p>tidy.filtered.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.arrow.parquet:
+candidate datasets generated for different mid-p and population thresholds</p></li>
 <li><p>whitelist.markers.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.tsv: several
 whitelist of  markers with different mid p value and populations in HWD thresholds</p></li>
 <li><p>blacklist.markers.hwd.xxx.mid.p.value.xxx.hw.pop.threshold.tsv: several
@@ -226,9 +212,7 @@ blacklist of markers with different mid p value and populations in HWD threshold
 </ol></div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p><strong>Interactive version</strong></p>
-<p>The user is asked to look at figures before choosing filter thresholds.</p>
-<p><strong>HWE threshold</strong></p>
+    <p><strong>HWE threshold</strong></p>
 <p>I recommend starting with a low threshold.
 Serious genotyping errors will generate extreme p-values (e.g. 1e-50),
 which are detected by any reasonable configuration of this test,
@@ -293,6 +277,23 @@ analysis with the datasets generated with the different thresholds.</p>
 <li><p>Migration, Mutation and Selection are negligible</p></li>
 </ol></div>
     <div class="section level2">
+    <h2 id="interactive-version">Interactive version<a class="anchor" aria-label="anchor" href="#interactive-version"></a></h2>
+
+
+
+<p>The function calculates HWE results, writes the diagnostic tables and plots,
+and asks the user to inspect them before filtering. The questions are:</p><ol><li><p><code>"Do you want to continue with the filtering? (y/n):"</code></p></li>
+<li><p>If yes,
+<code>"Based on figures and tables enter the hw.pop.threshold (integer):"</code></p></li>
+<li><p>Finally, select one mid-p threshold: <code>1 = 0.05</code>,
+<code>2 = 0.01</code>, <code>3 = 0.001</code>, <code>4 = 0.0001</code>, or
+<code>5 = 0.00001</code>.</p></li>
+</ol><p>The population threshold controls how many strata may show disequilibrium
+before a marker is blacklisted. Answering no retains the diagnostics without
+applying an HWE filter. Use <code>interactive.filter = FALSE</code> with explicit
+<code>hw.pop.threshold</code> and <code>midp.threshold</code> values for reproducibility.</p>
+    </div>
+    <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
     <p>Weir, B.S. (1996) Genetic data analysis II. Sinauer Associates,
 Massachusetts. See Chapter3.</p>
@@ -313,13 +314,24 @@ sequence data. Human Genetics, 136, 727-741.</p>
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
-<span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">require</a></span><span class="op">(</span><span class="va"><a href="https://www.r-project.org" class="external-link">HardyWeinberg</a></span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://thierrygosselin.github.io/radr/">radr</a></span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="co"># for the interactive version (recommended)</span></span></span>
-<span class="r-in"><span><span class="va">turtle.pop</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_hwe</span><span class="op">(</span></span></span>
-<span class="r-in"><span>   data <span class="op">=</span> <span class="st">"turtle.vcf"</span>,</span></span>
-<span class="r-in"><span>   strata <span class="op">=</span> <span class="st">"turtle.strata.tsv"</span>,</span></span>
-<span class="r-in"><span>   filename <span class="op">=</span> <span class="st">"hwe.turtle"</span></span></span>
+<span class="r-in"><span><span class="va">genome</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="st">"turtle.vcf"</span>,</span></span>
+<span class="r-in"><span>  strata <span class="op">=</span> <span class="st">"turtle.strata.tsv"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Inspect HWE results and select thresholds interactively.</span></span></span>
+<span class="r-in"><span><span class="va">genome</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_hwe</span><span class="op">(</span>data <span class="op">=</span> <span class="va">genome</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Alternatively, start from a separate unfiltered GDS. Target markers in</span></span></span>
+<span class="r-in"><span><span class="co"># disequilibrium in four strata</span></span></span>
+<span class="r-in"><span><span class="co"># and use a mid-p threshold of 0.0001 (option 4).</span></span></span>
+<span class="r-in"><span><span class="va">scripted_genome</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></span><span class="op">(</span><span class="st">"turtle_scripted.gds"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">scripted_genome</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_hwe</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">scripted_genome</span>,</span></span>
+<span class="r-in"><span>  interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span></span>
+<span class="r-in"><span>  filter.hwe <span class="op">=</span> <span class="cn">TRUE</span>,</span></span>
+<span class="r-in"><span>  hw.pop.threshold <span class="op">=</span> <span class="fl">4</span>,</span></span>
+<span class="r-in"><span>  midp.threshold <span class="op">=</span> <span class="fl">4L</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
 </code></pre></div>

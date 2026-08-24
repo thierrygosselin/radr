@@ -76,13 +76,8 @@ filter_genotyping(
 
 ## Value
 
-The filtered dataset, of the same type as the input:
-
-- if `data` is a GDS connection (`SeqVarGDSClass`), the same connection
-  is returned with updated `markers.meta`;
-
-- if `data` is a GDS file path, the path is returned (the file is
-  updated on disk).
+The filtered GDS connection with updated `markers.meta`. The underlying
+GDS file is updated on disk.
 
 Side-effects:
 
@@ -116,6 +111,16 @@ meant for genotyping/missingness-based pruning *after* VCF import (e.g.
 after `read_vcf`), in contrast to VCF-level slimming using tools like
 [`filter_monomorphic_vcf`](https://thierrygosselin.github.io/radr/reference/filter_monomorphic_vcf.md).
 
+## Interactive version
+
+The interactive mode first displays and writes the marker-missingness
+distribution and helper tables. It then asks
+`"Choose the maximum missing proportion allowed:"`, with a value from 0
+to 1. Markers with `MISSING_PROP` greater than the selected value are
+blacklisted. For example, 0.20 permits at most 20 percent missing
+genotypes per marker. Use `interactive.filter = FALSE` and provide
+`filter.genotyping` explicitly for a reproducible analysis.
+
 ## See also
 
 [`filter_common_markers`](https://thierrygosselin.github.io/radr/reference/filter_common_markers.md),
@@ -132,12 +137,17 @@ Thierry Gosselin <thierrygosselin@icloud.com>
 
 ``` r
 if (FALSE) { # \dontrun{
-# Filter markers with more than 20% missing genotypes
-gds <- genometranslator::read_vcf(data = "populations.snps.vcf") %>%
-       radr::filter_genotyping(
-            data               = .,
-            interactive.filter = FALSE,
-            filter.genotyping  = 0.2
+genome <- genometranslator::read_genome("populations.snps.vcf")
+
+# Inspect marker missingness and choose the threshold interactively.
+genome <- radr::filter_genotyping(data = genome)
+
+# Alternatively, start from a separate unfiltered GDS for a scripted run.
+scripted_genome <- genometranslator::read_genome("populations_scripted.gds")
+scripted_genome <- radr::filter_genotyping(
+  data = scripted_genome,
+  interactive.filter = FALSE,
+  filter.genotyping = 0.20
 )
 } # }
 ```

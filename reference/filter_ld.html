@@ -163,21 +163,16 @@ functions.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list in the global environment, with these objects:</p><ol><li><p>$ld.summary: tibble with LD statistics used for the boxplot</p></li>
-<li><p>$ld.boxplot: box plot of LD values</p></li>
-<li><p>$whitelist.ld: whitelist of markers kept after filtering for LD.
-The argument <code>filter.long.ld</code> must be used to generate the whitelist.</p></li>
-<li><p>$blacklist.ld: blacklist of markers prunned during the filtering
-for LD.
-The argument <code>filter.long.ld</code> must be used to generate the blacklist.</p></li>
-<li><p>$data: The filtered tidy dataset.</p></li>
-<li><p>$gds: the path to the GDS file.</p></li>
-</ol></div>
+    <p>The filtered data in the same representation as the input. GDS
+marker metadata and active variants are updated in place. LD summaries,
+plots, marker lists, and filtering parameters are written to the output
+folder when applicable.</p>
+    </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>The function requires <a href="https://github.com/zhengxwen/SNPRelate" class="external-link">SNPRelate</a>
 (see example below on how to install).</p>
-<p><strong>Advance mode, using <em>dots-dots-dots</em></strong></p><ul><li><p><code>maf.data</code> (path) this argument is no longer supported.
+<p><strong>Advanced mode, using <em>dots-dots-dots</em></strong></p><ul><li><p><code>maf.data</code> (path) this argument is no longer supported.
 It's a small cost in time in favour of making sure the MAC/MAF fits the actual
 data.</p></li>
 <li><p><code>long.ld.missing</code> (logical) With <code>long.ld.missing = TRUE</code>.
@@ -209,6 +204,25 @@ Default: <code>ld.figures = TRUE</code></p></li>
 If the supplied directory doesn't exist, it's created.</p></li>
 </ul></div>
     <div class="section level2">
+    <h2 id="interactive-version">Interactive version<a class="anchor" aria-label="anchor" href="#interactive-version"></a></h2>
+
+
+<p>The workflow has a short-distance and an optional long-distance component:</p><ol><li><p>When loci contain multiple SNPs, choose the SNP-retention rule:
+<code>1 = mac</code>, <code>2 = random</code>, <code>3 = first</code>,
+<code>4 = middle</code>, or <code>5 = last</code>.</p></li>
+<li><p>Answer
+<code>"Do you want to continue filtering using long distance ld? (y/n):"</code>.
+Answering no returns after short-distance pruning.</p></li>
+<li><p>For reference-guided data, choose whether missingness should determine
+which SNP is retained from an LD group. De novo data currently uses basic
+SNPRelate pruning.</p></li>
+<li><p>Inspect the LD boxplot and answer
+<code>"Enter the long LD threshold (filter.long.ld threshold, double/proportion):"</code>.</p></li>
+</ol><p>Use <code>interactive.filter = FALSE</code> and explicit short- and long-distance
+settings for a reproducible analysis. The missingness-aware option is passed
+as <code>long.ld.missing</code> through <code>...</code>.</p>
+    </div>
+    <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
     <p>Zheng X, Levine D, Shen J, Gogarten SM, Laurie C, Weir BS.
 (2012) A high-performance computing toolset for relatedness and principal component
@@ -227,30 +241,31 @@ doi:10.1093/bioinformatics/bts606</p>
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
-<span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">require</a></span><span class="op">(</span><span class="va"><a href="https://github.com/zhengxwen/SNPRelate" class="external-link">SNPRelate</a></span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="co">#To install SNPRelate:</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"BiocManager"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu">install</span> <span class="op">(</span><span class="st">"SNPRelate"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://thierrygosselin.github.io/radr/">radr</a></span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">data</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_vcf.html" class="external-link">read_vcf</a></span><span class="op">(</span>data <span class="op">=</span> <span class="st">"my.vcf"</span>, strata <span class="op">=</span> <span class="st">"my.strata.tsv"</span>, verbose <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">genome</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="st">"my.vcf"</span>,</span></span>
+<span class="r-in"><span>  strata <span class="op">=</span> <span class="st">"my.strata.tsv"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># short distance LD, no long distance LD:</span></span></span>
-<span class="r-in"><span><span class="va">check.short.ld</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span>data <span class="op">=</span> <span class="va">data</span>, filter.short.ld <span class="op">=</span> <span class="st">"mac"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># Explore short- and long-distance LD interactively.</span></span></span>
+<span class="r-in"><span><span class="va">genome</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span>data <span class="op">=</span> <span class="va">genome</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># short distance LD and long distance LD:</span></span></span>
-<span class="r-in"><span><span class="va">pruned.ld</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span></span></span>
-<span class="r-in"><span>        data <span class="op">=</span> <span class="va">data</span>,</span></span>
-<span class="r-in"><span>        filter.short.ld <span class="op">=</span> <span class="st">"mac"</span>,</span></span>
-<span class="r-in"><span>        filter.long.ld <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># Alternatively, use a separate unfiltered GDS for scripted pruning.</span></span></span>
+<span class="r-in"><span><span class="va">scripted_genome</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></span><span class="op">(</span><span class="st">"my_genome_scripted.gds"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">scripted_genome</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">scripted_genome</span>,</span></span>
+<span class="r-in"><span>  interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span></span>
+<span class="r-in"><span>  filter.short.ld <span class="op">=</span> <span class="st">"mac"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># short distance LD and long distance LD, incorporating missing data:</span></span></span>
-<span class="r-in"><span><span class="va">pruned.ld</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span></span></span>
-<span class="r-in"><span>         data <span class="op">=</span> <span class="va">data</span>, <span class="co"># a GDS object generated by radr</span></span></span>
-<span class="r-in"><span>         filter.short.ld <span class="op">=</span> <span class="st">"mac"</span>,</span></span>
-<span class="r-in"><span>         filter.long.ld <span class="op">=</span> <span class="fl">0.8</span>,</span></span>
-<span class="r-in"><span>         long.ld.missing <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Long-distance pruning can use missingness to choose among linked SNPs.</span></span></span>
+<span class="r-in"><span><span class="va">another_genome</span> <span class="op">&lt;-</span> <span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/read_genome.html" class="external-link">read_genome</a></span><span class="op">(</span><span class="st">"my_genome_long_ld.gds"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">another_genome</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu">filter_ld</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">another_genome</span>,</span></span>
+<span class="r-in"><span>  interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span></span>
+<span class="r-in"><span>  filter.short.ld <span class="op">=</span> <span class="st">"mac"</span>,</span></span>
+<span class="r-in"><span>  filter.long.ld <span class="op">=</span> <span class="fl">0.8</span>,</span></span>
+<span class="r-in"><span>  long.ld.missing <span class="op">=</span> <span class="cn">TRUE</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

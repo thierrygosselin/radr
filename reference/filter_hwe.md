@@ -44,10 +44,9 @@ filter_hwe(
 
 - data:
 
-  A tidy data frame object in the global environment or a tidy data
-  frame in wide or long format in the working directory. *How to get a
-  tidy data frame ?* Look into genometranslator
-  [`tidy_genome`](https://thierrygosselin.github.io/genometranslator/reference/tidy_genome.html).
+  A GDS file or connection, or a supported tidy genomic object. Use
+  [`read_genome`](https://thierrygosselin.github.io/genometranslator/reference/read_genome.html)
+  to import genomic files.
 
 - interactive.filter:
 
@@ -84,7 +83,7 @@ filter_hwe(
 
   - `2` = 0.01
 
-  - `3` = 0.0001
+  - `3` = 0.001
 
   - `4` = 0.0001
 
@@ -95,11 +94,9 @@ filter_hwe(
 
 - filename:
 
-  (optional) The function uses
-  [`write.fst`](http://www.fstpackage.org/reference/write_fst.md), to
-  write the tidy data frame in the folder created in the working
-  directory. The file extension appended to the `filename` provided is
-  `.rad`. Default: `filename = NULL`.
+  Optional output prefix reserved for compatibility. HWE candidate
+  datasets currently use standardized descriptive filenames in the
+  function output folder. Default: `filename = NULL`.
 
 - parallel.core:
 
@@ -118,34 +115,10 @@ filter_hwe(
 
 ## Value
 
-A list in the global environment objects:
-
-1.  \$path.folder: the path to the folder generated.
-
-2.  \$hw.pop.threshold: the number of populations tolerated to be in HWD
-    before blacklisting the markers.
-
-3.  \$plot.hwd.thresholds: useful figure that highlight the number of
-    markers blacklisted based on the number of populations in HWD and
-    mid p-value thresholds.
-
-4.  \$plot.tern: ternary plot of markers (currently unavailable until
-    ggtern is updated).
-
-5.  \$hw.manhattan: manhattan plot of markers in Hardy-Weinberg
-    disequilibrium.
-
-6.  \$hwe.pop.sum: a summary tibble with populations, number of markers
-    in total, number of markers monomorphic for the populations, number
-    of markers in Hardy-Weinberg Equilibrium (HWE), number of markers in
-    Hardy-Weinberg Dquilibrium (HWD) with all the different mid p-values
-    observed on the data.
-
-7.  \$midp.threshold: the mid p-value threshold chosen for the final
-    dataset (next)
-
-8.  \$tidy.hw.filtered: the final filtered dataset (oter datasets `.rad`
-    are generated automatically by the function, check the folder)
+The filtered data. For GDS workflows, marker filtering metadata is
+synchronized with the selected HWE result. HWE summaries, plots,
+candidate datasets, marker lists, and filtering parameters are written
+to the output folder so threshold sensitivity can be reviewed.
 
 Written in the folder:
 
@@ -169,9 +142,9 @@ Written in the folder:
 5.  hwe.manhattan.plot.pdf: manhattan plot of markers in Hardy-Weinberg
     disequilibrium.
 
-6.  tidy.filtered.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.rad: several
-    tidy dataset filtered with different mid p value and populations in
-    HWD thresholds
+6.  tidy.filtered.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.arrow.parquet:
+    candidate datasets generated for different mid-p and population
+    thresholds
 
 7.  whitelist.markers.hwe.xxx.mid.p.value.xxx.hw.pop.threshold.tsv:
     several whitelist of markers with different mid p value and
@@ -182,10 +155,6 @@ Written in the folder:
     populations in HWD thresholds
 
 ## Details
-
-**Interactive version**
-
-The user is asked to look at figures before choosing filter thresholds.
 
 **HWE threshold**
 
@@ -286,6 +255,26 @@ different thresholds.
 
 7.  Migration, Mutation and Selection are negligible
 
+## Interactive version
+
+The function calculates HWE results, writes the diagnostic tables and
+plots, and asks the user to inspect them before filtering. The questions
+are:
+
+1.  `"Do you want to continue with the filtering? (y/n):"`
+
+2.  If yes,
+    `"Based on figures and tables enter the hw.pop.threshold (integer):"`
+
+3.  Finally, select one mid-p threshold: `1 = 0.05`, `2 = 0.01`,
+    `3 = 0.001`, `4 = 0.0001`, or `5 = 0.00001`.
+
+The population threshold controls how many strata may show
+disequilibrium before a marker is blacklisted. Answering no retains the
+diagnostics without applying an HWE filter. Use
+`interactive.filter = FALSE` with explicit `hw.pop.threshold` and
+`midp.threshold` values for reproducibility.
+
 ## References
 
 Weir, B.S. (1996) Genetic data analysis II. Sinauer Associates,
@@ -311,13 +300,24 @@ Genetics, 136, 727-741.
 
 ``` r
 if (FALSE) { # \dontrun{
-require(HardyWeinberg)
-library(radr)
-# for the interactive version (recommended)
-turtle.pop <- radr::filter_hwe(
-   data = "turtle.vcf",
-   strata = "turtle.strata.tsv",
-   filename = "hwe.turtle"
+genome <- genometranslator::read_genome(
+  data = "turtle.vcf",
+  strata = "turtle.strata.tsv"
+)
+
+# Inspect HWE results and select thresholds interactively.
+genome <- radr::filter_hwe(data = genome)
+
+# Alternatively, start from a separate unfiltered GDS. Target markers in
+# disequilibrium in four strata
+# and use a mid-p threshold of 0.0001 (option 4).
+scripted_genome <- genometranslator::read_genome("turtle_scripted.gds")
+scripted_genome <- radr::filter_hwe(
+  data = scripted_genome,
+  interactive.filter = FALSE,
+  filter.hwe = TRUE,
+  hw.pop.threshold = 4,
+  midp.threshold = 4L
 )
 } # }
 ```
