@@ -94,10 +94,8 @@ the relationshio between locus coverage and locus observed heterozygosity
 statistics. Coverage information is required (e.g. in a vcf file...).
 Default: \code{coverage.info = FALSE}.}
 
-\item{filename}{(optional) The function uses \code{\link[fst]{write.fst}},
-to write the tidy data frame in
-the folder created in the working directory. The file extension appended to
-the \code{filename} provided is \code{.rad}.
+\item{filename}{Optional prefix for writing the filtered tidy genomic data as
+an Arrow Parquet file. The extension \code{.arrow.parquet} is appended.
 Default: \code{filename = NULL}.}
 
 \item{parallel.core}{Number of workers available for parallel operations.
@@ -110,30 +108,13 @@ Default: \code{verbose = TRUE}.}
 functions.}
 }
 \value{
-The function returns inside the global environment a list with
-15 objects, the objects names are found by using \code{names(your.list.name)}:
-
-\enumerate{
-\item filtered tidy data frame: \code{$tidy.filtered.het}
-\item whitelist of markers:\code{$whitelist.markers}
-\item the strata:\code{$strata}
-\item the filters parameters used:\code{$filters.parameters}
-\item the individual's heterozigosity:\code{$individual.heterozigosity}
-\item the heterozygosity statistics per populations and overall:\code{$heterozygosity.statistics}
-\item the blacklisted individuals based on the individual's heterozigosity:\code{$blacklist.ind.het}
-\item a list containing the helper tables:\code{$helper.table.het}
-\item the boxplot of individual observed heterozygosity:\code{$individual.heterozygosity.boxplot}
-\item the manhattan plot of individual heterozygosity:\code{$individual.heterozygosity.manhattan.plot}
-\item the boxplot of observed heterozygosity averaged across markers and pop:\code{$markers.pop.heterozygosity.boxplot}
-\item the density plot of observed heterozygosity averaged across markers and pop:\code{$markers.pop.heterozygosity.density.plot}
-\item the manhattan plot of observed heterozygosity averaged across markers and pop:\code{$markers.pop.heterozygosity.manhattan.plot}
-\item the relationship between the number of SNPs on a locus and locus observed heterozygosity statistics:\code{$snp.per.locus.het.plot}
-\item the relationship between locus coverage (read depth) and locus observed heterozygosity statistics:\code{$het.cov.plot}
-\item whitelist of markers:\code{$whitelist.markers}
-\item whitelist of markers:\code{$whitelist.markers}
-}
-
-In the working directory, output is conditional to \code{interactive.filter} argument
+A named list containing the filtered tidy data
+(\code{tidy.filtered.het}), marker whitelist and blacklist, strata,
+filtering parameters, individual and marker heterozygosity statistics,
+blacklisted individuals, helper tables, and the generated diagnostic plots.
+Use \code{names(result)} to inspect all available components. Unlike the
+newer metadata-only GDS filters, this function currently returns its filtered
+genomic data in the \code{tidy.filtered.het} component.
 }
 \description{
 Observed Heterozygosity based filtering.
@@ -165,16 +146,6 @@ a decision on thresholds.
 }
 }
 \details{
-\strong{Interactive version}
-
-There are 4 steps in the interactive version to visualize and filter
-the data based heterozygosity statistics:
-
-Step 1. Individual's observed heterozygosity: outliers that might represent mixed samples
-Step 2. Blacklist outliers based on a proportion threshold of mean observed heterozygosity
-Step 3. Observed heterozygosity statistics per populations and overall
-Step 4: Blacklist markers based on observed heterozygosity
-
 \strong{outlier.pop.threshold}
 
 If your a regular radr user, you've seen the \code{pop.num.threshold}.
@@ -222,6 +193,45 @@ this sample requires more attention (action: blacklist) and conduct more tests.
 e.g. for biallelic data, look for coverage imbalance between ALT/REF allele.
 At this point you need to distinguish between an artifact of poor polymorphism discovery
 or a biological reason (highly inbred individual, etc.).
+}
+}
+\section{Interactive version}{
+
+The interactive workflow has four stages:
+\enumerate{
+\item Inspect individual heterozygosity Manhattan and box plots for unusually
+high or low samples and compare the pattern with missingness.
+\item Enter the minimum individual heterozygosity threshold, where 0 turns
+off the lower filter, followed by the maximum threshold, where 1 turns off
+the upper filter.
+\item Choose \code{"haplotype"} or \code{"SNP"}, then choose
+\code{"overall"} or \code{"pop"}. Haplotype filtering evaluates consistency
+among SNPs on a locus; SNP filtering treats variants independently.
+\item Enter \code{het.threshold}. With the haplotype approach, also enter
+\code{het.dif.threshold}. With the population approach, enter
+\code{outlier.pop.threshold}, the number of outlier populations tolerated.
+}
+The console explains each threshold immediately before requesting it and
+shows examples of its effect. Use \code{interactive.filter = FALSE} with
+explicit threshold and approach arguments for a reproducible analysis.
+}
+
+\examples{
+\dontrun{
+genome <- genometranslator::read_genome("my_genome.gds")
+
+# Inspect individual and marker heterozygosity and choose thresholds.
+het_result <- radr::filter_het(data = genome)
+
+# Reproducible SNP-level filtering across the complete dataset.
+het_result <- radr::filter_het(
+  data = genome,
+  interactive.filter = FALSE,
+  ind.heterozygosity.threshold = c(0.02, 0.08),
+  het.approach = c("SNP", "overall"),
+  het.threshold = 0.60
+)
+filtered_genome <- het_result$tidy.filtered.het
 }
 }
 \seealso{

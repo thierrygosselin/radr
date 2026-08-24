@@ -1,32 +1,30 @@
 # Minor Allele Count filtering
 #' @name filter_ma
 #' @title MAC, MAF and MAD filter
-#' @description The Allele Frequency is the relative frequency of an allele for a markers/SNP.
-#' Calculations usually involve classifying the alleles into Major/Minor,
-#' Reference (REF)/Alternate (ALT) and/or Ancestral or derived allele.
-#' radr provides a filter based of Minor Allele Count, frequency and depth function.
-#' Remove/blacklist markers based on Minor/Alternate Allele Count (MAC), Frequency (MAF)
-#' or Depth of coverage (MAD).
-#' Use it to remove noise, sequencing errors or low marker polymorphism.
-#' Some analysis performs better with the full spectrum of allele frequency,
-#' consequently it's important to understand the limite of using the
-#' thresholds to avoid generating biases.
+#' @description Remove or blacklist markers using the global minor allele count
+#' (MAC), minor allele frequency (MAF), or minor allele depth (MAD). These
+#' statistics can help remove weakly supported variants, sequencing or
+#' genotyping noise, and markers with very low polymorphism.
+#'
+#' Filtering rare alleles also changes the allele-frequency spectrum. This can
+#' bias analyses that depend on that spectrum, including population structure,
+#' demographic inference, differentiation, and assignment. Select a threshold
+#' that matches the intended analysis, and report it explicitly.
 #'
 #' **Filter target:** Markers.
 #'
-#' \strong{Statistics}: count, frequency or depth of the allele per markers.
-#' This filter as NO concept of strata/populations. It is computed globally.
+#' \strong{Statistics}: Minor allele count, frequency, or read depth per marker.
+#' The statistic is computed globally across the active individuals. Strata or
+#' population labels are not used.
 
 #' @param ma.stats (optional, character) The statistic of the alternate (minor)
 #' allele to keep a SNP (see details). Options are: \code{"mac", "maf", "mad"}.
 #' Default: \code{ma.stats = "mac"}.
 
 #' @param filter.ma (optional, integer or double) The threshold to
-#' blacklist Minor Allele (see details). e.g. with \code{ma.stats = "mac"} and
-#' \code{filter.ma = 3} will blacklist markers based on minor allele count
-#' less or equal to 3.
-#' This argument as no concept of locus, local or strata or pop.
-#' It's applied globally, by SNPs.
+#' blacklist a marker (see Details). For example, \code{ma.stats = "mac"} and
+#' \code{filter.ma = 3} blacklist markers with a minor allele count strictly
+#' below 3. The threshold is applied globally and independently to every SNP.
 #' Default: \code{filter.ma = NULL}.
 
 
@@ -46,44 +44,74 @@
 #' when computing allele counts from GDS.
 #' Default: \code{keep.biallelic = TRUE}.
 
-#' @param filename (optional, character) Write to folder the MAF filtered
-#' tidy dataset. The name will be appended \code{.rad}. With default, the filtered
-#' data is only in the global environment.
+#' @param filename (optional, character) Output filename prefix when a tidy
+#' tibble is supplied. The filtered table is written as an Arrow Parquet file.
+#' GDS input is updated through its marker metadata and is not duplicated by
+#' this argument.
 #' Default: \code{filename = NULL}.
 
 #' @inheritParams radr_common_arguments
 
-#' @section MAC, MAF or MAD ?:
-#' Using count or frequency to remove a SNPs ? The preferred choice in radr
-#' as changed from frequency to count, because we think the filtering should not
-#' alter the spectrum and this is only achieved if the same criteria is applied
-#' for each SNP.
+#' @section Why is the statistic computed globally?:
+#' Applying a separate threshold within each stratum makes marker retention
+#' depend on stratum sample size, missingness, and allele-frequency differences.
+#' It can preferentially remove variants that are rare in one population but
+#' common in another, erase locally informative alleles, or enrich the retained
+#' data for particular patterns of differentiation. These effects can bias
+#' downstream comparisons among populations.
 #'
+#' For this reason, \code{filter_ma()} applies one criterion to each marker using
+#' all active individuals and without consulting population labels. This does
+#' not make every threshold unbiased. Global filtering still changes the
+#' allele-frequency spectrum, and a globally retained allele may occur mostly
+#' in one stratum. The appropriate threshold therefore depends on the data and
+#' the intended analysis.
 #'
-#' Even small differences in missing data between RADseq markers
-#' generates differences in MAF frequency thresholds applied.
+#' @section MAC, MAF or MAD?:
+#' \strong{MAC} is the preferred general-purpose choice in radr. A fixed count
+#' threshold asks for the same minimum number of observed minor alleles at every
+#' marker. In contrast, a fixed MAF threshold corresponds to different allele
+#' counts when the number of successfully genotyped individuals varies among
+#' markers.
 #'
-#' Example with a datset consisting of N = 36 individuals and 3 SNPs
-#' with varying level of missing genotypes:
+#' This is especially relevant for RADseq data. Restriction-site polymorphism,
+#' variation in read depth, allele dropout, library effects, and genotype
+#' calling can produce marker-specific missingness. Because MAF uses the number
+#' of observed chromosomes as its denominator, two markers with the same minor
+#' allele count can fall on opposite sides of a MAF threshold solely because
+#' their missing-data rates differ.
+#'
+#' Consider 36 diploid individuals and three SNPs with the same minor allele
+#' count but different numbers of genotyped individuals:
 #'
 #' \itemize{
-#' \item \code{SNP number : number samples genotypes : REF/ALT counts}
-#' \item SNP1 : 36 : 69/3
-#' \item SNP2 : 30 : 65/3
-#' \item SNP3 : 24 : 45/3
+#' \item \code{SNP: genotyped individuals: major/minor allele counts: MAF}
+#' \item SNP1: 36: 69/3: 0.0417
+#' \item SNP2: 30: 57/3: 0.0500
+#' \item SNP3: 24: 45/3: 0.0625
 #' }
 #'
-#' Each SNPs have the same alternate allele count, corresponding to
-#' 2 individuals with the polymorphism: 1 homozygote + 1 heterozygote.
-#' Applying a MAF threshold of
-#' 0.05 would mean that SNP3 would be blacklisted
-#' (\code{24 * 2 * 0.05 = 2.4 alt alleles required to pass}).
+#' Each marker has three copies of the minor allele. With
+#' \code{filter.ma = 0.05}, SNP1 is removed because its MAF is below 0.05,
+#' whereas SNP2 and SNP3 are retained. With a MAC threshold of 3, all three are
+#' treated identically and retained. MAC does not preserve the allele-frequency
+#' spectrum, but it avoids changing the effective count criterion from one
+#' marker to another as missingness changes.
 #'
+#' \strong{MAF} remains useful when a frequency threshold is scientifically
+#' required or when marker call rates are sufficiently uniform. Its dependence
+#' on the observed denominator should be considered and reported.
 #'
-#' \strong{Using count instead of frequency allows each RADseq markers,
-#' with varying missing data, to be treated equally.}
+#' \strong{MAD} uses the total read support for the less abundant allele. It can
+#' identify variants that pass a count threshold but whose minor allele is
+#' supported by very little sequence coverage. For example, two markers may
+#' both have MAC = 4. If the minor allele has total depths of 4 and 32 reads,
+#' respectively, a MAD threshold of 5 removes the first marker and retains the
+#' second. MAD is therefore a read-support filter, not a replacement for MAC or
+#' MAF. It is available only when allele-depth information is present, and its
+#' interpretation depends on library depth and genotype-calling properties.
 
-#' @section Advance mode:
+#' @section Advanced mode:
 #'
 #' \emph{dots-dots-dots ...} allows to pass several arguments for fine-tuning the function:
 #' \enumerate{
@@ -103,89 +131,93 @@
 
 #' @section Interactive version:
 #'
-#' To help choose a threshold for the local and global MAF
-#' use the interactive version.
+#' The interactive mode exposes the decisions made by the filter before it
+#' modifies marker status. It has three steps:
 #'
-#' 2 steps in the interactive version:
+#' \enumerate{
+#' \item Calculate the available global minor-allele statistics, write the
+#' helper tables and figures, and display the distributions and consequences of
+#' candidate thresholds.
+#' \item Ask \code{"Choose the statistic:"}. The available answers are drawn
+#' from \code{"mac"}, \code{"maf"}, and \code{"mad"}; MAD is offered only when
+#' allele-depth information is available.
+#' \item Ask \code{"Choose the <statistic> threshold:"}, where
+#' \code{<statistic>} is the choice made in step 2. Markers with a value strictly
+#' below the selected threshold are blacklisted.
+#' }
 #'
-#' Step 1. Visualization and helper table.
-#'
-#' Step 2. Minor Allele statistic and threshold selection
-#'
-#' Step 3. Filtering markers based on MAC, MAF or MAD
+#' Use \code{interactive.filter = FALSE} for a reproducible scripted analysis,
+#' and supply both \code{ma.stats} and \code{filter.ma} explicitly.
 
 
 #' @rdname filter_ma
 #' @export
-#' @return With \code{interactive.filter = FALSE}, a list in the global environment,
-#' with 7 objects:
-#' \enumerate{
-#' \item $tidy.filtered.mac
-#' \item $whitelist.markers
-#' \item $blacklist.markers
-#' \item $mac.data
-#' \item $filters.parameters
-#' }
-#'
-#' With \code{interactive.filter = TRUE}, a list with 4 additionnal objects are generated.
-#' \enumerate{
-#' \item $distribution.mac.global
-#' \item $distribution.mac.local
-#' \item $mac.global.summary
-#' \item $mac.helper.table
-#' }
-#'
-#' \strong{mac.helper.table:}
-#'
-#' First and second variables (in columns) represents POP_ID and sample size (n).
-#'
-#' The last 2 rows are the local MAF (suggested based on the lowest pop value)
-#' and the TOTAL/GLOBAL observations.
-#'
-#' Columns starting with ALT are the variable corresponding
-#' to the number of alternative (ALT) allele (ranging from 1 to 20).
-#' The observations in the ALT allele variable columns are the local (for the pop)
-#' and global (last row) MAF of your dataset.
-#' e.g. ALT_3 can potentially represent 3 heterozygote individuals with
-#' the ALT allele or 1 homozygote individuals for the ALT allele and
-#' 1 heterozygote individual. And so on...
+#' @return The filtered data in the same representation as the input. For GDS
+#' input, the function updates the \code{FILTERS} field in the marker metadata,
+#' synchronizes the active variants, and returns the GDS connection. The GDS
+#' file on disk is therefore modified. For tidy input, it returns a filtered
+#' tibble. Diagnostic tables, figures, blacklists, whitelists, and filtering
+#' parameters are written to the function output folder when applicable.
 
 
 #' @examples
 #' \dontrun{
-
-#' # The minumum
-#' mac <- radr::filter_ma(data = turtle.tidy.data)
-#' # This will use the default: interactive version,
-#' # a list is created and to view the filtered tidy data:
-#' mac.tidy.data <- mac$tidy.filtered.mac
+#' # Open a GDS created by genometranslator.
+#' genome <- genometranslator::read_genome("my_genome.gds")
 #'
-#' # No user interaction
+#' # Explore the distributions and choose the statistic and threshold
+#' # interactively. The questions and available diagnostics are described in
+#' # the Interactive version section.
+#' genome <- radr::filter_ma(data = genome)
 #'
-#' # Using filter.ma = 4, is a good practice to remove mostly sequencing errors
-#' # and assembly artifacts, because it requires the markers to be genotyped in
-#' # 4 heterozygote individuals or 2 homozygote individuals for the alternate
-#' # allele or 2 heterozygote individuals and 1 homozygote individual for the
-#' # alternate allele. Overall, never less than 2 indiduals are required.
+#' # Reproducible non-interactive MAC filtering. A threshold of 4 retains a
+#' # marker only when at least four copies of its minor allele are observed.
+#' # Four copies could be carried by four heterozygous individuals, two
+#' # minor-allele homozygotes, or one minor-allele homozygote plus two
+#' # heterozygotes. Consequently, at least two diploid individuals must carry
+#' # the minor allele.
 #'
-#' mac <- radr::filter_ma(
-#'         data = turtle.gds, # using gds object
-#'         ma.stats = "mac",
-#'         filter.ma = 4,
-#'         filename = "turtle.mac")
+#' genome <- radr::filter_ma(
+#'   data = genome,
+#'   interactive.filter = FALSE,
+#'   ma.stats = "mac",
+#'   filter.ma = 4
+#' )
 #'
-#' # This will remove monomorphic markers (by default filter.monomorphic = TRUE)
-#' # The filtered data will be written in the directory under the name:
-#' # turtle.maf.rad
+#' # Alternative starting from a separate, unfiltered copy of the source GDS:
+#' # use MAF when a proportional threshold is appropriate for the analysis.
+#' # Here, markers with global MAF below 0.01 are blacklisted.
+#' maf_genome <- genometranslator::read_genome("my_genome_for_maf.gds")
+#' maf_genome <- radr::filter_ma(
+#'   data = maf_genome,
+#'   interactive.filter = FALSE,
+#'   ma.stats = "maf",
+#'   filter.ma = 0.01
+#' )
+#'
+#' # MAD requires allele-depth information. This example retains markers whose
+#' # minor allele is supported by at least five reads across active samples.
+#' mad_genome <- genometranslator::read_genome("my_genome_for_mad.gds")
+#' mad_genome <- radr::filter_ma(
+#'   data = mad_genome,
+#'   interactive.filter = FALSE,
+#'   ma.stats = "mad",
+#'   filter.ma = 5
+#' )
 #' }
 
 
 
-#' @references Good reading: Linck, E., Battey, C. (2019).
-#' Minor allele frequency thresholds strongly affect population structure
-#' inference with genomic data sets.
-#' Molecular Ecology Resources 19(3), 639-647.
-#' https://dx.doi.org/10.1111/1755-0998.12995
+#' @references
+#' Linck, E., & Battey, C. J. (2019). Minor allele frequency thresholds
+#' strongly affect population structure inference with genomic data sets.
+#' \emph{Molecular Ecology Resources}, 19(3), 639-647.
+#' \doi{10.1111/1755-0998.12995}
+#'
+#' Roesti, M., Salzburger, W., & Berner, D. (2012). Uninformative
+#' polymorphisms bias genome scans for signatures of selection.
+#' \emph{BMC Evolutionary Biology}, 12, 94.
+#' \doi{10.1186/1471-2148-12-94}
 
 
 #' @note Thanks to Charles Perrier and Jeremy Gaudin for very useful comments

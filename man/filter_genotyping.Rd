@@ -57,13 +57,8 @@ Default: \code{verbose = TRUE}.}
 functions.}
 }
 \value{
-The filtered dataset, of the same type as the input:
-\itemize{
-\item if \code{data} is a GDS connection (\code{SeqVarGDSClass}), the
-same connection is returned with updated \code{markers.meta};
-\item if \code{data} is a GDS file path, the path is returned (the file is
-updated on disk).
-}
+The filtered GDS connection with updated \code{markers.meta}. The underlying
+GDS file is updated on disk.
 
 Side-effects:
 \itemize{
@@ -105,14 +100,30 @@ for genotyping/missingness-based pruning \emph{after} VCF import
 (e.g. after \code{\link{read_vcf}}), in contrast to VCF-level slimming using
 tools like \code{\link{filter_monomorphic_vcf}}.
 }
+\section{Interactive version}{
+
+The interactive mode first displays and writes the marker-missingness
+distribution and helper tables. It then asks
+\code{"Choose the maximum missing proportion allowed:"}, with a value from
+0 to 1. Markers with \code{MISSING_PROP} greater than the selected value are
+blacklisted. For example, 0.20 permits at most 20 percent missing genotypes
+per marker. Use \code{interactive.filter = FALSE} and provide
+\code{filter.genotyping} explicitly for a reproducible analysis.
+}
+
 \examples{
 \dontrun{
-# Filter markers with more than 20\% missing genotypes
-gds <- genometranslator::read_vcf(data = "populations.snps.vcf") \%>\%
-       radr::filter_genotyping(
-            data               = .,
-            interactive.filter = FALSE,
-            filter.genotyping  = 0.2
+genome <- genometranslator::read_genome("populations.snps.vcf")
+
+# Inspect marker missingness and choose the threshold interactively.
+genome <- radr::filter_genotyping(data = genome)
+
+# Alternatively, start from a separate unfiltered GDS for a scripted run.
+scripted_genome <- genometranslator::read_genome("populations_scripted.gds")
+scripted_genome <- radr::filter_genotyping(
+  data = scripted_genome,
+  interactive.filter = FALSE,
+  filter.genotyping = 0.20
 )
 }
 

@@ -64,7 +64,10 @@ Default: \code{verbose = TRUE}.}
 functions.}
 }
 \value{
-A list with the filtered input and blacklist of individuals.
+The filtered GDS connection. Individual metadata and active samples
+are updated in place, so the underlying GDS file is modified. Diagnostic
+files, individual blacklists, and filtering parameters are written to the
+function output folder.
 }
 \description{
 Remove individuals with bad QC based on:
@@ -81,24 +84,54 @@ Remove individuals with bad QC based on:
 Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
 and might be of interest for users who wants to blacklist individuals.
 }
+\section{Interactive version}{
+
+The function first displays sample-level missingness, heterozygosity, and
+coverage diagnostics. It then proceeds through the following branches:
+\enumerate{
+\item Missingness: asks whether to blacklist samples. If yes, choose the
+boxplot-outlier statistic or enter the maximum tolerated missing proportion.
+\item Heterozygosity: asks whether to blacklist samples. If yes, choose the
+outlier limits or enter the minimum and maximum tolerated heterozygosity.
+\item Coverage, when available: separately asks whether to filter total,
+median, and IQR coverage. For every selected statistic, choose the outlier
+limits or enter minimum and maximum tolerated values.
+}
+The initial yes/no prompts are, respectively,
+\code{"Do you want to blacklist samples based on missingness?"},
+\code{"... based on heterozygosity?"}, and
+\code{"... based on TOTAL/MEDIAN/IQR coverage?"}. Choosing custom values
+leads to the corresponding minimum and maximum threshold questions. Use
+\code{interactive.filter = FALSE} and explicit arguments for a reproducible
+analysis.
+}
+
 \examples{
 \dontrun{
-require(SeqArray)
+genome <- genometranslator::read_genome("my_genome.gds")
 
-# blacklisting outliers individuals:
-id.qc <- radr::filter_individuals(
-    data = "my.radr.gds.rad",
-    filter.individuals.missing = "outliers",
-    filter.individuals.heterozygosity = "outliers",
-    filter.individuals.coverage.total = "outliers")
+# Inspect all available sample QC statistics interactively.
+genome <- radr::filter_individuals(data = genome)
 
-# using values to blacklist individuals:
-id.qc <- radr::filter_individuals(
-    data = "my.radr.gds.rad",
-    filter.individuals.missing = 0.5,
-    filter.individuals.heterozygosity = c(0.02, 0.03),
-    filter.individuals.coverage.total = c(900000, 5000000))
+# Alternatively, start from a separate unfiltered GDS for a scripted run.
+scripted_genome <- genometranslator::read_genome("my_genome_scripted.gds")
+scripted_genome <- radr::filter_individuals(
+  data = scripted_genome,
+  interactive.filter = FALSE,
+  filter.individuals.missing = "outliers",
+  filter.individuals.heterozygosity = "outliers",
+  filter.individuals.coverage.total = "outliers"
+)
 
+# Project-specific limits can be supplied instead of outlier rules.
+another_genome <- genometranslator::read_genome("my_genome_limits.gds")
+another_genome <- radr::filter_individuals(
+  data = another_genome,
+  interactive.filter = FALSE,
+  filter.individuals.missing = 0.50,
+  filter.individuals.heterozygosity = c(0.02, 0.06),
+  filter.individuals.coverage.total = c(9e5, 5e6)
+)
 }
 }
 \seealso{

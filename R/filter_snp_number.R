@@ -33,45 +33,44 @@
 
 #' @rdname filter_snp_number
 #' @export
-#' @details
-#' \strong{Interactive version}
+#' @section Interactive version:
 #'
-#' There are 2 steps in the interactive version to visualize and filter
-#' the data based on the number of SNP on the read/locus:
-#'
-#' Step 1. SNP number per read/locus visualization
-#'
-#' Step 2. Choose the filtering thresholds
-#'
-#'
-#' @return A list in the global environment with 6 objects:
+#' The function first displays and writes the distribution of SNPs per locus
+#' and the effect of candidate thresholds. It then asks:
 #' \enumerate{
-#' \item $snp.number.markers
-#' \item $number.snp.reads.plot
-#' \item $whitelist.markers
-#' \item $tidy.filtered.snp.number
-#' \item $blacklist.markers
-#' \item $filters.parameters
+#' \item \code{"Do you still want to blacklist markers? (y/n):"}
+#' \item If yes, choose \code{1} to use the upper boxplot-outlier statistic or
+#' \code{2} to enter a threshold.
+#' \item With option 2, answer
+#' \code{"Enter the maximum number of SNP per locus allowed:"}.
 #' }
+#' All SNPs in loci containing more than the selected number are blacklisted.
+#' Answering no leaves the data unchanged. Use
+#' \code{interactive.filter = FALSE} and provide \code{filter.snp.number}
+#' explicitly for a reproducible analysis.
 #'
-#' The object can be isolated in separate object outside the list by
-#' following the example below.
+#' @return The filtered data in the same representation as the input. GDS
+#' marker metadata and active variants are updated in place. Diagnostic files,
+#' marker lists, and filtering parameters are written to the output folder.
 
 #' @examples
 #' \dontrun{
-#' turtle.outlier.snp.number <- radr::filter_snp_number(
-#' data = "turtle.vcf",
-#' strata = "turtle.strata.tsv",
-#' max.snp.number = 4,
-#' filename = "tidy.data.turtle.tsv"
+#' genome <- genometranslator::read_genome(
+#'   data = "turtle.vcf",
+#'   strata = "turtle.strata.tsv"
 #' )
-
 #'
-#' tidy.data <- turtle.outlier.snp.number$tidy.filtered.snp.number
+#' # Inspect the SNP-per-locus distribution interactively.
+#' genome <- radr::filter_snp_number(data = genome)
 #'
-#' #Inside the same list, to isolate the markers blacklisted:
-#' blacklist <- turtle.outlier.snp.number$blacklist.markers
-#'
+#' # Alternatively, use a separate unfiltered GDS for a scripted run that
+#' # retains loci containing at most four SNPs.
+#' scripted_genome <- genometranslator::read_genome("turtle_scripted.gds")
+#' scripted_genome <- radr::filter_snp_number(
+#'   data = scripted_genome,
+#'   interactive.filter = FALSE,
+#'   filter.snp.number = 4
+#' )
 #' }
 
 filter_snp_number <- function(

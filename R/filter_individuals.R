@@ -53,7 +53,30 @@
 
 #' @inheritParams radr_common_arguments
 
-#' @return A list with the filtered input and blacklist of individuals.
+#' @section Interactive version:
+#' The function first displays sample-level missingness, heterozygosity, and
+#' coverage diagnostics. It then proceeds through the following branches:
+#' \enumerate{
+#' \item Missingness: asks whether to blacklist samples. If yes, choose the
+#' boxplot-outlier statistic or enter the maximum tolerated missing proportion.
+#' \item Heterozygosity: asks whether to blacklist samples. If yes, choose the
+#' outlier limits or enter the minimum and maximum tolerated heterozygosity.
+#' \item Coverage, when available: separately asks whether to filter total,
+#' median, and IQR coverage. For every selected statistic, choose the outlier
+#' limits or enter minimum and maximum tolerated values.
+#' }
+#' The initial yes/no prompts are, respectively,
+#' \code{"Do you want to blacklist samples based on missingness?"},
+#' \code{"... based on heterozygosity?"}, and
+#' \code{"... based on TOTAL/MEDIAN/IQR coverage?"}. Choosing custom values
+#' leads to the corresponding minimum and maximum threshold questions. Use
+#' \code{interactive.filter = FALSE} and explicit arguments for a reproducible
+#' analysis.
+#'
+#' @return The filtered GDS connection. Individual metadata and active samples
+#' are updated in place, so the underlying GDS file is modified. Diagnostic
+#' files, individual blacklists, and filtering parameters are written to the
+#' function output folder.
 
 #' @export
 #' @rdname filter_individuals
@@ -65,22 +88,30 @@
 
 #' @examples
 #' \dontrun{
-#' require(SeqArray)
+#' genome <- genometranslator::read_genome("my_genome.gds")
 #'
-#' # blacklisting outliers individuals:
-#' id.qc <- radr::filter_individuals(
-#'     data = "my.radr.gds.rad",
-#'     filter.individuals.missing = "outliers",
-#'     filter.individuals.heterozygosity = "outliers",
-#'     filter.individuals.coverage.total = "outliers")
+#' # Inspect all available sample QC statistics interactively.
+#' genome <- radr::filter_individuals(data = genome)
 #'
-#' # using values to blacklist individuals:
-#' id.qc <- radr::filter_individuals(
-#'     data = "my.radr.gds.rad",
-#'     filter.individuals.missing = 0.5,
-#'     filter.individuals.heterozygosity = c(0.02, 0.03),
-#'     filter.individuals.coverage.total = c(900000, 5000000))
+#' # Alternatively, start from a separate unfiltered GDS for a scripted run.
+#' scripted_genome <- genometranslator::read_genome("my_genome_scripted.gds")
+#' scripted_genome <- radr::filter_individuals(
+#'   data = scripted_genome,
+#'   interactive.filter = FALSE,
+#'   filter.individuals.missing = "outliers",
+#'   filter.individuals.heterozygosity = "outliers",
+#'   filter.individuals.coverage.total = "outliers"
+#' )
 #'
+#' # Project-specific limits can be supplied instead of outlier rules.
+#' another_genome <- genometranslator::read_genome("my_genome_limits.gds")
+#' another_genome <- radr::filter_individuals(
+#'   data = another_genome,
+#'   interactive.filter = FALSE,
+#'   filter.individuals.missing = 0.50,
+#'   filter.individuals.heterozygosity = c(0.02, 0.06),
+#'   filter.individuals.coverage.total = c(9e5, 5e6)
+#' )
 #' }
 
 #' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
@@ -243,7 +274,7 @@ filter_individuals <- function(
 
     # Step 2. Missingness-----------------------------------------------------------------
     if (interactive.filter) {
-      message("\nStep 2. Filtering markers based individual missingness/genotyping\n")
+      message("\nStep 2. Filtering samples based on individual missingness/genotyping\n")
 
       filter.individuals.missing <- tgbase::question(
         x = "Do you want to blacklist samples based on missingness ? (y/n):",
@@ -336,7 +367,7 @@ The maximum amount of missingness you tolerate for a sample (e.g. 0.3): ", minma
 
     # Step 3. Heterozygosity------------------------------------------------------------
     if (interactive.filter) {
-      message("\nStep 3. Filtering markers based on individual heterozygosity\n")
+      message("\nStep 3. Filtering samples based on individual heterozygosity\n")
 
       filter.individuals.heterozygosity <- tgbase::question(
         x = "Do you want to blacklist samples based on heterozygosity ? (y/n):",
@@ -459,7 +490,7 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
     if (depth.info) {
       if (interactive.filter) {
 
-        message("\nStep 4. Filtering markers based on individual's coverage\n")
+        message("\nStep 4. Filtering samples based on individual coverage\n")
 
         # TOTAL COVERAGE -------------------------------------------------------
         filter.individuals.coverage.total <- tgbase::question(

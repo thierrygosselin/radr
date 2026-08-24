@@ -35,37 +35,43 @@
 
 #' @rdname filter_snp_position_read
 #' @export
-#' @details
-#' \strong{Interactive version}
+#' @section Interactive version:
 #'
-#' There are 2 steps in the interactive version to visualize and filter
-#' the data based on the number of SNP on the read/locus:
-#'
-#' Step 1. SNP number per read/locus visualization
-#'
-#' Step 2. Choose the filtering thresholds
-#'
-#'
-#' @return A list in the global environment with 6 objects:
+#' The function first displays and writes the distribution of SNP positions on
+#' reads. It then asks the user to choose one of the following options:
 #' \enumerate{
-#' \item $snp.number.markers
-#' \item $number.snp.reads.plot
-#' \item $whitelist.markers
-#' \item $tidy.filtered.snp.number
-#' \item $blacklist.markers
-#' \item $filters.parameters
+#' \item \code{1}: all positions, which turns this filter off;
+#' \item \code{2}: boxplot outlier limits;
+#' \item \code{3}: the third-quartile rule;
+#' \item \code{4}: the interquartile-range rule;
+#' \item \code{5}: user-defined minimum and maximum positions.
 #' }
+#' With option 5, the function asks
+#' \code{"Enter the min position of SNP on the read:"} followed by
+#' \code{"Enter the max position of SNP on the read:"}. Positions inside the
+#' inclusive interval are retained. Use \code{interactive.filter = FALSE} and
+#' provide \code{filter.snp.position.read} explicitly for reproducibility.
 #'
-#' The object can be isolated in separate object outside the list by
-#' following the example below.
+#' @return The filtered data in the same representation as the input. GDS
+#' marker metadata and active variants are updated in place. Diagnostic files,
+#' marker lists, and filtering parameters are written to the output folder.
 
 #' @examples
 #' \dontrun{
-#' turtle <- radr::filter_snp_position_read(
-#' data = "turtle.vcf",
-#' strata = "turtle.strata.tsv",
-#' filter.snp.position.read = "outliers",
-#' filename = "tidy.data.turtle.tsv"
+#' genome <- genometranslator::read_genome(
+#'   data = "turtle.vcf",
+#'   strata = "turtle.strata.tsv"
+#' )
+#'
+#' # Inspect SNP positions and choose a rule interactively.
+#' genome <- radr::filter_snp_position_read(data = genome)
+#'
+#' # Alternatively, use a separate unfiltered GDS for a scripted run.
+#' scripted_genome <- genometranslator::read_genome("turtle_scripted.gds")
+#' scripted_genome <- radr::filter_snp_position_read(
+#'   data = scripted_genome,
+#'   interactive.filter = FALSE,
+#'   filter.snp.position.read = "outliers"
 #' )
 #' }
 
