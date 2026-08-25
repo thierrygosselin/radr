@@ -1,0 +1,344 @@
+---
+title: "Detecting candidate chromosomal inversions with radr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Detecting candidate chromosomal inversions with radr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+## Scope
+
+`detect_inversions()` is a screening tool for finding genomic regions whose
+local population structure is unusual relative to the rest of a GDS dataset.
+It is designed for diploid, biallelic SNP data, including carefully filtered
+RADseq and similar reduced-representation datasets.
+
+The function detects **candidate inversion-associated haploblocks**. SNP data
+can show the expected population-genomic footprint of an inversion, but they do
+not directly demonstrate reversed chromosome orientation or locate physical
+breakpoints. Use long reads, split reads, discordant read pairs, linkage maps,
+comparative assemblies, or cytogenetics for structural confirmation.
+
+## What is a chromosomal inversion?
+
+An inversion occurs when a chromosome segment is reversed. Individuals may
+carry two copies of one arrangement, one copy of each arrangement, or two
+copies of the alternative arrangement. These are often described as two
+homokaryotypes and one heterokaryotype.
+
+Recombination is commonly reduced between alternative arrangements in
+heterokaryotypes. Consequently, alleles across a large interval can remain
+associated as a haplotype. This can protect combinations of locally adaptive
+alleles from being broken apart by recombination, especially when populations
+exchange migrants. Inversions can therefore maintain genomic differentiation
+even when much of the genome shows weak population structure.
+
+Not every inversion is adaptive, and not every long differentiated haploblock
+is an inversion. Selection, centromeres, low-recombination regions, recent
+admixture, family structure, paralogs, assembly errors, marker-density changes,
+and technical batches can generate partially similar patterns.
+
+## Evidence expected from SNP data
+
+A convincing candidate normally combines several lines of evidence:
+
+1. **Local structure:** contiguous windows show a population structure that
+   differs from the genomic background.
+2. **Three genotype groups:** regional PCA may show two homokaryotype groups
+   and an intermediate heterokaryotype group.
+3. **Heterozygosity:** the intermediate group is often more heterozygous within
+   the region than the two outer groups.
+4. **Extended LD:** SNPs across the region show elevated linkage disequilibrium.
+5. **Genomic continuity:** the signal spans adjacent markers and does not merely
+   follow an isolated outlier SNP.
+6. **Technical independence:** the signal does not track plates, lanes,
+   libraries, missingness, coverage, or other processing variables.
+
+None of these criteria alone proves an inversion. For example, LD may be
+uneven inside an old inversion because gene conversion and double crossovers
+permit some gene flux between arrangements.
+
+## How the local analysis is organised
+
+Windows are created **within** chromosome, linkage-group, or scaffold
+boundaries. If LG1 ends with 40 unused SNPs and LG2 follows in the GDS, those
+40 SNPs are never combined with the first 60 SNPs of LG2. This prevents an
+artificial window spanning unrelated genomic regions.
+
+The analysis is not one PCA per linkage group. Instead:
+
+1. each linkage group is divided into SNP windows;
+2. a separate local covariance PCA is calculated for every window;
+3. each window is represented by its leading covariance axes;
+4. distances between window representations are calculated;
+5. multidimensional scaling (MDS) places similar windows together and unusual
+   windows farther from the genomic background;
+6. contiguous unusual windows are joined into candidate regions;
+7. a regional PCA, clustering, heterozygosity summary, and LD summary are
+   calculated for each candidate.
+
+When several linkage groups are scanned, their window summaries are compared
+in the same MDS analysis. The returned table retains the linkage-group label,
+so chromosome-position plots should normally be faceted by linkage group. A
+regional PCA belongs to one candidate on one linkage group and therefore does
+not itself require an LG facet.
+
+## Run a scan from GDS
+
+The examples are not evaluated because they refer to user files.
+
+```{r scan, eval=FALSE}
+library(radr)
+
+genome <- genometranslator::read_genome("filtered_dataset.gds")
+
+inv <- detect_inversions(
+  data = genome,
+  window.snps = 100,
+  step.snps = 100,
+  sensitivity.window.snps = c(100, 250, 500, 1000),
+  min.call.rate = 0.90,
+  min.candidate.windows = 2,
+  return.ld = TRUE
+)
+
+inv
+inv$candidates
+inv$path.folder
+```
+
+To investigate a known chromosome-14 signal without letting other linkage
+groups define the background:
+
+```{r chromosome, eval=FALSE}
+chr14 <- detect_inversions(
+  data = genome,
+  chromosome = "14",
+  window.snps = 100,
+  step.snps = 50,
+  min.call.rate = 0.90,
+  min.candidate.windows = 2
+)
+```
+
+Overlapping windows (`step.snps < window.snps`) can help localise transitions,
+but adjacent results are then strongly dependent. Coordinates should not be
+reported as precise breakpoints merely because a score changes between two
+overlapping windows.
+
+For physical windows instead of equal-SNP windows, supply `window.bp`. This is
+particularly useful for checking whether a candidate is robust to variation in
+RAD marker density:
+
+```{r physical-windows, eval=FALSE}
+chr14_mb <- detect_inversions(
+  data = genome,
+  chromosome = "14",
+  window.bp = 1e6,
+  step.bp = 5e5,
+  min.window.snps = 20
+)
+```
+
+## Plot window evidence by linkage group
+
+`detect_inversions()` automatically saves the standard window-score, MDS, LD,
+call-rate, regional-PCA, heterozygosity, and candidate-LD figures. It also
+returns the `ggplot2` objects in `inv$output.files$plots`, so they can be changed
+without rerunning the genomic calculations.
+
+```{r window-plot, eval=FALSE}
+library(ggplot2)
+
+ggplot(
+  inv$windows,
+  aes(x = (start + end) / 2, y = robust_score,
+      colour = candidate_window)
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = inv$settings$score.threshold,
+    linetype = 2
+  ) +
+  facet_wrap(~ chromosome, scales = "free_x") +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-6,
+                                                    suffix = " Mb")) +
+  labs(
+    x = "Window midpoint",
+    y = "Robust local-structure score",
+    colour = "Candidate"
+  ) +
+  theme_bw()
+```
+
+This is the appropriate LG-faceted view: window score versus genomic position.
+The MDS coordinates can also be inspected, but faceting them by linkage group
+answers a different question because MDS axes represent similarity among
+windows rather than physical position.
+
+```{r mds-plot, eval=FALSE}
+ggplot(inv$windows, aes(MDS1, MDS2, colour = chromosome,
+                        shape = candidate_window)) +
+  geom_point(size = 2) +
+  theme_bw()
+```
+
+## Inspect candidate genotype groups
+
+Each candidate has a matching entry in `inv$diagnostics`. A regional PCA plot
+shows individuals, not windows:
+
+```{r regional-pca, eval=FALSE}
+candidate1 <- inv$diagnostics[[1]]
+
+ggplot(candidate1$scores, aes(PC1, PC2, colour = cluster)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(colour = "Putative arrangement genotype") +
+  theme_bw()
+
+candidate1$cluster_summary
+```
+
+Three clusters are biologically suggestive only when the central PCA cluster
+also has the expected heterozygosity and the pattern is not explained by
+population, family, or batch. Two clusters may occur when one arrangement is
+rare or absent, while continuous PCA scores may indicate ordinary population
+structure rather than a polymorphic inversion.
+
+The LD diagnostic uses the upper triangle for all individuals and the lower
+triangle for the more common outer PCA cluster, treated provisionally as a
+homokaryotype. This comparison is useful because mixing arrangements can create
+strong LD even when LD is lower within one arrangement. It is not independent
+validation: the subset was inferred from the same candidate-region genotypes.
+The group-specific values are available in `candidate1$ld_summary`.
+
+## Mean imputation: what it does
+
+Within each window, SNPs below `min.call.rate` are excluded. At each remaining
+SNP, a missing genotype is temporarily replaced by the observed mean allele
+dosage for that SNP. The value is used only to make covariance PCA matrices
+complete; the GDS is not changed. After marker centring, an imputed
+value contributes zero deviation at that SNP. It therefore supplies no evidence
+that the individual carries either arrangement.
+
+Only covariance PCA uses these imputed values. LD is calculated from observed
+genotypes using pairwise-complete correlations; missing LD genotypes are not
+mean-imputed.
+
+This is intentionally simple and transparent. It prevents PCA from discarding
+every individual with one missing call, but it is not a correction for biased
+missingness.
+
+## Why RADseq missingness needs special attention
+
+RADseq missingness is often structured rather than random. Relevant causes
+include:
+
+* polymorphism at restriction sites and consequent allele dropout;
+* uneven sequencing depth among samples or libraries;
+* lane, plate, library-preparation, or genotyping batches;
+* population differences in reference divergence or mapping quality;
+* separate marker discovery or genotype calling among sample groups;
+* paralogous loci and collapsed repetitive regions;
+* marker density that varies with restriction sites, assembly quality, or
+  filtering.
+
+If one population or batch is missing preferentially at a set of linked SNPs,
+mean imputation pulls those samples toward the local PCA centre. Depending on
+the pattern, this can weaken a biological cluster, manufacture an intermediate
+group, or make a batch-specific genomic region look unusual.
+
+For every candidate, perform sensitivity analyses:
+
+1. plot marker and individual call rate, depth, and heterozygosity;
+2. cross-tabulate inferred clusters against population, plate, lane, library,
+   family, and sampling date;
+3. repeat the scan with stricter `min.call.rate` values;
+4. repeat after excluding the most incomplete samples;
+5. compare fixed-SNP and fixed-base-pair windows when marker density is uneven;
+6. inspect whether the signal remains when close relatives are removed;
+7. verify that marker density and assembly gaps do not define the candidate
+   boundaries.
+
+A robust biological signal should not disappear under every reasonable QC
+choice, and its clusters should not be synonymous with one technical batch.
+
+## Results folder and customised plots
+
+Each call creates a dated `detect_inversions` folder following the standard
+`radr` workflow. It contains the recorded call, TSV tables, and PNG and PDF
+figures. Timestamped folders prevent a normal run from overwriting an earlier
+analysis. The returned object also contains the window table, candidate table,
+PCA scores, cluster summaries, LD summaries, and plot objects. A standard plot
+can therefore be adjusted and saved under an additional name:
+
+```{r save-plot, eval=FALSE}
+p <- inv$output.files$plots$window_scores +
+  labs(title = "Candidate inversion scan after batch QC")
+
+ggsave(file.path(inv$path.folder, "window_scores_annotated.png"), p,
+       width = 10, height = 7, dpi = 300)
+```
+
+Use `save.plots = FALSE` when only tables and returned objects are wanted. The
+results folder and reproducibility tables are still created.
+
+## Interpreting coordinates
+
+The candidate `start` and `end` values are the outer marker coordinates of the
+selected windows. They depend on window size, step size, marker density,
+missingness filters, and the reference assembly. Report them as an approximate
+inversion-associated interval. With RADseq data, there may be a substantial gap
+between the last marker outside the signal and the first marker inside it.
+
+A defensible report might state:
+
+> A candidate inversion-associated haploblock was detected from approximately
+> X to Y Mb on LG14, supported by concordant local-PCA, regional genotype-group,
+> heterozygosity, and LD patterns. These coordinates describe the marker-defined
+> interval and not validated structural breakpoints.
+
+## Recommended workflow
+
+Use the scan as one part of a staged analysis:
+
+1. complete sample, marker, batch, depth, and missingness QC;
+2. scan chromosome-specific windows for unusual local structure;
+3. inspect contiguous candidates rather than isolated outlier windows;
+4. evaluate regional PCA groups, heterozygosity, and LD jointly;
+5. test sensitivity to filtering, window size, step size, and relatedness;
+6. compare candidates with centromeres, assembly gaps, repeats, and gene
+   annotations;
+7. seek breakpoint-level or mapping evidence before calling a confirmed
+   inversion.
+
+## References
+
+Faria R, Johannesson K, Butlin RK, Westram AM (2019) Evolving inversions.
+*Trends in Ecology & Evolution*, 34, 239-248.
+
+Hoffmann AA, Rieseberg LH (2008) Revisiting the impact of inversions in
+evolution: from population genetic markers to drivers of adaptive shifts and
+speciation? *Annual Review of Ecology, Evolution, and Systematics*, 39, 21-42.
+
+Huang K, Andrew RL, Owens GL, Ostevik KL, Rieseberg LH (2020) Multiple
+chromosomal inversions contribute to adaptive divergence of a dune sunflower
+ecotype. *Molecular Ecology*, 29, 2535-2549.
+
+Kess T, Bentzen P, Lehnert SJ et al. (2019) A migration-associated supergene
+reveals loss of biocomplexity in Atlantic cod. *Science Advances*, 5, eaav2461.
+
+Li H, Ralph P (2019) Local PCA shows how the effect of population structure
+differs along the genome. *Genetics*, 211, 289-304.
+
+Mérot C (2020) Making the most of population genomic data to understand the
+importance of chromosomal inversions for adaptation and speciation.
+*Molecular Ecology*, 29, 2513-2516.
+
+Wellenreuther M, Bernatchez L (2018) Eco-evolutionary genomics of chromosomal
+inversions. *Trends in Ecology & Evolution*, 33, 427-440.
