@@ -48,6 +48,25 @@
 #' LD uses observed genotypes with pairwise-complete correlations; missing LD
 #' genotypes are not mean-imputed.
 #'
+#' @section Candidate evidence summary:
+#' Regional k-means clustering is treated as a hypothesis, not as evidence by
+#' itself. `three_cluster_evidence` requires three groups with at least three
+#' samples each, a smallest-cluster frequency of at least 0.05, and a minimum
+#' adjacent-centre separation of one pooled within-cluster standard deviation.
+#' The candidate table also reports cluster compactness, PC1 variance,
+#' heterozygosity excess in the middle cluster, LD within inferred arrangement
+#' groups, LD in flanking windows, boundary contrasts, and the largest internal
+#' score transition.
+#'
+#' `evidence_score` is a transparent screening heuristic from zero to five. One
+#' point is assigned for quantitative three-cluster support, positive middle-
+#' cluster heterozygosity excess, a positive candidate-to-flank score contrast,
+#' regional LD above flanking LD, and continuity across at least two windows.
+#' Scores of 0--2 are labelled `weak`, 3--4 `moderate`, and 5 `strong`. These
+#' labels prioritise review; they do not convert a candidate into a structurally
+#' confirmed inversion. Known-region overlaps are reported separately and do
+#' not increase or decrease the evidence score.
+#'
 #' @section Output and plotting:
 #' Following other `radr` detection functions, each call creates a dated
 #' `detect_inversions` results folder in the working directory (or below the
@@ -83,6 +102,11 @@
 #'   for a common polymorphic inversion is often three, representing the two
 #'   homokaryotypes and their heterokaryotype, but this is diagnostic rather
 #'   than proof.
+#' @param known.regions Optional data frame describing centromeres, regions of
+#'   low recombination, assembly gaps, or other annotations. It must contain
+#'   `chromosome`, `start`, `end`, and `type` columns. Overlapping annotation
+#'   types are reported for each candidate but are not used to select or score
+#'   candidate windows.
 #' @param ld.max.snps Maximum number of evenly spaced SNPs used for each regional
 #'   LD matrix. This bounds memory use without changing the GDS input.
 #' @param return.ld Logical indicating whether sampled regional LD matrices are
@@ -124,6 +148,7 @@ detect_inversions <- function(
     min.call.rate = 0.8,
     min.candidate.windows = 1L,
     cluster.k = 3L,
+    known.regions = NULL,
     ld.max.snps = 500L,
     return.ld = FALSE,
     save.plots = TRUE,
@@ -238,6 +263,7 @@ detect_inversions <- function(
   if (!is.logical(save.plots) || length(save.plots) != 1L || is.na(save.plots)) {
     rlang::abort("`save.plots` must be TRUE or FALSE.")
   }
+  known.regions <- .inversion_validate_known_regions(known.regions)
   plot.formats <- unique(tolower(as.character(plot.formats)))
   if (!length(plot.formats) || any(!plot.formats %in% c("png", "pdf"))) {
     rlang::abort("`plot.formats` must contain `png`, `pdf`, or both.")
@@ -393,6 +419,10 @@ detect_inversions <- function(
     window.table = window.table,
     min.windows = min.candidate.windows
   )
+  candidate.regions <- .inversion_annotate_candidates(
+    candidate.regions = candidate.regions,
+    known.regions = known.regions
+  )
 
   diagnostics <- vector("list", nrow(candidate.regions))
   if (nrow(candidate.regions) > 0L) {
@@ -428,12 +458,27 @@ detect_inversions <- function(
       candidate.regions$n_samples[i] <- nrow(diagnostics[[i]]$scores)
       candidate.regions$n_snps[i] <- diagnostics[[i]]$n_snps
       candidate.regions$regional_mean_ld_r2[i] <- diagnostics[[i]]$mean_ld_r2
-      candidate.regions$three_cluster_pattern[i] <-
-        cluster.k == 3L && diagnostics[[i]]$all_clusters_present
+      candidate.regions$homokaryotype_mean_ld_r2[i] <-
+        diagnostics[[i]]$homokaryotype_mean_ld_r2
+      candidate.regions$heterokaryotype_mean_ld_r2[i] <-
+        diagnostics[[i]]$heterokaryotype_mean_ld_r2
+      candidate.regions$ld_structure_contrast[i] <-
+        diagnostics[[i]]$ld_structure_contrast
+      candidate.regions$pc1_variance[i] <- diagnostics[[i]]$pc1_variance
+      candidate.regions$smallest_cluster_n[i] <- diagnostics[[i]]$smallest_cluster_n
+      candidate.regions$smallest_cluster_frequency[i] <-
+        diagnostics[[i]]$smallest_cluster_frequency
+      candidate.regions$cluster_separation[i] <- diagnostics[[i]]$cluster_separation
+      candidate.regions$cluster_compactness[i] <- diagnostics[[i]]$cluster_compactness
+      candidate.regions$three_cluster_evidence[i] <-
+        diagnostics[[i]]$three_cluster_evidence
       candidate.regions$heterozygote_like_middle_cluster[i] <-
         diagnostics[[i]]$heterozygote_like_middle_cluster
+      candidate.regions$middle_heterozygosity_excess[i] <-
+        diagnostics[[i]]$middle_heterozygosity_excess
     }
   }
+  candidate.regions <- .inversion_evidence_summary(candidate.regions)
 
   sensitivity <- .inversion_window_sensitivity(
     gds = gds,
@@ -485,6 +530,7 @@ detect_inversions <- function(
       min.call.rate = min.call.rate,
       min.candidate.windows = min.candidate.windows,
       cluster.k = cluster.k,
+      known.regions = known.regions,
       ld.max.snps = ld.max.snps,
       random.seed = random.seed
     )
@@ -502,6 +548,89 @@ detect_inversions <- function(
     rlang::abort(paste0("`", name, "` must be ", interval, "."))
   }
   invisible(x)
+}
+
+.inversion_validate_known_regions <- function(x) {
+  if (is.null(x)) {
+    return(data.frame(
+      chromosome = character(), start = numeric(), end = numeric(),
+      type = character(), stringsAsFactors = FALSE
+    ))
+  }
+  if (!is.data.frame(x)) {
+    rlang::abort("`known.regions` must be NULL or a data frame.")
+  }
+  required <- c("chromosome", "start", "end", "type")
+  missing <- setdiff(required, names(x))
+  if (length(missing)) {
+    rlang::abort(paste0(
+      "`known.regions` is missing: ", paste(missing, collapse = ", "), "."
+    ))
+  }
+  x <- x[, required, drop = FALSE]
+  x$chromosome <- as.character(x$chromosome)
+  x$type <- as.character(x$type)
+  x$start <- suppressWarnings(as.numeric(x$start))
+  x$end <- suppressWarnings(as.numeric(x$end))
+  bad <- is.na(x$chromosome) | !nzchar(x$chromosome) |
+    is.na(x$type) | !nzchar(x$type) |
+    !is.finite(x$start) | !is.finite(x$end) | x$start > x$end
+  if (any(bad)) {
+    rlang::abort(
+      "Every `known.regions` row requires a chromosome, type, and finite start <= end."
+    )
+  }
+  x
+}
+
+.inversion_annotate_candidates <- function(candidate.regions, known.regions) {
+  candidate.regions$known_region_overlap <- rep("none", nrow(candidate.regions))
+  candidate.regions$n_known_region_overlaps <- rep(0L, nrow(candidate.regions))
+  if (!nrow(candidate.regions) || !nrow(known.regions)) return(candidate.regions)
+  for (i in seq_len(nrow(candidate.regions))) {
+    overlap <- known.regions$chromosome == candidate.regions$chromosome[i] &
+      known.regions$start <= candidate.regions$end[i] &
+      known.regions$end >= candidate.regions$start[i]
+    types <- sort(unique(known.regions$type[overlap]))
+    candidate.regions$n_known_region_overlaps[i] <- sum(overlap)
+    if (length(types)) {
+      candidate.regions$known_region_overlap[i] <- paste(types, collapse = ";")
+    }
+  }
+  candidate.regions
+}
+
+.inversion_evidence_summary <- function(x) {
+  if (!nrow(x)) {
+    x$cluster_support <- logical()
+    x$heterozygosity_support <- logical()
+    x$boundary_support <- logical()
+    x$ld_support <- logical()
+    x$continuity_support <- logical()
+    x$evidence_score <- integer()
+    x$evidence_strength <- character()
+    return(x)
+  }
+  cluster.support <- !is.na(x$three_cluster_evidence) & x$three_cluster_evidence
+  heterozygosity.support <- is.finite(x$middle_heterozygosity_excess) &
+    x$middle_heterozygosity_excess > 0
+  boundary.support <- is.finite(x$boundary_contrast) & x$boundary_contrast > 0
+  ld.support <- is.finite(x$regional_mean_ld_r2) &
+    is.finite(x$flanking_mean_ld_r2) &
+    x$regional_mean_ld_r2 > x$flanking_mean_ld_r2
+  continuity.support <- x$n_windows >= 2L
+  score <- as.integer(cluster.support) + as.integer(heterozygosity.support) +
+    as.integer(boundary.support) + as.integer(ld.support) +
+    as.integer(continuity.support)
+  x$cluster_support <- cluster.support
+  x$heterozygosity_support <- heterozygosity.support
+  x$boundary_support <- boundary.support
+  x$ld_support <- ld.support
+  x$continuity_support <- continuity.support
+  x$evidence_score <- score
+  x$evidence_strength <- ifelse(score >= 5L, "strong",
+    ifelse(score >= 3L, "moderate", "weak"))
+  x
 }
 
 .inversion_chromosome_order <- function(x) {
@@ -667,13 +796,30 @@ detect_inversions <- function(
     chromosome = character(),
     start = numeric(),
     end = numeric(),
+    size_bp = numeric(),
     n_windows = integer(),
     max_robust_score = numeric(),
     n_samples = integer(),
     n_snps = integer(),
     regional_mean_ld_r2 = numeric(),
-    three_cluster_pattern = logical(),
+    homokaryotype_mean_ld_r2 = numeric(),
+    heterokaryotype_mean_ld_r2 = numeric(),
+    ld_structure_contrast = numeric(),
+    flanking_mean_ld_r2 = numeric(),
+    candidate_median_score = numeric(),
+    flanking_max_score = numeric(),
+    boundary_contrast = numeric(),
+    left_boundary_contrast = numeric(),
+    right_boundary_contrast = numeric(),
+    internal_transition_max = numeric(),
+    pc1_variance = numeric(),
+    smallest_cluster_n = integer(),
+    smallest_cluster_frequency = numeric(),
+    cluster_separation = numeric(),
+    cluster_compactness = numeric(),
+    three_cluster_evidence = logical(),
     heterozygote_like_middle_cluster = logical(),
+    middle_heterozygosity_excess = numeric(),
     stringsAsFactors = FALSE
   )
   if (nrow(candidate) == 0L) return(empty)
@@ -693,18 +839,58 @@ detect_inversions <- function(
 
   rows <- lapply(seq_along(groups), function(i) {
     x <- groups[[i]]
+    chromosome.windows <- window.table[
+      window.table$chromosome == x$chromosome[1] & window.table$valid,
+      , drop = FALSE
+    ]
+    candidate.index <- match(x$window_id, chromosome.windows$window_id)
+    left.index <- min(candidate.index) - 1L
+    right.index <- max(candidate.index) + 1L
+    left.score <- if (left.index >= 1L) chromosome.windows$robust_score[left.index] else NA_real_
+    right.score <- if (right.index <= nrow(chromosome.windows)) chromosome.windows$robust_score[right.index] else NA_real_
+    flanking.scores <- c(left.score, right.score)
+    flanking.ld <- c(
+      if (left.index >= 1L) chromosome.windows$mean_ld_r2[left.index] else NA_real_,
+      if (right.index <= nrow(chromosome.windows)) chromosome.windows$mean_ld_r2[right.index] else NA_real_
+    )
+    candidate.median <- stats::median(x$robust_score, na.rm = TRUE)
+    flank.max <- if (all(!is.finite(flanking.scores))) NA_real_ else
+      max(flanking.scores, na.rm = TRUE)
+    internal.transition <- if (nrow(x) > 1L) {
+      max(abs(diff(x$robust_score)), na.rm = TRUE)
+    } else {
+      NA_real_
+    }
     data.frame(
       candidate_id = paste0("INV-CAND-", i),
       chromosome = x$chromosome[1],
       start = min(x$start),
       end = max(x$end),
+      size_bp = max(x$end) - min(x$start) + 1,
       n_windows = nrow(x),
       max_robust_score = max(x$robust_score),
       n_samples = NA_integer_,
       n_snps = NA_integer_,
       regional_mean_ld_r2 = NA_real_,
-      three_cluster_pattern = FALSE,
+      homokaryotype_mean_ld_r2 = NA_real_,
+      heterokaryotype_mean_ld_r2 = NA_real_,
+      ld_structure_contrast = NA_real_,
+      flanking_mean_ld_r2 = if (all(!is.finite(flanking.ld))) NA_real_ else
+        mean(flanking.ld, na.rm = TRUE),
+      candidate_median_score = candidate.median,
+      flanking_max_score = flank.max,
+      boundary_contrast = candidate.median - flank.max,
+      left_boundary_contrast = candidate.median - left.score,
+      right_boundary_contrast = candidate.median - right.score,
+      internal_transition_max = internal.transition,
+      pc1_variance = NA_real_,
+      smallest_cluster_n = NA_integer_,
+      smallest_cluster_frequency = NA_real_,
+      cluster_separation = NA_real_,
+      cluster_compactness = NA_real_,
+      three_cluster_evidence = FALSE,
       heterozygote_like_middle_cluster = FALSE,
+      middle_heterozygosity_excess = NA_real_,
       stringsAsFactors = FALSE
     )
   })
@@ -727,11 +913,14 @@ detect_inversions <- function(
   scores$individual <- sample.id
 
   pc1 <- pca$x[, 1L]
+  pca.variance <- pca$sdev^2
+  pc1.variance <- pca.variance[1L] / sum(pca.variance)
   distinct.pc1 <- length(unique(signif(pc1, digits = 12L)))
   if (distinct.pc1 >= cluster.k) {
-    cluster <- stats::kmeans(
+    kmeans.fit <- stats::kmeans(
       pc1, centers = cluster.k, nstart = 50L
-    )$cluster
+    )
+    cluster <- kmeans.fit$cluster
   } else {
     cluster <- rep(1L, length(pc1))
   }
@@ -739,6 +928,35 @@ detect_inversions <- function(
   ordered.cluster <- order(cluster.means)
   cluster.labels <- match(cluster, ordered.cluster)
   scores$cluster <- factor(cluster.labels, levels = seq_len(cluster.k))
+
+  cluster.counts <- as.integer(table(scores$cluster))
+  cluster.frequencies <- cluster.counts / length(pc1)
+  ordered.centres <- as.numeric(tapply(pc1, scores$cluster, mean))
+  within.ss <- sum(vapply(seq_len(cluster.k), function(level) {
+    values <- pc1[scores$cluster == level]
+    if (!length(values)) return(0)
+    sum((values - mean(values))^2)
+  }, numeric(1)))
+  residual.df <- max(1L, length(pc1) - sum(cluster.counts > 0L))
+  pooled.within.sd <- sqrt(within.ss / residual.df)
+  adjacent.gaps <- diff(ordered.centres)
+  cluster.separation <- if (length(adjacent.gaps) && all(is.finite(adjacent.gaps))) {
+    min(adjacent.gaps) / max(pooled.within.sd, sqrt(.Machine$double.eps))
+  } else {
+    NA_real_
+  }
+  total.ss <- sum((pc1 - mean(pc1))^2)
+  cluster.compactness <- if (is.finite(total.ss) && total.ss > 0) {
+    1 - within.ss / total.ss
+  } else {
+    NA_real_
+  }
+  smallest.cluster.n <- min(cluster.counts)
+  smallest.cluster.frequency <- min(cluster.frequencies)
+  three.cluster.evidence <- cluster.k == 3L &&
+    all(cluster.counts >= 3L) &&
+    smallest.cluster.frequency >= 0.05 &&
+    is.finite(cluster.separation) && cluster.separation >= 1
 
   observed <- prepared$observed
   heterozygosity <- rowMeans(observed == 1, na.rm = TRUE)
@@ -751,6 +969,15 @@ detect_inversions <- function(
     length(heterozygosity.by.cluster) == 3L &&
     is.finite(heterozygosity.by.cluster[middle]) &&
     heterozygosity.by.cluster[middle] == max(heterozygosity.by.cluster)
+  outer <- c(1L, cluster.k)
+  middle.heterozygosity.excess <- if (
+    cluster.k == 3L && all(is.finite(heterozygosity.by.cluster))
+  ) {
+    heterozygosity.by.cluster[middle] -
+      mean(heterozygosity.by.cluster[outer])
+  } else {
+    NA_real_
+  }
 
   ld.index <- unique(round(seq(1, ncol(dosage), length.out = min(
     ncol(dosage), ld.max.snps
@@ -765,7 +992,6 @@ detect_inversions <- function(
   })
   names(ld.by.cluster) <- paste0("cluster_", cluster.levels)
 
-  outer <- c(1L, cluster.k)
   outer.counts <- table(scores$cluster)[outer]
   common.outer <- outer[which.max(outer.counts)]
   common.name <- paste0("cluster_", common.outer)
@@ -783,18 +1009,46 @@ detect_inversions <- function(
       .inversion_ld_summary(ld.common)
     )
   )
+  outer.ld <- vapply(ld.by.cluster[outer], .inversion_ld_summary, numeric(1))
+  homokaryotype.mean.ld <- if (all(!is.finite(outer.ld))) NA_real_ else
+    stats::weighted.mean(
+      outer.ld[is.finite(outer.ld)],
+      cluster.counts[outer][is.finite(outer.ld)]
+    )
+  heterokaryotype.mean.ld <- if (cluster.k == 3L) {
+    .inversion_ld_summary(ld.by.cluster[[middle]])
+  } else {
+    NA_real_
+  }
+  ld.structure.contrast <- mean.ld - homokaryotype.mean.ld
 
   list(
     n_snps = ncol(dosage),
     scores = tibble::as_tibble(scores),
     cluster_summary = tibble::tibble(
       cluster = factor(seq_len(cluster.k)),
-      n = as.integer(table(scores$cluster)),
+      n = cluster.counts,
+      frequency = cluster.frequencies,
+      mean_pc1 = ordered.centres,
+      sd_pc1 = vapply(seq_len(cluster.k), function(level) {
+        values <- pc1[scores$cluster == level]
+        if (length(values) < 2L) NA_real_ else stats::sd(values)
+      }, numeric(1)),
       mean_heterozygosity = as.numeric(heterozygosity.by.cluster)
     ),
     all_clusters_present = all(table(scores$cluster) > 0L),
     heterozygote_like_middle_cluster = heterozygote.like,
+    middle_heterozygosity_excess = middle.heterozygosity.excess,
+    pc1_variance = pc1.variance,
+    smallest_cluster_n = smallest.cluster.n,
+    smallest_cluster_frequency = smallest.cluster.frequency,
+    cluster_separation = cluster.separation,
+    cluster_compactness = cluster.compactness,
+    three_cluster_evidence = three.cluster.evidence,
     mean_ld_r2 = mean.ld,
+    homokaryotype_mean_ld_r2 = homokaryotype.mean.ld,
+    heterokaryotype_mean_ld_r2 = heterokaryotype.mean.ld,
+    ld_structure_contrast = ld.structure.contrast,
     ld_variant_index = ld.index,
     ld_variant_id = colnames(observed)[ld.index],
     common_homokaryotype_cluster = common.outer,

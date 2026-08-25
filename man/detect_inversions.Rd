@@ -19,6 +19,7 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  known.regions = NULL,
   ld.max.snps = 500L,
   return.ld = FALSE,
   save.plots = TRUE,
@@ -70,6 +71,12 @@ required to form a candidate region.}
 for a common polymorphic inversion is often three, representing the two
 homokaryotypes and their heterokaryotype, but this is diagnostic rather
 than proof.}
+
+\item{known.regions}{Optional data frame describing centromeres, regions of
+low recombination, assembly gaps, or other annotations. It must contain
+\code{chromosome}, \code{start}, \code{end}, and \code{type} columns. Overlapping annotation
+types are reported for each candidate but are not used to select or score
+candidate windows.}
 
 \item{ld.max.snps}{Maximum number of evenly spaced SNPs used for each regional
 LD matrix. This bounds memory use without changing the GDS input.}
@@ -155,6 +162,27 @@ data unbiased.
 
 LD uses observed genotypes with pairwise-complete correlations; missing LD
 genotypes are not mean-imputed.
+}
+
+\section{Candidate evidence summary}{
+
+Regional k-means clustering is treated as a hypothesis, not as evidence by
+itself. \code{three_cluster_evidence} requires three groups with at least three
+samples each, a smallest-cluster frequency of at least 0.05, and a minimum
+adjacent-centre separation of one pooled within-cluster standard deviation.
+The candidate table also reports cluster compactness, PC1 variance,
+heterozygosity excess in the middle cluster, LD within inferred arrangement
+groups, LD in flanking windows, boundary contrasts, and the largest internal
+score transition.
+
+\code{evidence_score} is a transparent screening heuristic from zero to five. One
+point is assigned for quantitative three-cluster support, positive middle-
+cluster heterozygosity excess, a positive candidate-to-flank score contrast,
+regional LD above flanking LD, and continuity across at least two windows.
+Scores of 0--2 are labelled \code{weak}, 3--4 \code{moderate}, and 5 \code{strong}. These
+labels prioritise review; they do not convert a candidate into a structurally
+confirmed inversion. Known-region overlaps are reported separately and do
+not increase or decrease the evidence score.
 }
 
 \section{Output and plotting}{

@@ -62,6 +62,12 @@ result <- detect_inversions(
   sensitivity.window.snps = c(100L, 200L),
   outlier.quantile = 0.80,
   min.candidate.windows = 1L,
+  known.regions = data.frame(
+    chromosome = c("2", "1"),
+    start = c(250000, 1000),
+    end = c(350000, 50000),
+    type = c("putative_centromere", "assembly_gap")
+  ),
   return.ld = TRUE,
   save.plots = TRUE,
   plot.formats = "png",
@@ -77,6 +83,23 @@ stopifnot(sum(
     result$windows$start >= 201000 & result$windows$end <= 400000
 ) == 2L)
 stopifnot(nrow(result$candidates) >= 1L)
+stopifnot(all(c(
+  "size_bp", "cluster_separation", "cluster_compactness",
+  "middle_heterozygosity_excess", "homokaryotype_mean_ld_r2",
+  "flanking_mean_ld_r2", "boundary_contrast", "internal_transition_max",
+  "known_region_overlap", "evidence_score", "evidence_strength"
+) %in% names(result$candidates)))
+candidate <- result$candidates[result$candidates$chromosome == "2", ][1, ]
+stopifnot(candidate$three_cluster_evidence)
+stopifnot(candidate$smallest_cluster_n == 10L)
+stopifnot(candidate$cluster_separation > 1)
+stopifnot(candidate$middle_heterozygosity_excess > 0)
+stopifnot(candidate$regional_mean_ld_r2 > candidate$homokaryotype_mean_ld_r2)
+stopifnot(candidate$regional_mean_ld_r2 > candidate$flanking_mean_ld_r2)
+stopifnot(candidate$boundary_contrast > 0)
+stopifnot(candidate$known_region_overlap == "putative_centromere")
+stopifnot(candidate$n_known_region_overlaps == 1L)
+stopifnot(candidate$evidence_strength == "strong")
 stopifnot(nrow(result$sensitivity) > 0L)
 stopifnot(dir.exists(result$path.folder))
 stopifnot(file.exists(file.path(result$path.folder, "inversion_windows.tsv")))
@@ -84,5 +107,7 @@ stopifnot(file.exists(file.path(result$path.folder, "window_scores.png")))
 stopifnot(any(grepl("_ld[.]png$", result$output.files$files)))
 stopifnot(all(vapply(result$diagnostics, function(x) {
   all(c("scores", "cluster_summary", "mean_ld_r2", "ld_summary",
-        "ld_matrices") %in% names(x))
+        "ld_matrices", "cluster_separation", "cluster_compactness",
+        "middle_heterozygosity_excess", "homokaryotype_mean_ld_r2") %in%
+      names(x))
 }, logical(1))))
