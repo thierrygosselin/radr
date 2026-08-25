@@ -157,6 +157,9 @@ detect_inversions <- function(
     verbose = TRUE,
     ...
 ) {
+  # ---------------------------------------------------------------------------
+  # Standard radr setup and reproducibility records
+  # ---------------------------------------------------------------------------
   .start <- tgbase::startup(
     package = "radr",
     f.name = "detect_inversions",
@@ -206,11 +209,12 @@ detect_inversions <- function(
     ld.max.snps = ld.max.snps,
     random.seed = random.seed
   )
-  bad.integer <- vapply(
+  # Validate related integer controls together so the user sees every invalid
+  # argument in one message rather than fixing them one at a time.
+  bad.integer <- purrr::map_lgl(
     integer.args,
-    function(x) length(x) != 1L || !is.numeric(x) || is.na(x) ||
-      !is.finite(x) || x < 1 || x != as.integer(x),
-    logical(1)
+    ~ length(.x) != 1L || !is.numeric(.x) || is.na(.x) ||
+      !is.finite(.x) || .x < 1 || .x != as.integer(.x)
   )
   if (any(bad.integer)) {
     rlang::abort(paste0(
@@ -218,7 +222,7 @@ detect_inversions <- function(
       paste(names(integer.args)[bad.integer], collapse = ", "), "."
     ))
   }
-  integer.args <- lapply(integer.args, as.integer)
+  integer.args <- purrr::map(integer.args, as.integer)
   window.snps <- integer.args$window.snps
   step.snps <- integer.args$step.snps
   n.pcs <- integer.args$n.pcs
@@ -273,6 +277,9 @@ detect_inversions <- function(
     rlang::abort("`verbose` must be TRUE or FALSE.")
   }
 
+  # ---------------------------------------------------------------------------
+  # Open the GDS and construct the ordered marker map
+  # ---------------------------------------------------------------------------
   opened.here <- FALSE
   if (inherits(data, "SeqVarGDSClass")) {
     gds <- data
@@ -343,13 +350,14 @@ detect_inversions <- function(
   if (verbose) {
     message(
       "Analysing ", length(windows), " windows across ",
-      length(unique(vapply(windows, `[[`, character(1), "chromosome"))),
+      length(unique(purrr::map_chr(windows, "chromosome"))),
       " chromosome(s)..."
     )
   }
 
-  window.results <- lapply(seq_along(windows), function(i) {
-    w <- windows[[i]]
+  # Each window is read independently. This keeps memory proportional to one
+  # window rather than materialising the complete GDS dosage matrix.
+  window.results <- purrr::map2(windows, seq_along(windows), function(w, i) {
     dosage <- .inversion_get_dosage(gds, w$variant_id, sample.id)
     local <- .inversion_local_covariance(
       dosage = dosage,
@@ -366,7 +374,7 @@ detect_inversions <- function(
     local
   })
 
-  valid <- vapply(window.results, function(x) isTRUE(x$valid), logical(1))
+  valid <- purrr::map_lgl(window.results, ~ isTRUE(.x$valid))
   if (sum(valid) < 3L) {
     rlang::abort(
       "Fewer than three windows passed call-rate and polymorphism checks."
@@ -391,8 +399,8 @@ detect_inversions <- function(
     type = 8
   ))
 
-  window.table <- do.call(rbind, lapply(window.results, function(x) {
-    data.frame(
+  window.table <- purrr::map_dfr(window.results, function(x) {
+    tibble::tibble(
       window_id = x$window_id,
       chromosome = x$chromosome,
       start = x$start,
@@ -401,20 +409,24 @@ detect_inversions <- function(
       n_used_snps = x$n_used_snps,
       mean_call_rate = x$mean_call_rate,
       mean_ld_r2 = x$mean_ld_r2,
-      valid = x$valid,
-      stringsAsFactors = FALSE
+      valid = x$valid
     )
-  }))
+  })
   window.table$robust_score <- NA_real_
   window.table$candidate_window <- FALSE
   valid.index <- which(valid)
   window.table$robust_score[valid.index] <- robust.score
   window.table$candidate_window[valid.index] <- robust.score >= threshold
+  # MDS can return a run-dependent number of axes; attach each available axis
+  # without assuming that MDS1 and MDS2 both exist.
   for (j in seq_len(ncol(mds))) {
     window.table[[colnames(mds)[j]]] <- NA_real_
     window.table[[colnames(mds)[j]]][valid.index] <- mds[, j]
   }
 
+  # ---------------------------------------------------------------------------
+  # Join contiguous outlier windows and diagnose each candidate region
+  # ---------------------------------------------------------------------------
   candidate.regions <- .inversion_candidate_regions(
     window.table = window.table,
     min.windows = min.candidate.windows
@@ -429,6 +441,8 @@ detect_inversions <- function(
     if (verbose) {
       message(nrow(candidate.regions), " candidate region(s) selected for diagnostics.")
     }
+    # Keep this indexed loop because each GDS read, diagnostic list element,
+    # and candidate-table row must remain synchronized for the same region.
     for (i in seq_len(nrow(candidate.regions))) {
       region.windows <- window.table$window_id[
         window.table$chromosome == candidate.regions$chromosome[i] &
@@ -436,7 +450,7 @@ detect_inversions <- function(
           window.table$end >= candidate.regions$start[i]
       ]
       region.variant.id <- unique(unlist(
-        lapply(window.results[region.windows], `[[`, "variant_id"),
+        purrr::map(window.results[region.windows], "variant_id"),
         use.names = FALSE
       ))
       dosage <- .inversion_get_dosage(gds, region.variant.id, sample.id)
@@ -502,7 +516,7 @@ detect_inversions <- function(
   )
 
   if (!return.ld) {
-    diagnostics <- lapply(diagnostics, function(x) {
+    diagnostics <- purrr::map(diagnostics, function(x) {
       x$ld_matrices <- NULL
       x
     })
@@ -539,6 +553,10 @@ detect_inversions <- function(
   out
 }
 
+# =============================================================================
+# Argument and annotation helpers
+# =============================================================================
+
 .inversion_check_probability <- function(x, name, open) {
   valid <- is.numeric(x) && length(x) == 1L && !is.na(x) && is.finite(x)
   if (open) valid <- valid && x > 0 && x < 1
@@ -567,11 +585,14 @@ detect_inversions <- function(
       "`known.regions` is missing: ", paste(missing, collapse = ", "), "."
     ))
   }
-  x <- x[, required, drop = FALSE]
-  x$chromosome <- as.character(x$chromosome)
-  x$type <- as.character(x$type)
-  x$start <- suppressWarnings(as.numeric(x$start))
-  x$end <- suppressWarnings(as.numeric(x$end))
+  x <- x |>
+    dplyr::select(dplyr::all_of(required)) |>
+    dplyr::mutate(
+      chromosome = as.character(.data$chromosome),
+      type = as.character(.data$type),
+      start = suppressWarnings(as.numeric(.data$start)),
+      end = suppressWarnings(as.numeric(.data$end))
+    )
   bad <- is.na(x$chromosome) | !nzchar(x$chromosome) |
     is.na(x$type) | !nzchar(x$type) |
     !is.finite(x$start) | !is.finite(x$end) | x$start > x$end
@@ -584,20 +605,36 @@ detect_inversions <- function(
 }
 
 .inversion_annotate_candidates <- function(candidate.regions, known.regions) {
-  candidate.regions$known_region_overlap <- rep("none", nrow(candidate.regions))
-  candidate.regions$n_known_region_overlaps <- rep(0L, nrow(candidate.regions))
-  if (!nrow(candidate.regions) || !nrow(known.regions)) return(candidate.regions)
-  for (i in seq_len(nrow(candidate.regions))) {
-    overlap <- known.regions$chromosome == candidate.regions$chromosome[i] &
-      known.regions$start <= candidate.regions$end[i] &
-      known.regions$end >= candidate.regions$start[i]
-    types <- sort(unique(known.regions$type[overlap]))
-    candidate.regions$n_known_region_overlaps[i] <- sum(overlap)
-    if (length(types)) {
-      candidate.regions$known_region_overlap[i] <- paste(types, collapse = ";")
-    }
+  # Keep annotations descriptive: they flag alternative explanations but never
+  # participate in candidate selection or evidence scoring.
+  if (!nrow(candidate.regions) || !nrow(known.regions)) {
+    return(candidate.regions |>
+      dplyr::mutate(
+        known_region_overlap = "none",
+        n_known_region_overlaps = 0L
+      ))
   }
-  candidate.regions
+
+  overlaps <- purrr::pmap(
+    candidate.regions[c("chromosome", "start", "end")],
+    function(chromosome, start, end) {
+      overlap <- known.regions$chromosome == chromosome &
+        known.regions$start <= end &
+        known.regions$end >= start
+      known.regions |>
+        dplyr::slice(which(overlap)) |>
+        dplyr::pull("type")
+    }
+  )
+
+  candidate.regions |>
+    dplyr::mutate(
+      known_region_overlap = purrr::map_chr(overlaps, function(types) {
+        types <- sort(unique(types))
+        if (length(types)) paste(types, collapse = ";") else "none"
+      }),
+      n_known_region_overlaps = purrr::map_int(overlaps, length)
+    )
 }
 
 .inversion_evidence_summary <- function(x) {
@@ -622,15 +659,20 @@ detect_inversions <- function(
   score <- as.integer(cluster.support) + as.integer(heterozygosity.support) +
     as.integer(boundary.support) + as.integer(ld.support) +
     as.integer(continuity.support)
-  x$cluster_support <- cluster.support
-  x$heterozygosity_support <- heterozygosity.support
-  x$boundary_support <- boundary.support
-  x$ld_support <- ld.support
-  x$continuity_support <- continuity.support
-  x$evidence_score <- score
-  x$evidence_strength <- ifelse(score >= 5L, "strong",
-    ifelse(score >= 3L, "moderate", "weak"))
-  x
+  x |>
+    dplyr::mutate(
+      cluster_support = cluster.support,
+      heterozygosity_support = heterozygosity.support,
+      boundary_support = boundary.support,
+      ld_support = ld.support,
+      continuity_support = continuity.support,
+      evidence_score = score,
+      evidence_strength = dplyr::case_when(
+        score >= 5L ~ "strong",
+        score >= 3L ~ "moderate",
+        .default = "weak"
+      )
+    )
 }
 
 .inversion_chromosome_order <- function(x) {
@@ -640,16 +682,22 @@ detect_inversions <- function(
     match(x, unique(x))
 }
 
+# =============================================================================
+# Window construction and GDS dosage handling
+# =============================================================================
+
 .inversion_make_windows <- function(
     marker.table, window.snps, step.snps, window.bp = NULL, step.bp = window.bp
 ) {
+  # Split first: no subsequent operation is allowed to create a window that
+  # crosses a chromosome, linkage-group, or scaffold boundary.
   split.markers <- split(marker.table, marker.table$chromosome, drop = TRUE)
-  windows <- unlist(lapply(split.markers, function(x) {
+  windows <- unlist(purrr::map(split.markers, function(x) {
     x <- x[order(x$position, x$variant_id), , drop = FALSE]
     if (!is.null(window.bp)) {
       first <- floor(min(x$position) / step.bp) * step.bp
       starts <- seq(first, max(x$position), by = step.bp)
-      out <- lapply(starts, function(start) {
+      out <- purrr::map(starts, function(start) {
         idx <- which(x$position >= start & x$position < start + window.bp)
         if (!length(idx)) return(NULL)
         list(
@@ -663,7 +711,7 @@ detect_inversions <- function(
     }
     if (nrow(x) < window.snps) return(list())
     starts <- seq.int(1L, nrow(x) - window.snps + 1L, by = step.snps)
-    lapply(starts, function(first) {
+    purrr::map(starts, function(first) {
       idx <- seq.int(first, first + window.snps - 1L)
       list(
         chromosome = x$chromosome[first],
@@ -697,6 +745,8 @@ detect_inversions <- function(
 }
 
 .inversion_prepare_dosage <- function(dosage, min.call.rate) {
+  # Marker filtering happens before imputation and is repeated independently
+  # for every window or candidate region.
   call.rate <- colMeans(!is.na(dosage))
   keep <- is.finite(call.rate) & call.rate >= min.call.rate
   dosage <- dosage[, keep, drop = FALSE]
@@ -707,9 +757,11 @@ detect_inversions <- function(
 
   observed <- dosage
   means <- colMeans(dosage, na.rm = TRUE)
-  for (j in seq_len(ncol(dosage))) {
-    missing <- is.na(dosage[, j])
-    if (any(missing)) dosage[missing, j] <- means[j]
+  missing <- which(is.na(dosage), arr.ind = TRUE)
+  if (nrow(missing)) {
+    # PCA receives mean-imputed dosages, while `observed` below remains
+    # untouched for heterozygosity and pairwise-complete LD calculations.
+    dosage[missing] <- means[missing[, 2L]]
   }
   variance <- apply(dosage, 2L, stats::var)
   keep <- is.finite(variance) & variance > sqrt(.Machine$double.eps)
@@ -726,6 +778,10 @@ detect_inversions <- function(
   values <- r[upper.tri(r)]^2
   if (all(is.na(values))) NA_real_ else mean(values, na.rm = TRUE)
 }
+
+# =============================================================================
+# Local-PCA window representation and candidate selection
+# =============================================================================
 
 .inversion_local_covariance <- function(
     dosage, n.pcs, min.call.rate, min.window.snps
@@ -764,6 +820,8 @@ detect_inversions <- function(
 .inversion_covariance_distances <- function(results) {
   n <- length(results)
   out <- matrix(0, nrow = n, ncol = n)
+  # A symmetric matrix is filled explicitly here. A nested loop avoids
+  # allocating every window-pair covariance product at once.
   for (i in seq_len(n - 1L)) {
     for (j in seq.int(i + 1L, n)) {
       cross <- crossprod(results[[i]]$vectors, results[[j]]$vectors)
@@ -834,11 +892,13 @@ detect_inversions <- function(
   )
   group <- cumsum(!previous)
   groups <- split(candidate, group)
-  groups <- groups[vapply(groups, nrow, integer(1)) >= min.windows]
+  groups <- purrr::keep(groups, ~ nrow(.x) >= min.windows)
   if (length(groups) == 0L) return(empty)
 
-  rows <- lapply(seq_along(groups), function(i) {
-    x <- groups[[i]]
+  purrr::map2_dfr(groups, seq_along(groups), function(x, i) {
+    # Immediate noncandidate neighbours define the boundary and LD contrasts.
+    # Missing left/right flanks at chromosome ends remain NA rather than being
+    # borrowed from another chromosome.
     chromosome.windows <- window.table[
       window.table$chromosome == x$chromosome[1] & window.table$valid,
       , drop = FALSE
@@ -861,7 +921,7 @@ detect_inversions <- function(
     } else {
       NA_real_
     }
-    data.frame(
+    tibble::tibble(
       candidate_id = paste0("INV-CAND-", i),
       chromosome = x$chromosome[1],
       start = min(x$start),
@@ -890,16 +950,16 @@ detect_inversions <- function(
       cluster_compactness = NA_real_,
       three_cluster_evidence = FALSE,
       heterozygote_like_middle_cluster = FALSE,
-      middle_heterozygosity_excess = NA_real_,
-      stringsAsFactors = FALSE
+      middle_heterozygosity_excess = NA_real_
     )
   })
-  do.call(rbind, rows)
 }
 
 .inversion_region_diagnostics <- function(
     dosage, sample.id, cluster.k, min.call.rate, ld.max.snps, return.ld
 ) {
+  # Candidate-level PCA uses every usable SNP in the joined candidate interval,
+  # not only the smaller covariance representation used for window scoring.
   prepared <- .inversion_prepare_dosage(dosage, min.call.rate)
   dosage <- prepared$dosage
   if (ncol(dosage) < 2L) {
@@ -932,11 +992,11 @@ detect_inversions <- function(
   cluster.counts <- as.integer(table(scores$cluster))
   cluster.frequencies <- cluster.counts / length(pc1)
   ordered.centres <- as.numeric(tapply(pc1, scores$cluster, mean))
-  within.ss <- sum(vapply(seq_len(cluster.k), function(level) {
+  within.ss <- sum(purrr::map_dbl(seq_len(cluster.k), function(level) {
     values <- pc1[scores$cluster == level]
     if (!length(values)) return(0)
     sum((values - mean(values))^2)
-  }, numeric(1)))
+  }))
   residual.df <- max(1L, length(pc1) - sum(cluster.counts > 0L))
   pooled.within.sd <- sqrt(within.ss / residual.df)
   adjacent.gaps <- diff(ordered.centres)
@@ -953,6 +1013,9 @@ detect_inversions <- function(
   }
   smallest.cluster.n <- min(cluster.counts)
   smallest.cluster.frequency <- min(cluster.frequencies)
+  # Asking k-means for three groups does not establish a three-karyotype
+  # pattern. Require usable group sizes and separation relative to residual
+  # within-group spread before recording quantitative support.
   three.cluster.evidence <- cluster.k == 3L &&
     all(cluster.counts >= 3L) &&
     smallest.cluster.frequency >= 0.05 &&
@@ -987,10 +1050,10 @@ detect_inversions <- function(
   mean.ld <- .inversion_ld_summary(ld.all)
 
   cluster.levels <- levels(scores$cluster)
-  ld.by.cluster <- lapply(cluster.levels, function(level) {
+  ld.by.cluster <- purrr::map(cluster.levels, function(level) {
     .inversion_ld_matrix(observed.ld[scores$cluster == level, , drop = FALSE])
-  })
-  names(ld.by.cluster) <- paste0("cluster_", cluster.levels)
+  }) |>
+    rlang::set_names(paste0("cluster_", cluster.levels))
 
   outer.counts <- table(scores$cluster)[outer]
   common.outer <- outer[which.max(outer.counts)]
@@ -1005,11 +1068,14 @@ detect_inversions <- function(
     ),
     mean_r2 = c(
       mean.ld,
-      vapply(ld.by.cluster, .inversion_ld_summary, numeric(1)),
+      purrr::map_dbl(ld.by.cluster, .inversion_ld_summary),
       .inversion_ld_summary(ld.common)
     )
   )
-  outer.ld <- vapply(ld.by.cluster[outer], .inversion_ld_summary, numeric(1))
+  outer.ld <- purrr::map_dbl(
+    ld.by.cluster[outer],
+    .inversion_ld_summary
+  )
   homokaryotype.mean.ld <- if (all(!is.finite(outer.ld))) NA_real_ else
     stats::weighted.mean(
       outer.ld[is.finite(outer.ld)],
@@ -1030,10 +1096,10 @@ detect_inversions <- function(
       n = cluster.counts,
       frequency = cluster.frequencies,
       mean_pc1 = ordered.centres,
-      sd_pc1 = vapply(seq_len(cluster.k), function(level) {
+      sd_pc1 = purrr::map_dbl(seq_len(cluster.k), function(level) {
         values <- pc1[scores$cluster == level]
         if (length(values) < 2L) NA_real_ else stats::sd(values)
-      }, numeric(1)),
+      }),
       mean_heterozygosity = as.numeric(heterozygosity.by.cluster)
     ),
     all_clusters_present = all(table(scores$cluster) > 0L),
@@ -1060,6 +1126,10 @@ detect_inversions <- function(
     )
   )
 }
+
+# =============================================================================
+# Linkage-disequilibrium and sensitivity helpers
+# =============================================================================
 
 .inversion_ld_matrix <- function(dosage) {
   if (nrow(dosage) < 3L || ncol(dosage) < 2L) {
@@ -1092,14 +1162,16 @@ detect_inversions <- function(
   )
   if (is.null(window.sizes) || !length(window.sizes)) return(empty)
 
-  rows <- lapply(window.sizes, function(size) {
+  # Sensitivity runs are descriptive and deliberately do not replace the
+  # primary candidate calls. Empty/failed windows are dropped from this table.
+  rows <- purrr::map_dfr(window.sizes, function(size) {
     windows <- .inversion_make_windows(
       marker.table = marker.table,
       window.snps = size,
       step.snps = size
     )
     if (!length(windows)) return(NULL)
-    do.call(rbind, lapply(windows, function(w) {
+    purrr::map_dfr(windows, function(w) {
       dosage <- .inversion_get_dosage(gds, w$variant_id, sample.id)
       prepared <- .inversion_prepare_dosage(dosage, min.call.rate)
       if (ncol(prepared$dosage) < min(min.window.snps, size)) return(NULL)
@@ -1110,21 +1182,19 @@ detect_inversions <- function(
         rank. = 1L
       )
       variance <- pca$sdev^2
-      data.frame(
+      tibble::tibble(
         window_snps = size,
         chromosome = w$chromosome,
         start = w$start,
         end = w$end,
         n_used_snps = ncol(prepared$dosage),
         pc1_variance = variance[1L] / sum(variance),
-        mean_ld_r2 = .inversion_mean_ld(prepared$observed),
-        stringsAsFactors = FALSE
+        mean_ld_r2 = .inversion_mean_ld(prepared$observed)
       )
-    }))
+    })
   })
-  rows <- Filter(Negate(is.null), rows)
-  if (!length(rows)) return(empty)
-  tibble::as_tibble(do.call(rbind, rows))
+  if (!nrow(rows)) return(empty)
+  rows
 }
 
 .inversion_write_outputs <- function(
@@ -1132,6 +1202,7 @@ detect_inversions <- function(
     threshold, save.plots, plot.formats, verbose
 ) {
   files <- character()
+  # Centralise table writing so every generated path is returned to the user.
   write_table <- function(x, filename) {
     path <- file.path(path.folder, filename)
     readr::write_tsv(x, path, na = "NA")
@@ -1142,21 +1213,21 @@ detect_inversions <- function(
   if (nrow(sensitivity) > 0L) {
     write_table(sensitivity, "window_size_sensitivity.tsv")
   }
-  for (i in seq_along(diagnostics)) {
-    prefix <- diagnostics[[i]]$candidate_id
+  purrr::walk(diagnostics, function(diagnostic) {
+    prefix <- diagnostic$candidate_id
     write_table(
-      diagnostics[[i]]$scores,
+      diagnostic$scores,
       paste0(prefix, "_individual_pca.tsv")
     )
     write_table(
-      diagnostics[[i]]$cluster_summary,
+      diagnostic$cluster_summary,
       paste0(prefix, "_cluster_summary.tsv")
     )
     write_table(
-      diagnostics[[i]]$ld_summary,
+      diagnostic$ld_summary,
       paste0(prefix, "_ld_summary.tsv")
     )
-  }
+  })
 
   plots <- list()
   if (save.plots) {
@@ -1250,9 +1321,11 @@ detect_inversions <- function(
         ggplot2::theme_bw()
     }
 
-    for (i in seq_along(diagnostics)) {
-      d <- diagnostics[[i]]
-      plots[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
+    # Candidate plots are named lists so users can modify the ggplot objects
+    # without rereading any output file.
+    candidate.plots <- purrr::map(diagnostics, function(d) {
+      out <- list()
+      out[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
         d$scores,
         ggplot2::aes(x = PC1, y = PC2, colour = cluster)
       ) +
@@ -1267,7 +1340,7 @@ detect_inversions <- function(
         ) +
         ggplot2::theme_bw()
 
-      plots[[paste0(d$candidate_id, "_heterozygosity")]] <-
+      out[[paste0(d$candidate_id, "_heterozygosity")]] <-
         ggplot2::ggplot(
           d$scores,
           ggplot2::aes(x = cluster, y = heterozygosity, colour = cluster)
@@ -1297,7 +1370,7 @@ detect_inversions <- function(
         grid$position1 <- d$ld_position[grid$row] / 1e6
         grid$position2 <- d$ld_position[grid$column] / 1e6
         grid$group <- ifelse(use.all, "All individuals", "Common homokaryotype")
-        plots[[paste0(d$candidate_id, "_ld")]] <- ggplot2::ggplot(
+        out[[paste0(d$candidate_id, "_ld")]] <- ggplot2::ggplot(
           grid,
           ggplot2::aes(x = position1, y = position2, fill = r2)
         ) +
@@ -1314,10 +1387,12 @@ detect_inversions <- function(
           ) +
           ggplot2::theme_bw()
       }
-    }
+      out
+    })
+    plots <- c(plots, unlist(candidate.plots, recursive = FALSE))
 
-    for (name in names(plots)) {
-      for (format in plot.formats) {
+    purrr::walk(names(plots), function(name) {
+      purrr::walk(plot.formats, function(format) {
         path <- file.path(path.folder, paste0(name, ".", format))
         ggplot2::ggsave(
           filename = path,
@@ -1326,13 +1401,17 @@ detect_inversions <- function(
           height = if (grepl("_pca$|_heterozygosity$", name)) 5 else 7,
           dpi = 300
         )
-        files <- c(files, path)
-      }
-    }
+        files <<- c(files, path)
+      })
+    })
   }
   if (verbose) message("Inversion results written to: ", path.folder)
   list(files = normalizePath(files, mustWork = FALSE), plots = plots)
 }
+
+# =============================================================================
+# User-facing print method
+# =============================================================================
 
 #' @export
 print.detect_inversions <- function(x, ...) {
