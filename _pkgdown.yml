@@ -10,6 +10,8 @@ navbar:
     href: index.html
   - text: Get started
     href: articles/using_radr.html
+  - text: Vignettes
+    href: articles/index.html
   - text: Reference
     href: reference/index.html
   - text: News
