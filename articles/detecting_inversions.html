@@ -129,6 +129,103 @@ be uneven inside an old inversion because gene conversion and double
 crossovers permit some gene flux between arrangements.</p>
 </div>
 <div class="section level2">
+<h2 id="lessons-from-empirical-fish-examples">Lessons from empirical fish examples<a class="anchor" aria-label="anchor" href="#lessons-from-empirical-fish-examples"></a>
+</h2>
+<p>Published fish studies illustrate both the value and the limits of an
+inversion screen. <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> does not reproduce
+their complete analyses: several relied on whole-genome sequence,
+linkage maps, pedigrees, long reads, or phenotype data that are not
+present in a typical RADseq GDS. Instead, the function uses the parts of
+their reasoning that transfer to marker data and reports candidates for
+further investigation.</p>
+<div class="section level3">
+<h3 id="rainbow-trout-a-structurally-validated-double-inversion">Rainbow trout: a structurally validated double inversion<a class="anchor" aria-label="anchor" href="#rainbow-trout-a-structurally-validated-double-inversion"></a>
+</h3>
+<p>Pearse et al. (2019) characterized a roughly 55-Mb double-inversion
+supergene on rainbow trout chromosome Omy05. Linkage mapping showed
+almost complete recombination suppression in heterokaryotypic parents,
+while comparative genomics and long-read assembly helped resolve the
+structure. The two arrangements were associated with migratory tendency,
+with effects that depended on sex and dominance.</p>
+<p>This example motivates several choices in
+<code><a href="../reference/detect_inversions.html">detect_inversions()</a></code>:</p>
+<ul>
+<li>evidence should extend across a contiguous haploblock rather than a
+single strongly associated marker;</li>
+<li>regional genotype groups, LD, heterozygosity, and boundary changes
+should be interpreted together;</li>
+<li>one broad signal may contain adjacent or nested rearrangements and
+should not automatically be described as one simple inversion; and</li>
+<li>association with sex, migration, or another phenotype can support
+biological relevance, but it does not establish chromosome
+orientation.</li>
+</ul>
+<p>The outer candidate coordinates returned by
+<code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> therefore describe a marker-supported
+interval. Internal changes in window scores, LD, or clustering may
+justify examining more than one rearrangement inside that interval.</p>
+</div>
+<div class="section level3">
+<h3 id="chinook-salmon-a-major-effect-locus-is-not-necessarily-an-inversion">Chinook salmon: a major-effect locus is not necessarily an
+inversion<a class="anchor" aria-label="anchor" href="#chinook-salmon-a-major-effect-locus-is-not-necessarily-an-inversion"></a>
+</h3>
+<p>Thompson et al. (2020) showed that variation near <code>GREB1L</code>
+is strongly associated with adult migration timing in Chinook salmon.
+This is an important counterexample for interpreting a genomic peak: a
+locus with a large phenotypic effect, strong differentiation, or
+extended haplotypes is not by itself evidence of a chromosomal
+inversion.</p>
+<p>Consequently, <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> does not use phenotype
+association or an isolated differentiation peak as sufficient evidence.
+A narrow selected region may be biologically important without producing
+the extended local-PCA, three-group, heterozygosity, and LD pattern
+expected from an inversion haploblock.</p>
+</div>
+<div class="section level3">
+<h3 id="atlantic-silverside-distinguish-inversions-from-centromeres">Atlantic silverside: distinguish inversions from centromeres<a class="anchor" aria-label="anchor" href="#atlantic-silverside-distinguish-inversions-from-centromeres"></a>
+</h3>
+<p>Akopyan et al. (2025) compared 168 Atlantic silverside genomes from
+four populations using whole-genome variation and recombination maps.
+Large, abruptly bounded differentiation haploblocks coincided with known
+inversions and showed the characteristic three tight regional-PCA
+clusters. Narrower differentiation peaks frequently coincided with
+putative centromeres. Regional PCA in centromeric regions could also
+reflect reduced recombination, but the individuals were more dispersed
+and retained more haplotype variation than in the inversion regions.</p>
+<p>The study also demonstrates why relative differentiation alone can
+mislead. Elevated
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
+near centromeres resulted partly from low within-population diversity,
+whereas absolute sequence divergence
+(<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>)
+was elevated in the large inversions but reduced near centromeres. For
+<code>radr</code>, the transferable diagnostic lessons are to:</p>
+<ol style="list-style-type: decimal">
+<li>compare broad, abrupt and contiguous haploblocks with narrow or
+gradual peaks;</li>
+<li>examine the compactness and separation of the three inferred
+genotype groups, not merely the existence of a regional PCA
+pattern;</li>
+<li>compare candidates with known or putative centromeres, recombination
+maps, marker density, repeats, and assembly gaps; and</li>
+<li>avoid calling a low-recombination region an inversion without
+independent structural or linkage evidence.</li>
+</ol>
+<p>Sparse, ascertained RADseq markers generally do not support the same
+robust windowed
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>
+analysis as whole-genome sequence. <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code>
+therefore does not manufacture an absolute-divergence statistic from
+insufficient data. Where dense sequence data and defensible population
+groups are available,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>,
+diversity, and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>
+provide valuable downstream validation alongside the <code>radr</code>
+candidate scan.</p>
+</div>
+</div>
+<div class="section level2">
 <h2 id="how-the-local-analysis-is-organised">How the local analysis is organised<a class="anchor" aria-label="anchor" href="#how-the-local-analysis-is-organised"></a>
 </h2>
 <p>Windows are created <strong>within</strong> chromosome,
@@ -176,9 +273,30 @@ linkage group and therefore does not itself require an LG facet.</p>
 <span><span class="va">inv</span></span>
 <span><span class="va">inv</span><span class="op">$</span><span class="va">candidates</span></span>
 <span><span class="va">inv</span><span class="op">$</span><span class="va">path.folder</span></span></code></pre></div>
+<p>Known centromeres, assembly gaps, or other low-recombination
+annotations can be supplied without allowing those annotations to
+determine which windows are selected:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">known_regions</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  chromosome <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"LG5"</span>, <span class="st">"LG14"</span>, <span class="st">"LG14"</span><span class="op">)</span>,</span>
+<span>  start <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">22000000</span>, <span class="fl">18000000</span>, <span class="fl">41000000</span><span class="op">)</span>,</span>
+<span>  end <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">26000000</span>, <span class="fl">23000000</span>, <span class="fl">42500000</span><span class="op">)</span>,</span>
+<span>  type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"putative_centromere"</span>, <span class="st">"low_recombination"</span>, <span class="st">"assembly_gap"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">inv</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_inversions.html">detect_inversions</a></span><span class="op">(</span></span>
+<span>  data <span class="op">=</span> <span class="va">genome</span>,</span>
+<span>  window.snps <span class="op">=</span> <span class="fl">100</span>,</span>
+<span>  step.snps <span class="op">=</span> <span class="fl">50</span>,</span>
+<span>  known.regions <span class="op">=</span> <span class="va">known_regions</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>The <code>known_region_overlap</code> column lists overlapping
+annotation types. An overlap is a warning for interpretation, not
+evidence for or against an inversion, and it does not change candidate
+selection or the evidence score.</p>
 <p>To investigate a known chromosome-14 signal without letting other
 linkage groups define the background:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chr14</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_inversions.html">detect_inversions</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">genome</span>,</span>
 <span>  chromosome <span class="op">=</span> <span class="st">"14"</span>,</span>
@@ -194,7 +312,7 @@ merely because a score changes between two overlapping windows.</p>
 <p>For physical windows instead of equal-SNP windows, supply
 <code>window.bp</code>. This is particularly useful for checking whether
 a candidate is robust to variation in RAD marker density:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chr14_mb</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_inversions.html">detect_inversions</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">genome</span>,</span>
 <span>  chromosome <span class="op">=</span> <span class="st">"14"</span>,</span>
@@ -211,7 +329,7 @@ window-score, MDS, LD, call-rate, regional-PCA, heterozygosity, and
 candidate-LD figures. It also returns the <code>ggplot2</code> objects
 in <code>inv$output.files$plots</code>, so they can be changed without
 rerunning the genomic calculations.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span></span>
@@ -237,7 +355,7 @@ rerunning the genomic calculations.</p>
 position. The MDS coordinates can also be inspected, but faceting them
 by linkage group answers a different question because MDS axes represent
 similarity among windows rather than physical position.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">inv</span><span class="op">$</span><span class="va">windows</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">MDS1</span>, <span class="va">MDS2</span>, colour <span class="op">=</span> <span class="va">chromosome</span>,</span>
 <span>                        shape <span class="op">=</span> <span class="va">candidate_window</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_point.html" class="external-link">geom_point</a></span><span class="op">(</span>size <span class="op">=</span> <span class="fl">2</span><span class="op">)</span> <span class="op">+</span></span>
@@ -248,7 +366,7 @@ similarity among windows rather than physical position.</p>
 </h2>
 <p>Each candidate has a matching entry in <code>inv$diagnostics</code>.
 A regional PCA plot shows individuals, not windows:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">candidate1</span> <span class="op">&lt;-</span> <span class="va">inv</span><span class="op">$</span><span class="va">diagnostics</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
 <span></span>
 <span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">candidate1</span><span class="op">$</span><span class="va">scores</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">PC1</span>, <span class="va">PC2</span>, colour <span class="op">=</span> <span class="va">cluster</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
@@ -341,7 +459,7 @@ prevent a normal run from overwriting an earlier analysis. The returned
 object also contains the window table, candidate table, PCA scores,
 cluster summaries, LD summaries, and plot objects. A standard plot can
 therefore be adjusted and saved under an additional name:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">p</span> <span class="op">&lt;-</span> <span class="va">inv</span><span class="op">$</span><span class="va">output.files</span><span class="op">$</span><span class="va">plots</span><span class="op">$</span><span class="va">window_scores</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>title <span class="op">=</span> <span class="st">"Candidate inversion scan after batch QC"</span><span class="op">)</span></span>
 <span></span>
@@ -370,6 +488,57 @@ structural breakpoints.</p>
 </blockquote>
 </div>
 <div class="section level2">
+<h2 id="interpreting-the-candidate-evidence-table">Interpreting the candidate evidence table<a class="anchor" aria-label="anchor" href="#interpreting-the-candidate-evidence-table"></a>
+</h2>
+<p>The candidate table combines continuous diagnostics with a
+deliberately simple screening grade. Important columns include:</p>
+<ul>
+<li>
+<code>cluster_separation</code>: the smallest gap between adjacent
+regional-PC1 cluster centres, divided by the pooled within-cluster
+standard deviation;</li>
+<li>
+<code>cluster_compactness</code>: the proportion of regional PC1
+variation explained by the inferred clusters;</li>
+<li>
+<code>smallest_cluster_n</code> and
+<code>smallest_cluster_frequency</code>: protection against treating a
+few outlying individuals as an inversion arrangement;</li>
+<li>
+<code>middle_heterozygosity_excess</code>: middle-cluster
+heterozygosity minus the mean of the two outer clusters;</li>
+<li>
+<code>regional_mean_ld_r2</code>,
+<code>homokaryotype_mean_ld_r2</code>, and
+<code>heterokaryotype_mean_ld_r2</code>: LD across all individuals and
+within inferred genotype groups;</li>
+<li>
+<code>flanking_mean_ld_r2</code> and <code>boundary_contrast</code>:
+comparison with the immediate noncandidate windows;</li>
+<li>
+<code>internal_transition_max</code>: the largest score change
+between candidate windows, useful for finding complex, adjacent, or
+nested signals; and</li>
+<li>
+<code>known_region_overlap</code>: any user-supplied centromere,
+low-recombination, assembly-gap, or other annotation intersecting the
+candidate.</li>
+</ul>
+<p><code>three_cluster_evidence</code> is not merely a record that
+k-means was run with <code>cluster.k = 3</code>. It additionally
+requires all three inferred groups to contain at least three samples,
+the smallest group to represent at least 5% of samples, and adequate
+separation relative to within-group spread.</p>
+<p><code>evidence_score</code> assigns one point for each of five
+observations: quantitative three-cluster support, positive
+middle-cluster heterozygosity excess, positive boundary contrast,
+regional LD above flanking LD, and continuity across at least two
+windows. Scores of 0–2, 3–4, and 5 are labelled <code>weak</code>,
+<code>moderate</code>, and <code>strong</code>, respectively. This grade
+prioritises candidates for inspection; it is not a posterior probability
+and does not prove an inversion.</p>
+</div>
+<div class="section level2">
 <h2 id="recommended-workflow">Recommended workflow<a class="anchor" aria-label="anchor" href="#recommended-workflow"></a>
 </h2>
 <p>Use the scan as one part of a staged analysis:</p>
@@ -390,6 +559,10 @@ inversion.</li>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
 </h2>
+<p>Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025)
+Genetic differentiation is constrained to chromosomal inversions and
+putative centromeres in locally adapted populations with higher gene
+flow. <em>Molecular Biology and Evolution</em>, 42, msaf092.</p>
 <p>Faria R, Johannesson K, Butlin RK, Westram AM (2019) Evolving
 inversions. <em>Trends in Ecology &amp; Evolution</em>, 34, 239-248.</p>
 <p>Hoffmann AA, Rieseberg LH (2008) Revisiting the impact of inversions
@@ -407,6 +580,12 @@ structure differs along the genome. <em>Genetics</em>, 211, 289-304.</p>
 <p>Mérot C (2020) Making the most of population genomic data to
 understand the importance of chromosomal inversions for adaptation and
 speciation. <em>Molecular Ecology</em>, 29, 2513-2516.</p>
+<p>Pearse DE, Barson NJ, Nome T et al. (2019) Sex-dependent dominance
+maintains migration supergene in rainbow trout. <em>Nature Ecology &amp;
+Evolution</em>, 3, 1731-1742.</p>
+<p>Thompson TQ, Bellinger MR, O’Rourke SM et al. (2020) A complex
+phenotype in salmon controlled by a simple change in migratory timing.
+<em>Science</em>, 370, 609-613.</p>
 <p>Wellenreuther M, Bernatchez L (2018) Eco-evolutionary genomics of
 chromosomal inversions. <em>Trends in Ecology &amp; Evolution</em>, 33,
 427-440.</p>

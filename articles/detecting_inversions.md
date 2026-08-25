@@ -57,6 +57,94 @@ None of these criteria alone proves an inversion. For example, LD may be
 uneven inside an old inversion because gene conversion and double
 crossovers permit some gene flux between arrangements.
 
+## Lessons from empirical fish examples
+
+Published fish studies illustrate both the value and the limits of an
+inversion screen.
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+does not reproduce their complete analyses: several relied on
+whole-genome sequence, linkage maps, pedigrees, long reads, or phenotype
+data that are not present in a typical RADseq GDS. Instead, the function
+uses the parts of their reasoning that transfer to marker data and
+reports candidates for further investigation.
+
+### Rainbow trout: a structurally validated double inversion
+
+Pearse et al. (2019) characterized a roughly 55-Mb double-inversion
+supergene on rainbow trout chromosome Omy05. Linkage mapping showed
+almost complete recombination suppression in heterokaryotypic parents,
+while comparative genomics and long-read assembly helped resolve the
+structure. The two arrangements were associated with migratory tendency,
+with effects that depended on sex and dominance.
+
+This example motivates several choices in
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md):
+
+- evidence should extend across a contiguous haploblock rather than a
+  single strongly associated marker;
+- regional genotype groups, LD, heterozygosity, and boundary changes
+  should be interpreted together;
+- one broad signal may contain adjacent or nested rearrangements and
+  should not automatically be described as one simple inversion; and
+- association with sex, migration, or another phenotype can support
+  biological relevance, but it does not establish chromosome
+  orientation.
+
+The outer candidate coordinates returned by
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+therefore describe a marker-supported interval. Internal changes in
+window scores, LD, or clustering may justify examining more than one
+rearrangement inside that interval.
+
+### Chinook salmon: a major-effect locus is not necessarily an inversion
+
+Thompson et al. (2020) showed that variation near `GREB1L` is strongly
+associated with adult migration timing in Chinook salmon. This is an
+important counterexample for interpreting a genomic peak: a locus with a
+large phenotypic effect, strong differentiation, or extended haplotypes
+is not by itself evidence of a chromosomal inversion.
+
+Consequently,
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+does not use phenotype association or an isolated differentiation peak
+as sufficient evidence. A narrow selected region may be biologically
+important without producing the extended local-PCA, three-group,
+heterozygosity, and LD pattern expected from an inversion haploblock.
+
+### Atlantic silverside: distinguish inversions from centromeres
+
+Akopyan et al. (2025) compared 168 Atlantic silverside genomes from four
+populations using whole-genome variation and recombination maps. Large,
+abruptly bounded differentiation haploblocks coincided with known
+inversions and showed the characteristic three tight regional-PCA
+clusters. Narrower differentiation peaks frequently coincided with
+putative centromeres. Regional PCA in centromeric regions could also
+reflect reduced recombination, but the individuals were more dispersed
+and retained more haplotype variation than in the inversion regions.
+
+The study also demonstrates why relative differentiation alone can
+mislead. Elevated $`F_{ST}`$ near centromeres resulted partly from low
+within-population diversity, whereas absolute sequence divergence
+($`d_{XY}`$) was elevated in the large inversions but reduced near
+centromeres. For `radr`, the transferable diagnostic lessons are to:
+
+1.  compare broad, abrupt and contiguous haploblocks with narrow or
+    gradual peaks;
+2.  examine the compactness and separation of the three inferred
+    genotype groups, not merely the existence of a regional PCA pattern;
+3.  compare candidates with known or putative centromeres, recombination
+    maps, marker density, repeats, and assembly gaps; and
+4.  avoid calling a low-recombination region an inversion without
+    independent structural or linkage evidence.
+
+Sparse, ascertained RADseq markers generally do not support the same
+robust windowed $`d_{XY}`$ analysis as whole-genome sequence.
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+therefore does not manufacture an absolute-divergence statistic from
+insufficient data. Where dense sequence data and defensible population
+groups are available, $`F_{ST}`$, diversity, and $`d_{XY}`$ provide
+valuable downstream validation alongside the `radr` candidate scan.
+
 ## How the local analysis is organised
 
 Windows are created **within** chromosome, linkage-group, or scaffold
@@ -106,6 +194,32 @@ inv
 inv$candidates
 inv$path.folder
 ```
+
+Known centromeres, assembly gaps, or other low-recombination annotations
+can be supplied without allowing those annotations to determine which
+windows are selected:
+
+``` r
+
+known_regions <- data.frame(
+  chromosome = c("LG5", "LG14", "LG14"),
+  start = c(22000000, 18000000, 41000000),
+  end = c(26000000, 23000000, 42500000),
+  type = c("putative_centromere", "low_recombination", "assembly_gap")
+)
+
+inv <- detect_inversions(
+  data = genome,
+  window.snps = 100,
+  step.snps = 50,
+  known.regions = known_regions
+)
+```
+
+The `known_region_overlap` column lists overlapping annotation types. An
+overlap is a warning for interpretation, not evidence for or against an
+inversion, and it does not change candidate selection or the evidence
+score.
 
 To investigate a known chromosome-14 signal without letting other
 linkage groups define the background:
@@ -314,6 +428,46 @@ A defensible report might state:
 > coordinates describe the marker-defined interval and not validated
 > structural breakpoints.
 
+## Interpreting the candidate evidence table
+
+The candidate table combines continuous diagnostics with a deliberately
+simple screening grade. Important columns include:
+
+- `cluster_separation`: the smallest gap between adjacent regional-PC1
+  cluster centres, divided by the pooled within-cluster standard
+  deviation;
+- `cluster_compactness`: the proportion of regional PC1 variation
+  explained by the inferred clusters;
+- `smallest_cluster_n` and `smallest_cluster_frequency`: protection
+  against treating a few outlying individuals as an inversion
+  arrangement;
+- `middle_heterozygosity_excess`: middle-cluster heterozygosity minus
+  the mean of the two outer clusters;
+- `regional_mean_ld_r2`, `homokaryotype_mean_ld_r2`, and
+  `heterokaryotype_mean_ld_r2`: LD across all individuals and within
+  inferred genotype groups;
+- `flanking_mean_ld_r2` and `boundary_contrast`: comparison with the
+  immediate noncandidate windows;
+- `internal_transition_max`: the largest score change between candidate
+  windows, useful for finding complex, adjacent, or nested signals; and
+- `known_region_overlap`: any user-supplied centromere,
+  low-recombination, assembly-gap, or other annotation intersecting the
+  candidate.
+
+`three_cluster_evidence` is not merely a record that k-means was run
+with `cluster.k = 3`. It additionally requires all three inferred groups
+to contain at least three samples, the smallest group to represent at
+least 5% of samples, and adequate separation relative to within-group
+spread.
+
+`evidence_score` assigns one point for each of five observations:
+quantitative three-cluster support, positive middle-cluster
+heterozygosity excess, positive boundary contrast, regional LD above
+flanking LD, and continuity across at least two windows. Scores of 0–2,
+3–4, and 5 are labelled `weak`, `moderate`, and `strong`, respectively.
+This grade prioritises candidates for inspection; it is not a posterior
+probability and does not prove an inversion.
+
 ## Recommended workflow
 
 Use the scan as one part of a staged analysis:
@@ -330,6 +484,11 @@ Use the scan as one part of a staged analysis:
     inversion.
 
 ## References
+
+Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025) Genetic
+differentiation is constrained to chromosomal inversions and putative
+centromeres in locally adapted populations with higher gene flow.
+*Molecular Biology and Evolution*, 42, msaf092.
 
 Faria R, Johannesson K, Butlin RK, Westram AM (2019) Evolving
 inversions. *Trends in Ecology & Evolution*, 34, 239-248.
@@ -353,6 +512,14 @@ structure differs along the genome. *Genetics*, 211, 289-304.
 Mérot C (2020) Making the most of population genomic data to understand
 the importance of chromosomal inversions for adaptation and speciation.
 *Molecular Ecology*, 29, 2513-2516.
+
+Pearse DE, Barson NJ, Nome T et al. (2019) Sex-dependent dominance
+maintains migration supergene in rainbow trout. *Nature Ecology &
+Evolution*, 3, 1731-1742.
+
+Thompson TQ, Bellinger MR, O’Rourke SM et al. (2020) A complex phenotype
+in salmon controlled by a simple change in migratory timing. *Science*,
+370, 609-613.
 
 Wellenreuther M, Bernatchez L (2018) Eco-evolutionary genomics of
 chromosomal inversions. *Trends in Ecology & Evolution*, 33, 427-440.

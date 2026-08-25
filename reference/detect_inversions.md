@@ -26,6 +26,7 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  known.regions = NULL,
   ld.max.snps = 500L,
   return.ld = FALSE,
   save.plots = TRUE,
@@ -105,6 +106,14 @@ detect_inversions(
   common polymorphic inversion is often three, representing the two
   homokaryotypes and their heterokaryotype, but this is diagnostic
   rather than proof.
+
+- known.regions:
+
+  Optional data frame describing centromeres, regions of low
+  recombination, assembly gaps, or other annotations. It must contain
+  `chromosome`, `start`, `end`, and `type` columns. Overlapping
+  annotation types are reported for each candidate but are not used to
+  select or score candidate windows.
 
 - ld.max.snps:
 
@@ -204,6 +213,27 @@ computable; it does not make missing data unbiased.
 
 LD uses observed genotypes with pairwise-complete correlations; missing
 LD genotypes are not mean-imputed.
+
+## Candidate evidence summary
+
+Regional k-means clustering is treated as a hypothesis, not as evidence
+by itself. `three_cluster_evidence` requires three groups with at least
+three samples each, a smallest-cluster frequency of at least 0.05, and a
+minimum adjacent-centre separation of one pooled within-cluster standard
+deviation. The candidate table also reports cluster compactness, PC1
+variance, heterozygosity excess in the middle cluster, LD within
+inferred arrangement groups, LD in flanking windows, boundary contrasts,
+and the largest internal score transition.
+
+`evidence_score` is a transparent screening heuristic from zero to five.
+One point is assigned for quantitative three-cluster support, positive
+middle- cluster heterozygosity excess, a positive candidate-to-flank
+score contrast, regional LD above flanking LD, and continuity across at
+least two windows. Scores of 0–2 are labelled `weak`, 3–4 `moderate`,
+and 5 `strong`. These labels prioritise review; they do not convert a
+candidate into a structurally confirmed inversion. Known-region overlaps
+are reported separately and do not increase or decrease the evidence
+score.
 
 ## Output and plotting
 
