@@ -37,6 +37,7 @@ reference:
   - detect_biallelic_problems
   - detect_duplicate_genomes
   - detect_het_outliers
+  - detect_inversions
   - detect_mixed_genomes
   - detect_paralogs
   - detect_ref_genome
