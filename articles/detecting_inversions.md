@@ -15,6 +15,56 @@ locate physical breakpoints. Use long reads, split reads, discordant
 read pairs, linkage maps, comparative assemblies, or cytogenetics for
 structural confirmation.
 
+## How `radr` builds on previous inversion work
+
+[`radr::detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+builds on analytical principles explored by Li and Ralph (2019), who
+formalised local PCA for detecting changes in population structure along
+a genome; Huang et al. (2020), who demonstrated that candidate
+inversions can be recovered from reduced-representation SNP data; and
+Pearse et al. (2019) and Akopyan et al. (2025), who showed the value of
+combining regional genotype groups, linkage disequilibrium,
+recombination, diversity, and structural evidence when interpreting
+inversion-associated haploblocks.
+
+The function is an independent, GDS-native implementation rather than a
+wrapper around another inversion package. It was designed to make these
+transferable ideas practical for the quality-controlled RADseq and
+similar datasets already used in `radr`. In particular,
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md):
+
+- reads genotypes directly from GDS without conversion to `vcfR`
+  objects;
+- constructs every window within a chromosome, linkage group, or
+  scaffold;
+- combines local covariance PCA with contiguous-window candidate
+  detection;
+- evaluates regional PCA groups quantitatively instead of treating a
+  requested three-group k-means solution as evidence by itself;
+- summarises heterozygosity, overall and within-group LD, candidate
+  boundaries, flanking windows, internal transitions, and window-size
+  sensitivity;
+- accepts centromere, low-recombination, repeat, and assembly-gap
+  annotations without allowing them to determine the candidate calls;
+- explicitly records the consequences of missing-data filtering and
+  temporary mean imputation for RADseq interpretation; and
+- writes reproducible tables and publication-ready `ggplot2` diagnostics
+  to a standard results folder while returning all results for further
+  exploration.
+
+This integrated workflow is the main advantage of using `radr`: it moves
+from a broad local-structure scan to an auditable candidate evidence
+table without claiming more resolution than the marker data provide. The
+output is intended to guide the next experiment, not replace it. Linkage
+mapping can test recombination suppression; haplotagging or other
+linked-read approaches can phase the alternative haplotypes and refine
+structural hypotheses; and ONT or PacBio long reads, breakpoint PCR,
+comparative assemblies, or cytogenetics can provide physical
+confirmation. Haplotagging has recovered long population haplotypes and
+inversion-associated barcode-sharing patterns at scale (Meier et
+al. 2021), but exact or repetitive breakpoints may still require
+continuous long reads or a junction-specific assay.
+
 ## What is a chromosomal inversion?
 
 An inversion occurs when a chromosome segment is reversed. Individuals
@@ -480,8 +530,11 @@ Use the scan as one part of a staged analysis:
     relatedness;
 6.  compare candidates with centromeres, assembly gaps, repeats, and
     gene annotations;
-7.  seek breakpoint-level or mapping evidence before calling a confirmed
-    inversion.
+7.  use linkage maps or haplotagging to test recombination and phase the
+    alternative arrangements; and
+8.  seek breakpoint-spanning long reads, junction PCR, comparative
+    assembly, or cytogenetic evidence before calling a structurally
+    confirmed inversion.
 
 ## References
 
@@ -508,6 +561,11 @@ Advances*, 5, eaav2461.
 
 Li H, Ralph P (2019) Local PCA shows how the effect of population
 structure differs along the genome. *Genetics*, 211, 289-304.
+
+Meier JI, Salazar PA, Kucka M et al. (2021) Haplotype tagging reveals
+parallel formation of hybrid races in two butterfly species.
+*Proceedings of the National Academy of Sciences of the United States of
+America*, 118, e2015005118.
 
 Mérot C (2020) Making the most of population genomic data to understand
 the importance of chromosomal inversions for adaptation and speciation.

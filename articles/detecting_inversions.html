@@ -79,6 +79,57 @@ split reads, discordant read pairs, linkage maps, comparative
 assemblies, or cytogenetics for structural confirmation.</p>
 </div>
 <div class="section level2">
+<h2 id="how-radr-builds-on-previous-inversion-work">How <code>radr</code> builds on previous inversion work<a class="anchor" aria-label="anchor" href="#how-radr-builds-on-previous-inversion-work"></a>
+</h2>
+<p><code><a href="../reference/detect_inversions.html">radr::detect_inversions()</a></code> builds on analytical
+principles explored by Li and Ralph (2019), who formalised local PCA for
+detecting changes in population structure along a genome; Huang et
+al. (2020), who demonstrated that candidate inversions can be recovered
+from reduced-representation SNP data; and Pearse et al. (2019) and
+Akopyan et al. (2025), who showed the value of combining regional
+genotype groups, linkage disequilibrium, recombination, diversity, and
+structural evidence when interpreting inversion-associated
+haploblocks.</p>
+<p>The function is an independent, GDS-native implementation rather than
+a wrapper around another inversion package. It was designed to make
+these transferable ideas practical for the quality-controlled RADseq and
+similar datasets already used in <code>radr</code>. In particular,
+<code><a href="../reference/detect_inversions.html">detect_inversions()</a></code>:</p>
+<ul>
+<li>reads genotypes directly from GDS without conversion to
+<code>vcfR</code> objects;</li>
+<li>constructs every window within a chromosome, linkage group, or
+scaffold;</li>
+<li>combines local covariance PCA with contiguous-window candidate
+detection;</li>
+<li>evaluates regional PCA groups quantitatively instead of treating a
+requested three-group k-means solution as evidence by itself;</li>
+<li>summarises heterozygosity, overall and within-group LD, candidate
+boundaries, flanking windows, internal transitions, and window-size
+sensitivity;</li>
+<li>accepts centromere, low-recombination, repeat, and assembly-gap
+annotations without allowing them to determine the candidate calls;</li>
+<li>explicitly records the consequences of missing-data filtering and
+temporary mean imputation for RADseq interpretation; and</li>
+<li>writes reproducible tables and publication-ready
+<code>ggplot2</code> diagnostics to a standard results folder while
+returning all results for further exploration.</li>
+</ul>
+<p>This integrated workflow is the main advantage of using
+<code>radr</code>: it moves from a broad local-structure scan to an
+auditable candidate evidence table without claiming more resolution than
+the marker data provide. The output is intended to guide the next
+experiment, not replace it. Linkage mapping can test recombination
+suppression; haplotagging or other linked-read approaches can phase the
+alternative haplotypes and refine structural hypotheses; and ONT or
+PacBio long reads, breakpoint PCR, comparative assemblies, or
+cytogenetics can provide physical confirmation. Haplotagging has
+recovered long population haplotypes and inversion-associated
+barcode-sharing patterns at scale (Meier et al. 2021), but exact or
+repetitive breakpoints may still require continuous long reads or a
+junction-specific assay.</p>
+</div>
+<div class="section level2">
 <h2 id="what-is-a-chromosomal-inversion">What is a chromosomal inversion?<a class="anchor" aria-label="anchor" href="#what-is-a-chromosomal-inversion"></a>
 </h2>
 <p>An inversion occurs when a chromosome segment is reversed.
@@ -552,8 +603,11 @@ windows;</li>
 relatedness;</li>
 <li>compare candidates with centromeres, assembly gaps, repeats, and
 gene annotations;</li>
-<li>seek breakpoint-level or mapping evidence before calling a confirmed
-inversion.</li>
+<li>use linkage maps or haplotagging to test recombination and phase the
+alternative arrangements; and</li>
+<li>seek breakpoint-spanning long reads, junction PCR, comparative
+assembly, or cytogenetic evidence before calling a structurally
+confirmed inversion.</li>
 </ol>
 </div>
 <div class="section level2">
@@ -577,6 +631,10 @@ supergene reveals loss of biocomplexity in Atlantic cod. <em>Science
 Advances</em>, 5, eaav2461.</p>
 <p>Li H, Ralph P (2019) Local PCA shows how the effect of population
 structure differs along the genome. <em>Genetics</em>, 211, 289-304.</p>
+<p>Meier JI, Salazar PA, Kucka M et al. (2021) Haplotype tagging reveals
+parallel formation of hybrid races in two butterfly species.
+<em>Proceedings of the National Academy of Sciences of the United States
+of America</em>, 118, e2015005118.</p>
 <p>Mérot C (2020) Making the most of population genomic data to
 understand the importance of chromosomal inversions for adaptation and
 speciation. <em>Molecular Ecology</em>, 29, 2513-2516.</p>
