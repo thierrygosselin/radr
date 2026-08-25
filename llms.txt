@@ -142,7 +142,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-24.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-25.
 
 ## Website and support
 
@@ -182,6 +182,8 @@ and data origin before filtering.
   to highligh potential duplicate individuals
 - [`detect_het_outliers()`](https://thierrygosselin.github.io/radr/reference/detect_het_outliers.md)
   : Detect heterozygotes outliers and estimate miscall rate
+- [`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+  : Detect candidate inversion-associated genomic regions
 - [`detect_mixed_genomes()`](https://thierrygosselin.github.io/radr/reference/detect_mixed_genomes.md)
   : Detect mixed genomes
 - [`detect_paralogs()`](https://thierrygosselin.github.io/radr/reference/detect_paralogs.md)
@@ -293,5 +295,7 @@ replacement documented on each page.
 
 ### All vignettes
 
+- [Detecting candidate chromosomal inversions with
+  radr](https://thierrygosselin.github.io/radr/articles/detecting_inversions.md):
 - [Exploring and filtering genomic data with
   radr](https://thierrygosselin.github.io/radr/articles/using_radr.md):

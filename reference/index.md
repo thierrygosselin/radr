@@ -29,6 +29,8 @@ and data origin before filtering.
   to highligh potential duplicate individuals
 - [`detect_het_outliers()`](https://thierrygosselin.github.io/radr/reference/detect_het_outliers.md)
   : Detect heterozygotes outliers and estimate miscall rate
+- [`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+  : Detect candidate inversion-associated genomic regions
 - [`detect_mixed_genomes()`](https://thierrygosselin.github.io/radr/reference/detect_mixed_genomes.md)
   : Detect mixed genomes
 - [`detect_paralogs()`](https://thierrygosselin.github.io/radr/reference/detect_paralogs.md)

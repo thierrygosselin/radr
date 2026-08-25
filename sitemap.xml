@@ -1,6 +1,7 @@
 <urlset xmlns = 'http://www.sitemaps.org/schemas/sitemap/0.9'>
 <url><loc>https://thierrygosselin.github.io/radr/404.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/LICENSE.html</loc></url>
+<url><loc>https://thierrygosselin.github.io/radr/articles/detecting_inversions.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/articles/index.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/articles/using_radr.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/authors.html</loc></url>
@@ -25,6 +26,7 @@
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_duplicate_genomes.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_het_outliers.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_ibm.html</loc></url>
+<url><loc>https://thierrygosselin.github.io/radr/reference/detect_inversions.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_microsatellites.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_mixed_genomes.html</loc></url>
 <url><loc>https://thierrygosselin.github.io/radr/reference/detect_paralogs.html</loc></url>

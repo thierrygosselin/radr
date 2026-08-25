@@ -142,7 +142,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-24.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-08-25.
 
 ## Website and support
 
