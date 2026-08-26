@@ -142,8 +142,68 @@ locally adaptive alleles from being broken apart by recombination,
 especially when populations exchange migrants. Inversions can therefore
 maintain genomic differentiation even when much of the genome shows weak
 population structure.</p>
-<p><img src="figures/chromosomal-inversion.svg" class="r-plt" alt="Three-panel diagram showing a chromosome segment reversing orientation, formation of an inversion loop in a heterokaryotype, and the linkage disequilibrium, local PCA groups, and possible population FST peak detectable from SNP data." width="100%"></p>
-<p>Not every inversion is adaptive, and not every long differentiated
+<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 1200 590" role="img" aria-labelledby="title desc"><title id="title">
+What is a chromosomal inversion?
+</title>
+<p><desc id="desc">Three-panel explanation showing a chromosome segment
+reversing orientation, formation of an inversion loop in a
+heterokaryotype, and the linkage disequilibrium, local PCA groups, and
+possible population FST peak detectable from SNP data.</desc><defs><style> .title { font: 600 30px -apple-system, BlinkMacSystemFont,
+“Segoe UI”, sans-serif; fill: #202124; } .subtitle { font: 400 17px
+-apple-system, BlinkMacSystemFont, “Segoe UI”, sans-serif; fill:
+#5f6368; } .panel-title { font: 600 20px -apple-system,
+BlinkMacSystemFont, “Segoe UI”, sans-serif; fill: #202124; } .body {
+font: 400 15px -apple-system, BlinkMacSystemFont, “Segoe UI”,
+sans-serif; fill: #202124; } .small { font: 400 14px -apple-system,
+BlinkMacSystemFont, “Segoe UI”, sans-serif; fill: #5f6368; } .standard {
+stroke: #0072B2; stroke-width: 8; stroke-linecap: round; fill: none; }
+.inverted { stroke: #E69F00; stroke-width: 8; stroke-linecap: round;
+fill: none; } .orange-line { stroke: #E69F00; stroke-width: 3;
+stroke-linecap: round; stroke-linejoin: round; fill: none; } .axis {
+stroke: #9aa0a6; stroke-width: 1.5; fill: none; } .dash { stroke:
+#5f6368; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+.candidate { fill: #E69F00; opacity: 0.13; } .blue { fill: #0072B2; }
+.orange { fill: #E69F00; } .green { fill: #009E73; } </style>
+<marker id="arrow-orange" viewbox="0 0 10 10" refx="8" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#E69F00"></path></marker></defs></p>
+<p><rect width="1200" height="590" fill="#ffffff"></rect><text x="28" y="42" class="title">What is a chromosomal
+inversion?</text><text x="28" y="70" class="subtitle">A chromosome
+segment reverses orientation, creating a long region that can be
+inherited as an alternative arrangement.</text></p>
+<!-- Panel 1: the structural change -->
+<p><g transform="translate(28 105)"><text x="0" y="0" class="panel-title">1 · A segment flips</text><text x="0" y="26" class="small">The DNA is retained, but its
+order</text><text x="0" y="47" class="small">and orientation
+change.</text></g></p>
+<p><text x="0" y="77" class="body">Standard</text><path d="M26 111 H342" class="standard"></path><rect x="109" y="91" width="176" height="39" rx="4" class="candidate"></rect><g class="body" text-anchor="middle"><text x="30" y="103">A</text><text x="80" y="103">B</text><text x="130" y="103">C</text><text x="180" y="103">D</text><text x="230" y="103">E</text><text x="280" y="103">F</text><text x="330" y="103">G</text></g></p>
+<p><path d="M126 151 C160 179 231 179 269 151" class="orange-line" marker-end="url(#arrow-orange)"></path><text x="198" y="195" class="small" text-anchor="middle">segment
+reverses</text></p>
+<p><text x="0" y="239" class="body">Inverted</text><path d="M26 273 H342" class="standard"></path><path d="M111 273 H284" class="inverted"></path><g class="body" text-anchor="middle"><text x="30" y="265">A</text><text x="80" y="265">B</text><text x="130" y="265">F</text><text x="180" y="265">E</text><text x="230" y="265">D</text><text x="280" y="265">C</text><text x="330" y="265">G</text></g><path d="M269 293 H126" class="orange-line" marker-end="url(#arrow-orange)"></path></p>
+<!-- Panel 2: meiotic pairing -->
+<p><g transform="translate(420 105)"><text x="0" y="0" class="panel-title">2 · Alternative arrangements
+pair</text><text x="0" y="26" class="small">In a heterokaryotype,
+homologues</text><text x="0" y="47" class="small">form a loop during
+meiosis.</text></g></p>
+<p><text x="0" y="73" class="small">standard homologue</text><path d="M15 101 C83 101 93 112 111 145 C135 189 218 189 242 145 C260 112 270 101 352 101" class="standard"></path><text x="0" y="275" class="small">inverted homologue</text><path d="M15 250 C83 250 93 239 111 206 C135 162 218 162 242 206 C260 239 270 250 352 250" class="inverted"></path></p>
+<p><path d="M177 163 V188" class="dash"></path><circle cx="177" cy="176" r="7" class="green"></circle><text x="190" y="181" class="body">crossover</text></p>
+<p><path d="M110 307 H244" class="dash"></path><text x="177" y="335" class="body" text-anchor="middle">recombination is
+effectively reduced</text><text x="177" y="358" class="small" text-anchor="middle">between
+alternative arrangements</text></p>
+<!-- Panel 3: population-genomic evidence -->
+<p><g transform="translate(815 105)"><text x="0" y="0" class="panel-title">3 · SNP data reveal a
+footprint</text><text x="0" y="26" class="small">radr screens for
+converging signals—</text><text x="0" y="47" class="small">not the
+physical flip itself.</text></g></p>
+<p><rect x="131" y="52" width="120" height="310" class="candidate"></rect><text x="191" y="73" class="small" text-anchor="middle">candidate
+region</text></p>
+<p><text x="0" y="120" class="body">LD</text><path d="M63 125 H350" class="axis"></path><g class="orange"><rect x="138" y="104" width="15" height="15" opacity="0.30"></rect><rect x="156" y="104" width="15" height="15" opacity="0.48"></rect><rect x="174" y="104" width="15" height="15" opacity="0.66"></rect><rect x="192" y="104" width="15" height="15" opacity="0.88"></rect><rect x="210" y="104" width="15" height="15" opacity="0.66"></rect><rect x="228" y="104" width="15" height="15" opacity="0.48"></rect></g><text x="261" y="116" class="small">extended association</text></p>
+<p><text x="0" y="207" class="body">Local PCA</text><path d="M81 221 H350" class="axis"></path><g class="blue"><circle cx="105" cy="213" r="5"></circle><circle cx="115" cy="227" r="5"></circle><circle cx="125" cy="215" r="5"></circle></g><g class="green"><circle cx="209" cy="213" r="5"></circle><circle cx="219" cy="227" r="5"></circle><circle cx="229" cy="215" r="5"></circle></g><g class="orange"><circle cx="312" cy="213" r="5"></circle><circle cx="322" cy="227" r="5"></circle><circle cx="332" cy="215" r="5"></circle></g><text x="216" y="253" class="small" text-anchor="middle">three
+arrangement-genotype groups</text></p>
+<p><text x="0" y="327" class="body">Population
+F<tspan baseline-shift="sub" font-size="11">ST</tspan></text><path d="M93 340 H350" class="axis"></path><path d="M93 335 C129 335 135 331 149 315 C167 293 220 293 240 315 C255 330 274 335 350 335" class="orange-line"></path><text x="258" y="299" class="small">possible peak</text></p>
+<!-- Legend and interpretation -->
+<g transform="translate(28 516)"><path d="M0 0 H28" class="standard"></path><text x="39" y="5" class="small">standard arrangement</text><path d="M218 0 H246" class="inverted"></path><text x="257" y="5" class="small">inverted arrangement or candidate
+signal</text><text x="0" y="43" class="body">Interpretation:</text><text x="101" y="43" class="small">local PCA, LD and population
+differentiation identify a candidate haploblock;</text><text x="101" y="65" class="small">long reads, linkage evidence or
+breakpoint assays confirm chromosome orientation.</text></g></svg><p>Not every inversion is adaptive, and not every long differentiated
 haploblock is an inversion. Selection, centromeres, low-recombination
 regions, recent admixture, family structure, paralogs, assembly errors,
 marker-density changes, and technical batches can generate partially

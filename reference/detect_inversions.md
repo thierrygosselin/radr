@@ -243,3 +243,7 @@ the parent supplied with `path.folder`). It records the function
 arguments, window and candidate tables, individual PCA scores, cluster
 summaries, LD summaries, and standard diagnostic plots. PNG and PDF are
 written by default.
+
+## Author
+
+Thierry Gosselin <Thierry.Gosselin@csiro.au>
