@@ -97,7 +97,7 @@
       <rect x="210" y="104" width="15" height="15" opacity="0.66"/>
       <rect x="228" y="104" width="15" height="15" opacity="0.48"/>
     </g>
-    <text x="261" y="116" class="small">extended association</text>
+    <text x="261" y="116" class="small">elevated LD</text>
 
     <text x="0" y="207" class="body">Local PCA</text>
     <path d="M81 221 H350" class="axis"/>

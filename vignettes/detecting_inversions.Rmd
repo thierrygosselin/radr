@@ -80,7 +80,15 @@ exchange migrants. Inversions can therefore maintain genomic differentiation
 even when much of the genome shows weak population structure.
 
 ```{r inversion-concept, echo=FALSE, results="asis"}
-cat(readLines("figures/chromosomal-inversion.svg"), sep = "\n")
+inversion_figure <- knitr::image_uri("figures/chromosomal-inversion.png")
+cat(
+  '<img src="', inversion_figure,
+  '" alt="Three-panel diagram showing a chromosome segment reversing ',
+  'orientation, formation of an inversion loop in a heterokaryotype, and ',
+  'the linkage disequilibrium, local PCA groups, and possible population ',
+  'FST peak detectable from SNP data." style="width:100%;height:auto;">',
+  sep = ""
+)
 ```
 
 Not every inversion is adaptive, and not every long differentiated haploblock
