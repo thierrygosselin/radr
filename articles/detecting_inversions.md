@@ -15,6 +15,17 @@ locate physical breakpoints. Use long reads, split reads, discordant
 read pairs, linkage maps, comparative assemblies, or cytogenetics for
 structural confirmation.
 
+**Caution — do not scan unfiltered or batch-confounded data.**
+Structured missingness, uneven depth, allele dropout, paralogs, close
+relatives, and plate, lane, library, sequencing-run, or genotype-calling
+effects can create local PCA clusters, heterozygosity differences, and
+extended LD that closely resemble an inversion signal. Perform
+dataset-level quality control first, avoid confounding biological groups
+with technical batches, and cross-tabulate every candidate genotype
+group against the available technical metadata.
+[`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
+is not a substitute for data filtering or batch assessment.
+
 ## How `radr` builds on previous inversion work
 
 [`radr::detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)

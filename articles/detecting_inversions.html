@@ -77,6 +77,18 @@ footprint of an inversion, but they do not directly demonstrate reversed
 chromosome orientation or locate physical breakpoints. Use long reads,
 split reads, discordant read pairs, linkage maps, comparative
 assemblies, or cytogenetics for structural confirmation.</p>
+<div class="alert alert-warning" role="alert">
+<p><strong>Caution — do not scan unfiltered or batch-confounded
+data.</strong> Structured missingness, uneven depth, allele dropout,
+paralogs, close relatives, and plate, lane, library, sequencing-run, or
+genotype-calling effects can create local PCA clusters, heterozygosity
+differences, and extended LD that closely resemble an inversion signal.
+Perform dataset-level quality control first, avoid confounding
+biological groups with technical batches, and cross-tabulate every
+candidate genotype group against the available technical metadata.
+<code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> is not a substitute for data filtering
+or batch assessment.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="how-radr-builds-on-previous-inversion-work">How <code>radr</code> builds on previous inversion work<a class="anchor" aria-label="anchor" href="#how-radr-builds-on-previous-inversion-work"></a>
