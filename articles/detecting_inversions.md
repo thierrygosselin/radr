@@ -79,6 +79,11 @@ especially when populations exchange migrants. Inversions can therefore
 maintain genomic differentiation even when much of the genome shows weak
 population structure.
 
+![Three-panel diagram showing a chromosome segment reversing
+orientation, formation of an inversion loop in a heterokaryotype, and
+the linkage disequilibrium, local PCA groups, and possible population
+FST peak detectable from SNP data.](figures/chromosomal-inversion.svg)
+
 Not every inversion is adaptive, and not every long differentiated
 haploblock is an inversion. Selection, centromeres, low-recombination
 regions, recent admixture, family structure, paralogs, assembly errors,
@@ -293,8 +298,7 @@ frequency of the Omy20 inversion. Outside these major rearrangements,
 however, the genomic response to similar selection was much less
 parallel.
 
-This work, including the population-genomic contribution of Eric C.
-Anderson, reinforces two principles used in
+This work reinforces two principles used in
 [`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md).
 First, a long inversion-associated haplotype can represent standing
 adaptive variation that changes frequency repeatedly across populations.
