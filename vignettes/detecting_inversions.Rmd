@@ -34,12 +34,12 @@ et al. (2019) and Akopyan et al. (2025), who showed the value of combining
 regional genotype groups, linkage disequilibrium, recombination, diversity,
 and structural evidence when interpreting inversion-associated haploblocks.
 
-The function is an independent, GDS-native implementation rather than a wrapper
+The function is an independent, implementation rather than a wrapper
 around another inversion package. It was designed to make these transferable
 ideas practical for the quality-controlled RADseq and similar datasets already
 used in `radr`. In particular, `detect_inversions()`:
 
-* reads genotypes directly from GDS without conversion to `vcfR` objects;
+* reads genotypes directly from GDS;
 * constructs every window within a chromosome, linkage group, or scaffold;
 * combines local covariance PCA with contiguous-window candidate detection;
 * evaluates regional PCA groups quantitatively instead of treating a requested
@@ -99,6 +99,9 @@ A convincing candidate normally combines several lines of evidence:
    follow an isolated outlier SNP.
 6. **Technical independence:** the signal does not track plates, lanes,
    libraries, missingness, coverage, or other processing variables.
+7. **Population differentiation:** when biologically defined populations differ
+   in arrangement frequency, a broad windowed $F_{ST}$ peak overlaps the local
+   structure signal and helps prioritise the region for follow-up.
 
 None of these criteria alone proves an inversion. For example, LD may be
 uneven inside an old inversion because gene conversion and double crossovers
@@ -184,6 +187,104 @@ therefore does not manufacture an absolute-divergence statistic from
 insufficient data. Where dense sequence data and defensible population groups
 are available, $F_{ST}$, diversity, and $d_{XY}$ provide valuable downstream
 validation alongside the `radr` candidate scan.
+
+### Cross-reference candidates with chromosome-resolved $F_{ST}$
+
+Population differentiation is most informative when it is plotted along each
+linkage group rather than reduced to one genome-wide value. The complementary
+`assigner::fst_WC84()` function calculates Weir and Cockerham's (1984)
+$F_{ST}$ from independently defined populations and, when `CHROM` and numeric
+`POS` metadata are available, returns:
+
+* `fst.linkage.groups`, with one summary per chromosome or linkage group;
+* `fst.windows`, with WC84 variance components combined in physical windows;
+  and
+* `fst.genome.plot`, a chromosome-concatenated Manhattan-style figure.
+
+The physical window size should reflect marker density and the expected scale
+of the candidate. For sparse RADseq data, a 25-kb window may contain too few
+markers; larger windows and a sensitivity analysis across several window sizes
+are usually more defensible. Use the same genome assembly, chromosome labels,
+position metadata, sample filters, and marker filters in both analyses.
+
+```{r fst-cross-reference, eval=FALSE}
+library(ggplot2)
+
+strata <- readr::read_tsv("strata.tsv", show_col_types = FALSE)
+
+fst <- assigner::fst_WC84(
+  data = genome,
+  strata = strata,
+  linkage.group = TRUE,
+  window.size = 1e6,
+  window.method = "fixed",
+  filename = "inversion_fst_crosscheck"
+)
+
+# Whole-genome overview supplied by assigner
+fst$fst.genome.plot
+
+# Linkage-group view with radr candidate intervals shaded
+candidate_intervals <- inv$candidates |>
+  dplyr::transmute(
+    CHROM = as.character(chromosome),
+    xmin = start,
+    xmax = end
+  )
+
+ggplot(fst$fst.windows, aes(WINDOW_MID, FST_WC84)) +
+  geom_rect(
+    data = candidate_intervals,
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE,
+    fill = "#E69F00",
+    alpha = 0.18
+  ) +
+  geom_line(colour = "grey45") +
+  geom_point(aes(colour = OUTLIER), size = 1.4) +
+  facet_wrap(~ CHROM, scales = "free_x") +
+  scale_x_continuous(
+    labels = scales::label_number(scale = 1e-6, suffix = " Mb")
+  ) +
+  labs(
+    x = "Genomic position",
+    y = expression("Windowed WC84 " * F[ST]),
+    colour = "Exploratory outlier"
+  ) +
+  theme_bw()
+```
+
+An overlapping, spatially coherent $F_{ST}$ peak strengthens the case that a
+candidate haploblock contributes to differentiation among the sampled
+populations. Its absence does not reject an inversion: both arrangements may
+occur at similar frequencies among populations. Conversely, an $F_{ST}$ peak
+can arise from local selection, a centromere, low recombination, reduced
+diversity, marker ascertainment, or technical structure without an inversion.
+
+Population strata must be specified independently of the inversion scan.
+Calculating $F_{ST}$ between the regional PCA clusters inferred from the same
+candidate genotypes is circular and should not be presented as independent
+support. Where whole-genome sequence is available, compare relative
+differentiation with $d_{XY}$, within-population diversity, recombination, and
+structural evidence, as illustrated by Akopyan et al. (2025).
+
+### Rainbow trout across populations: inversion signals are context-dependent
+
+Campbell, Anderson, Garza, and Pearse (2021) compared independently landlocked
+rainbow trout populations with an anadromous source population. All landlocked
+populations showed an increased frequency of the large Omy05 inversion, while
+three of four showed an increased frequency of the Omy20 inversion. Outside
+these major rearrangements, however, the genomic response to similar selection
+was much less parallel.
+
+This work, including the population-genomic contribution of Eric C. Anderson,
+reinforces two principles used in `detect_inversions()`. First, a long
+inversion-associated haplotype can represent standing adaptive variation that
+changes frequency repeatedly across populations. Second, neither the strength
+of a genomic signal nor its association with migration should be assumed to be
+constant across the species range. Candidate clusters should therefore be
+cross-tabulated against population and environment, and biological associations
+should be tested rather than assigned from the candidate region alone.
 
 ## How the local analysis is organised
 
@@ -504,11 +605,18 @@ Use the scan as one part of a staged analysis:
 
 Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025) Genetic
 differentiation is constrained to chromosomal inversions and putative
-centromeres in locally adapted populations with higher gene flow. *Molecular
-Biology and Evolution*, 42, msaf092.
+centromeres in locally adapted populations with higher gene flow.
+*Molecular Biology and Evolution*, 42, msaf092.
+
+Campbell MA, Anderson EC, Garza JC, Pearse DE (2021) Polygenic basis and the
+role of genome duplication in adaptation to similar selective environments.
+*Journal of Heredity*, 112, 614-625.
 
 Faria R, Johannesson K, Butlin RK, Westram AM (2019) Evolving inversions.
 *Trends in Ecology & Evolution*, 34, 239-248.
+
+Gosselin T, Anderson EC, Bradbury I (2020) assigner: assignment analysis with
+GBS/RAD data using R. R package. https://doi.org/10.5281/zenodo.592677.
 
 Hoffmann AA, Rieseberg LH (2008) Revisiting the impact of inversions in
 evolution: from population genetic markers to drivers of adaptive shifts and
@@ -518,28 +626,37 @@ Huang K, Andrew RL, Owens GL, Ostevik KL, Rieseberg LH (2020) Multiple
 chromosomal inversions contribute to adaptive divergence of a dune sunflower
 ecotype. *Molecular Ecology*, 29, 2535-2549.
 
-Kess T, Bentzen P, Lehnert SJ et al. (2019) A migration-associated supergene
-reveals loss of biocomplexity in Atlantic cod. *Science Advances*, 5, eaav2461.
+Kess T, Bentzen P, Lehnert SJ, Sylvester EVA, Lien S, Kent MP,
+Sinclair-Waters M, Morris CJ, Regular P, Fairweather R, Bradbury IR (2019) A
+migration-associated supergene reveals loss of biocomplexity in Atlantic cod.
+*Science Advances*, 5, eaav2461.
 
 Li H, Ralph P (2019) Local PCA shows how the effect of population structure
 differs along the genome. *Genetics*, 211, 289-304.
 
-Meier JI, Salazar PA, Kucka M et al. (2021) Haplotype tagging reveals parallel
-formation of hybrid races in two butterfly species. *Proceedings of the
-National Academy of Sciences of the United States of America*, 118,
-e2015005118.
+Meier JI, Salazar PA, Kučka M, Davies RW, Dréau A, Aldás I, Power OB, Nadeau NJ,
+Bridle JR, Rolian C, Barton NH, McMillan WO, Jiggins CD, Chan YF (2021)
+Haplotype tagging reveals parallel formation of hybrid races in two butterfly species.
+*Proceedings of the National Academy of Sciences of the United States of America*,
+118, e2015005118.
 
 Mérot C (2020) Making the most of population genomic data to understand the
 importance of chromosomal inversions for adaptation and speciation.
 *Molecular Ecology*, 29, 2513-2516.
 
-Pearse DE, Barson NJ, Nome T et al. (2019) Sex-dependent dominance maintains
-migration supergene in rainbow trout. *Nature Ecology & Evolution*, 3,
-1731-1742.
+Pearse DE, Barson NJ, Nome T, Gao G, Campbell MA, Abadía-Cardoso A, Anderson EC,
+Rundio DE, Williams TH, Naish KA, Moen T, Liu S, Kent M, Moser M, Minkley DR,
+Rondeau EB, Brieuc MSO, Sandve SR, Miller MR, Cedillo L, Baruch K, Hernandez AG,
+Ben-Zvi G, Shem-Tov D, Barad O, Kuzishchin K, Garza JC, Lindley ST, Koop BF,
+Thorgaard GH, Palti Y, Lien S (2019) Sex-dependent dominance maintains migration
+supergene in rainbow trout. *Nature Ecology & Evolution*, 3, 1731-1742.
 
-Thompson TQ, Bellinger MR, O'Rourke SM et al. (2020) A complex phenotype in
-salmon controlled by a simple change in migratory timing. *Science*, 370,
-609-613.
+Thompson NF, Anderson EC, Clemento AJ, Campbell MA, Pearse DE, Hearsey JW,
+Kinziger AP, Garza JC (2020) A complex phenotype in salmon controlled by a
+simple change in migratory timing. *Science*, 370, 609-613.
+
+Weir BS, Cockerham CC (1984) Estimating F-statistics for the analysis of
+population structure. *Evolution*, 38, 1358-1370.
 
 Wellenreuther M, Bernatchez L (2018) Eco-evolutionary genomics of chromosomal
 inversions. *Trends in Ecology & Evolution*, 33, 427-440.
