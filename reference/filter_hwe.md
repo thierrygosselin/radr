@@ -284,8 +284,10 @@ Wigginton, J.E., Cutler, D.J. and Abecasis, G.R. (2005) A note on exact
 tests of Hardy-Weinberg equilibrium, American Journal of Human Genetics
 (76) pp. 887-893.
 
-Purcell et al. (2007) PLINK: A Toolset for Whole-Genome Association and
-Population-Based Linkage Analysis. American Journal of Human Genetics
+Purcell, S., Neale, B., Todd-Brown, K., Thomas, L., Ferreira, M.A.R.,
+Bender, D., Maller, J., Sklar, P., de Bakker, P.I.W., Daly, M.J. and
+Sham, P.C. (2007) PLINK: A Tool Set for Whole-Genome Association and
+Population-Based Linkage Analyses. American Journal of Human Genetics
 81(3) pp. 559-575.
 
 Graffelman, J. and Moreno, V. (2013) The mid p-value in exact tests for
