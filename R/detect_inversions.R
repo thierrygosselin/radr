@@ -133,6 +133,8 @@
 #'   }
 #'
 #' @export
+#' @author Thierry Gosselin \email{Thierry.Gosselin@@csiro.au}
+
 detect_inversions <- function(
     data,
     chromosome = NULL,

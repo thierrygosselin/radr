@@ -194,3 +194,6 @@ window and candidate tables, individual PCA scores, cluster summaries, LD
 summaries, and standard diagnostic plots. PNG and PDF are written by default.
 }
 
+\author{
+Thierry Gosselin \email{Thierry.Gosselin@csiro.au}
+}
