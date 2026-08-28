@@ -87,7 +87,8 @@ stopifnot(all(c(
   "size_bp", "cluster_separation", "cluster_compactness",
   "middle_heterozygosity_excess", "homokaryotype_mean_ld_r2",
   "flanking_mean_ld_r2", "boundary_contrast", "internal_transition_max",
-  "known_region_overlap", "evidence_score", "evidence_strength"
+  "known_region_overlap", "evidence_score", "evidence_strength",
+  "candidate_class", "alternative_explanations"
 ) %in% names(result$candidates)))
 candidate <- result$candidates[result$candidates$chromosome == "2", ][1, ]
 stopifnot(candidate$three_cluster_evidence)
@@ -101,8 +102,22 @@ stopifnot(candidate$known_region_overlap == "putative_centromere")
 stopifnot(candidate$n_known_region_overlaps == 1L)
 stopifnot(candidate$evidence_strength == "strong")
 stopifnot(nrow(result$sensitivity) > 0L)
+stopifnot(all(c(
+  "candidate_id", "individual", "arrangement", "arrangement_dosage",
+  "arrangement_confidence"
+) %in% names(result$arrangement.genotypes)))
+stopifnot(all(as.character(result$arrangement.genotypes$arrangement) %in%
+  c("AA", "AB", "BB")))
+stopifnot(all(result$arrangement.genotypes$arrangement_confidence >= 0.5))
+stopifnot(nrow(result$homokaryotype.whitelist) > 0L)
 stopifnot(dir.exists(result$path.folder))
 stopifnot(file.exists(file.path(result$path.folder, "inversion_windows.tsv")))
+stopifnot(file.exists(file.path(
+  result$path.folder, "inversion_arrangement_genotypes.tsv"
+)))
+stopifnot(file.exists(file.path(
+  result$path.folder, "homokaryotypes_all_candidates_whitelist.tsv"
+)))
 stopifnot(file.exists(file.path(result$path.folder, "window_scores.png")))
 stopifnot(any(grepl("_ld[.]png$", result$output.files$files)))
 stopifnot(all(vapply(result$diagnostics, function(x) {

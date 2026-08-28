@@ -13,6 +13,12 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 ## Scope
 
+The analytical starting points are Li and Ralph (2019) for local PCA, Faria et
+al. (2019) and Wellenreuther and Bernatchez (2018) for inversion biology and
+interpretation, and empirical work combining genotype groups, LD,
+recombination, diversity, and structural evidence. These references should be
+read before treating a local-structure signal as an inversion.
+
 `detect_inversions()` is a screening tool for finding genomic regions whose
 local population structure is unusual relative to the rest of a GDS dataset.
 It is designed for diploid, biallelic SNP data, including carefully filtered
@@ -25,7 +31,7 @@ breakpoints. Use long reads, split reads, discordant read pairs, linkage maps,
 comparative assemblies, or cytogenetics for structural confirmation.
 
 <div class="alert alert-warning" role="alert">
-<strong>Caution — do not scan unfiltered or batch-confounded data.</strong>
+<strong>Caution: do not scan unfiltered or batch-confounded data.</strong>
 Structured missingness, uneven depth, allele dropout, paralogs, close relatives,
 and plate, lane, library, sequencing-run, or genotype-calling effects can create
 local PCA clusters, heterozygosity differences, and extended LD that closely
@@ -34,6 +40,12 @@ confounding biological groups with technical batches, and cross-tabulate every
 candidate genotype group against the available technical metadata.
 <code>detect_inversions()</code> is not a substitute for data filtering or batch
 assessment.
+</div>
+
+<div class="alert alert-info" role="alert">
+<strong>Screen before LD pruning.</strong> Extended LD is part of the signal
+being investigated. Run the first inversion screen before LD pruning, then use
+the inferred regions and arrangements in explicit sensitivity analyses.
 </div>
 
 ## How `radr` builds on previous inversion work
@@ -53,11 +65,14 @@ used in `radr`. In particular, `detect_inversions()`:
 
 * reads genotypes directly from GDS;
 * constructs every window within a chromosome, linkage group, or scaffold;
+* offers fixed-SNP, fixed-base-pair, and experimental LD-scaled windows;
 * combines local covariance PCA with contiguous-window candidate detection;
 * evaluates regional PCA groups quantitatively instead of treating a requested
   three-group k-means solution as evidence by itself;
 * summarises heterozygosity, overall and within-group LD, candidate boundaries,
   flanking windows, internal transitions, and window-size sensitivity;
+* returns ordered putative arrangement genotypes, relative call confidence,
+  arrangement-specific whitelists, and homokaryotype-only sensitivity sets;
 * accepts centromere, low-recombination, repeat, and assembly-gap annotations
   without allowing them to determine the candidate calls;
 * explicitly records the consequences of missing-data filtering and temporary
@@ -355,6 +370,9 @@ inv <- detect_inversions(
 
 inv
 inv$candidates
+inv$arrangement.genotypes
+inv$homokaryotype.whitelist
+inv$homokaryotype.all.candidates
 inv$path.folder
 ```
 
@@ -415,6 +433,21 @@ chr14_mb <- detect_inversions(
 )
 ```
 
+Experimental LD-scaled windows adapt their number of markers to local adjacent
+LD. They help assess whether a signal depends on an arbitrary fixed marker
+count, but they do not estimate an inversion breakpoint or a formal LD block:
+
+```{r ld-scaled-windows, eval=FALSE}
+chr14_ld <- detect_inversions(
+  data = genome,
+  chromosome = "14",
+  window.method = "ld",
+  ld.window.threshold = 0.10,
+  ld.window.min.snps = 50,
+  ld.window.max.snps = 500
+)
+```
+
 ## Plot window evidence by linkage group
 
 `detect_inversions()` automatically saves the standard window-score, MDS, LD,
@@ -466,13 +499,28 @@ shows individuals, not windows:
 ```{r regional-pca, eval=FALSE}
 candidate1 <- inv$diagnostics[[1]]
 
-ggplot(candidate1$scores, aes(PC1, PC2, colour = cluster)) +
+ggplot(candidate1$scores, aes(PC1, PC2, colour = arrangement)) +
   geom_point(size = 2, alpha = 0.8) +
   labs(colour = "Putative arrangement genotype") +
   theme_bw()
 
 candidate1$cluster_summary
+candidate1$scores |>
+  dplyr::select(individual, arrangement, arrangement_dosage,
+                arrangement_confidence)
 ```
+
+`AA`, `AB`, and `BB` mean the low, middle, and high regional-PC1 clusters. They
+are convenient putative arrangement genotypes, not validated breakpoint
+genotypes. Relative confidence describes separation from the next cluster; it
+is not a posterior probability. The result folder contains one whitelist per
+arrangement, one homokaryotype-only whitelist per candidate, and a whitelist of
+individuals classified as a homokaryotype across every candidate.
+
+The homokaryotype sets are useful for asking whether a downstream signal
+persists after excluding putative heterokaryotypes. Haplotype scans need further
+care: `selscan`, for example, does not accept missing genotype or haplotype data.
+Do not convert missing calls silently into a homozygous arrangement.
 
 Three clusters are biologically suggestive only when the central PCA cluster
 also has the expected heterozygosity and the pattern is not explained by
@@ -558,6 +606,39 @@ ggsave(file.path(inv$path.folder, "window_scores_annotated.png"), p,
 Use `save.plots = FALSE` when only tables and returned objects are wanted. The
 results folder and reproducibility tables are still created.
 
+## Add context to genome scans
+
+Use `genome_scan_context()` to place scan peaks beside marker density,
+missingness, heterozygosity, allele frequency, LD, and candidate-region
+annotations:
+
+```{r scan-context, eval=FALSE}
+context <- radr::genome_scan_context(
+  data = genome,
+  inversion.regions = inv,
+  scan.statistics = bayescan_or_fst_table,
+  window.snps = 250
+)
+
+context$context
+```
+
+For each regional peak, ask:
+
+* Does it overlap low recombination or a centromere?
+* Is marker density unusual?
+* Does missingness increase in the same region?
+* Is the signal restricted to one caller, mapping strategy, sequencing batch,
+  or reference assembly?
+* Does it remain after excluding putative inversion heterozygotes?
+* Is it supported by a method based on a different genomic signature?
+
+These questions should also guide analyses in `assigner` and `grouper`.
+Population structure should be explored with the full marker set, with candidate
+inversion regions excluded, and with arrangement genotypes included explicitly.
+Otherwise a large haploblock can dominate clustering and make one regional
+feature look like genome-wide structure.
+
 ## Interpreting coordinates
 
 The candidate `start` and `end` values are the outer marker coordinates of the
@@ -594,7 +675,14 @@ screening grade. Important columns include:
 * `internal_transition_max`: the largest score change between candidate
   windows, useful for finding complex, adjacent, or nested signals; and
 * `known_region_overlap`: any user-supplied centromere, low-recombination,
-  assembly-gap, or other annotation intersecting the candidate.
+  assembly-gap, or other annotation intersecting the candidate;
+* `candidate_class`: a cautious interpretation such as putative
+  inversion-associated haploblock, unresolved haploblock, low-recombination or
+  centromeric candidate, technical or assembly-associated region, or another
+  structural-variation-associated haploblock; and
+* `alternative_explanations`: reminders that local PCA can reflect a
+  centromere, low recombination, assembly or mapping problems, introgression,
+  population-specific missingness, or another structural variant.
 
 `three_cluster_evidence` is not merely a record that k-means was run with
 `cluster.k = 3`. It additionally requires all three inferred groups to contain
@@ -623,6 +711,21 @@ Use the scan as one part of a staged analysis:
    alternative arrangements; and
 8. seek breakpoint-spanning long reads, junction PCR, comparative assembly, or
    cytogenetic evidence before calling a structurally confirmed inversion.
+
+For genome scans and population-structure analyses, report three deliberate
+views whenever the data permit:
+
+1. the complete genome;
+2. a collinear sensitivity dataset excluding candidate inversion-associated or
+   major low-recombination regions; and
+3. candidate-region analyses using arrangement frequencies, heterozygosity,
+   LD, differentiation, environmental associations, and homokaryotype-only
+   sensitivity datasets.
+
+Inversions should be detected, annotated, and analysed explicitly. They should
+neither be ignored nor automatically removed. Use "candidate", "putative", or
+"inversion-associated haploblock" until structural evidence justifies a more
+definitive term.
 
 ## References
 

@@ -8,6 +8,12 @@
 #' windows. Candidate regions are then summarised using regional PCA,
 #' heterozygosity, and linkage disequilibrium (LD).
 #'
+#' Run this screen before LD pruning. LD pruning can remove the extended
+#' correlation pattern that makes an inversion-associated haploblock
+#' detectable. After candidates have been reviewed, repeat downstream analyses
+#' with the complete genome, with candidate regions excluded, and within each
+#' candidate region or inferred arrangement.
+#'
 #' This is a screening method. A candidate region is not proof of a physical
 #' inversion, and the returned coordinates describe an inversion-associated
 #' haploblock rather than validated breakpoints. Long-read, read-pair, split-read,
@@ -67,6 +73,28 @@
 #' confirmed inversion. Known-region overlaps are reported separately and do
 #' not increase or decrease the evidence score.
 #'
+#' Every candidate is described conservatively. A local-PCA signal can reflect
+#' a putative inversion-associated haploblock, but it can also arise near a
+#' centromere, in a region of low recombination, from assembly or mapping
+#' problems, introgression, population-specific missingness, or another form of
+#' structural variation. The `candidate_class` and `alternative_explanations`
+#' columns make these alternatives explicit. The function never reports a
+#' structurally confirmed inversion.
+#'
+#' @section Arrangement genotypes and sensitivity datasets:
+#' For a three-cluster regional PCA, clusters are ordered along PC1 and labelled
+#' `AA`, `AB`, and `BB` by default. These are putative arrangement genotypes,
+#' not sequence-level breakpoint genotypes. The individual table includes the
+#' arrangement call, its numeric dosage (0, 1, or 2), and a relative
+#' assignment-confidence score.
+#'
+#' For every candidate, the function writes whitelists for each arrangement and
+#' a homokaryotype-only whitelist containing `AA` and `BB`. It also returns a
+#' combined whitelist for individuals classified as an outer arrangement in
+#' every candidate region. These datasets support analyses that exclude
+#' putative heterokaryotypes. This is useful before haplotype scans: `selscan`,
+#' for example, does not accept missing genotype or haplotype data.
+#'
 #' @section Output and plotting:
 #' Following other `radr` detection functions, each call creates a dated
 #' `detect_inversions` results folder in the working directory (or below the
@@ -84,6 +112,18 @@
 #'   supplied, physical windows are used instead of fixed-SNP windows.
 #' @param step.bp Distance in base pairs between physical window starts.
 #'   Defaults to `window.bp`.
+#' @param window.method Window construction method: `"snps"` for a fixed number
+#'   of SNPs, `"bp"` for fixed physical windows, or `"ld"` for experimental
+#'   LD-scaled windows. Supplying `window.bp` selects `"bp"`. Default:
+#'   \code{window.method = "snps"}.
+#' @param ld.window.threshold Adjacent-marker r-squared threshold used to end an
+#'   experimental LD-scaled window after the minimum number of markers.
+#'   Default: \code{ld.window.threshold = 0.1}.
+#' @param ld.window.min.snps Minimum markers in an LD-scaled window. Default:
+#'   \code{ld.window.min.snps = 50}.
+#' @param ld.window.max.snps Maximum markers examined in an LD-scaled window.
+#'   This bounds memory and computation. Default:
+#'   \code{ld.window.max.snps = 500}.
 #' @param sensitivity.window.snps Additional fixed-SNP window sizes used for a
 #'   sensitivity analysis. These runs summarise PC1 variance and LD along the
 #'   genome without replacing the primary candidate scan. Use `NULL` to skip
@@ -102,6 +142,9 @@
 #'   for a common polymorphic inversion is often three, representing the two
 #'   homokaryotypes and their heterokaryotype, but this is diagnostic rather
 #'   than proof.
+#' @param arrangement.labels Three labels, ordered from the lowest to highest
+#'   regional PC1 cluster, used when `cluster.k = 3`. Default:
+#'   \code{arrangement.labels = c("AA", "AB", "BB")}.
 #' @param known.regions Optional data frame describing centromeres, regions of
 #'   low recombination, assembly gaps, or other annotations. It must contain
 #'   `chromosome`, `start`, `end`, and `type` columns. Overlapping annotation
@@ -126,11 +169,27 @@
 #'   \item `candidates`: one row per contiguous candidate region;
 #'   \item `diagnostics`: regional PCA scores, cluster assignments,
 #'     heterozygosity summaries, and optional LD matrices;
+#'   \item `arrangement.genotypes`: one row per individual and candidate with
+#'     putative arrangement genotype and relative assignment confidence;
+#'   \item `homokaryotype.whitelist`: candidate-specific `AA` and `BB`
+#'     individuals, plus `homokaryotype.all.candidates` for the intersection;
 #'   \item `sensitivity`: optional summaries for additional fixed-SNP window
 #'     sizes;
 #'   \item `path.folder` and `output.files`: locations of written results;
 #'   \item `settings`: the effective analysis settings.
 #'   }
+#'
+#' @references Li H, Ralph P (2019). Local PCA shows how the effect of
+#' population structure differs along the genome. Genetics, 211, 289-304.
+#' \doi{10.1534/genetics.118.301747}.
+#'
+#' Faria R, Johannesson K, Butlin RK, Westram AM (2019). Evolving inversions.
+#' Trends in Ecology & Evolution, 34, 239-248.
+#' \doi{10.1016/j.tree.2018.12.005}.
+#'
+#' Wellenreuther M, Bernatchez L (2018). Eco-evolutionary genomics of
+#' chromosomal inversions. Trends in Ecology & Evolution, 33, 427-440.
+#' \doi{10.1016/j.tree.2018.04.002}.
 #'
 #' @export
 #' @author Thierry Gosselin \email{Thierry.Gosselin@@csiro.au}
@@ -142,6 +201,10 @@ detect_inversions <- function(
     step.snps = window.snps,
     window.bp = NULL,
     step.bp = window.bp,
+    window.method = c("snps", "bp", "ld"),
+    ld.window.threshold = 0.1,
+    ld.window.min.snps = 50L,
+    ld.window.max.snps = 500L,
     sensitivity.window.snps = c(100L, 250L, 500L, 1000L),
     n.pcs = 2L,
     mds.axes = 2L,
@@ -150,6 +213,7 @@ detect_inversions <- function(
     min.call.rate = 0.8,
     min.candidate.windows = 1L,
     cluster.k = 3L,
+    arrangement.labels = c("AA", "AB", "BB"),
     known.regions = NULL,
     ld.max.snps = 500L,
     return.ld = FALSE,
@@ -208,6 +272,8 @@ detect_inversions <- function(
     min.window.snps = min.window.snps,
     min.candidate.windows = min.candidate.windows,
     cluster.k = cluster.k,
+    ld.window.min.snps = ld.window.min.snps,
+    ld.window.max.snps = ld.window.max.snps,
     ld.max.snps = ld.max.snps,
     random.seed = random.seed
   )
@@ -232,9 +298,16 @@ detect_inversions <- function(
   min.window.snps <- integer.args$min.window.snps
   min.candidate.windows <- integer.args$min.candidate.windows
   cluster.k <- integer.args$cluster.k
+  ld.window.min.snps <- integer.args$ld.window.min.snps
+  ld.window.max.snps <- integer.args$ld.window.max.snps
   ld.max.snps <- integer.args$ld.max.snps
   random.seed <- integer.args$random.seed
 
+  window.method <- match.arg(window.method)
+  if (!is.null(window.bp)) window.method <- "bp"
+  if (window.method == "bp" && is.null(window.bp)) {
+    rlang::abort("`window.bp` is required when `window.method = \"bp\"`.")
+  }
   if (!is.null(window.bp)) {
     if (length(window.bp) != 1L || !is.numeric(window.bp) || is.na(window.bp) ||
         !is.finite(window.bp) || window.bp < 1) {
@@ -258,11 +331,25 @@ detect_inversions <- function(
     sensitivity.window.snps <- sort(unique(as.integer(sensitivity.window.snps)))
   }
 
-  if (is.null(window.bp) && min.window.snps > window.snps) {
+  if (window.method == "snps" && min.window.snps > window.snps) {
     rlang::abort("`min.window.snps` cannot exceed `window.snps`.")
   }
   .inversion_check_probability(outlier.quantile, "outlier.quantile", open = TRUE)
   .inversion_check_probability(min.call.rate, "min.call.rate", open = FALSE)
+  .inversion_check_probability(
+    ld.window.threshold, "ld.window.threshold", open = FALSE
+  )
+  if (ld.window.max.snps < ld.window.min.snps) {
+    rlang::abort("`ld.window.max.snps` cannot be smaller than `ld.window.min.snps`.")
+  }
+  if (cluster.k == 3L) {
+    if (length(arrangement.labels) != 3L || anyNA(arrangement.labels) ||
+        any(!nzchar(as.character(arrangement.labels))) ||
+        anyDuplicated(arrangement.labels)) {
+      rlang::abort("`arrangement.labels` must contain three unique non-empty labels.")
+    }
+    arrangement.labels <- as.character(arrangement.labels)
+  }
   if (!is.logical(return.ld) || length(return.ld) != 1L || is.na(return.ld)) {
     rlang::abort("`return.ld` must be TRUE or FALSE.")
   }
@@ -336,13 +423,25 @@ detect_inversions <- function(
     position = position[marker.order],
     stringsAsFactors = FALSE
   )
-  windows <- .inversion_make_windows(
-    marker.table = marker.table,
-    window.snps = window.snps,
-    step.snps = step.snps,
-    window.bp = window.bp,
-    step.bp = step.bp
-  )
+  windows <- if (window.method == "ld") {
+    if (verbose) message("Constructing experimental LD-scaled windows...")
+    .inversion_make_ld_windows(
+      gds = gds,
+      marker.table = marker.table,
+      sample.id = sample.id,
+      min.snps = ld.window.min.snps,
+      max.snps = ld.window.max.snps,
+      threshold = ld.window.threshold
+    )
+  } else {
+    .inversion_make_windows(
+      marker.table = marker.table,
+      window.snps = window.snps,
+      step.snps = step.snps,
+      window.bp = if (window.method == "bp") window.bp else NULL,
+      step.bp = if (window.method == "bp") step.bp else NULL
+    )
+  }
   if (length(windows) < 3L) {
     rlang::abort(
       "At least three complete chromosome-specific windows are required."
@@ -462,7 +561,8 @@ detect_inversions <- function(
         cluster.k = cluster.k,
         min.call.rate = min.call.rate,
         ld.max.snps = ld.max.snps,
-        return.ld = return.ld
+        return.ld = return.ld,
+        arrangement.labels = arrangement.labels
       )
       diagnostics[[i]]$candidate_id <- candidate.regions$candidate_id[i]
       diagnostics[[i]]$chromosome <- candidate.regions$chromosome[i]
@@ -495,6 +595,36 @@ detect_inversions <- function(
     }
   }
   candidate.regions <- .inversion_evidence_summary(candidate.regions)
+  candidate.regions <- .inversion_classify_candidates(candidate.regions)
+
+  arrangement.genotypes <- purrr::map_dfr(diagnostics, function(x) {
+    if (is.null(x$scores) || !nrow(x$scores)) return(tibble::tibble())
+    dplyr::transmute(
+      x$scores,
+      candidate_id = x$candidate_id,
+      chromosome = x$chromosome,
+      start = x$start,
+      end = x$end,
+      individual = .data$individual,
+      arrangement = .data$arrangement,
+      arrangement_dosage = .data$arrangement_dosage,
+      arrangement_confidence = .data$arrangement_confidence,
+      distance_nearest = .data$distance_nearest,
+      distance_second = .data$distance_second,
+      heterozygosity = .data$heterozygosity
+    )
+  })
+  homokaryotype.whitelist <- arrangement.genotypes |>
+    dplyr::filter(.data$arrangement_dosage %in% c(0L, 2L)) |>
+    dplyr::distinct(.data$candidate_id, .data$individual, .data$arrangement)
+  homokaryotype.all.candidates <- if (nrow(candidate.regions) > 0L) {
+    homokaryotype.whitelist |>
+      dplyr::count(.data$individual, name = "n_candidates_homokaryotype") |>
+      dplyr::filter(.data$n_candidates_homokaryotype == nrow(candidate.regions)) |>
+      dplyr::select(.data$individual)
+  } else {
+    tibble::tibble(individual = character())
+  }
 
   sensitivity <- .inversion_window_sensitivity(
     gds = gds,
@@ -510,6 +640,8 @@ detect_inversions <- function(
     window.table = window.table,
     candidate.regions = candidate.regions,
     diagnostics = diagnostics,
+    arrangement.genotypes = arrangement.genotypes,
+    homokaryotype.all.candidates = homokaryotype.all.candidates,
     sensitivity = sensitivity,
     threshold = threshold,
     save.plots = save.plots,
@@ -528,6 +660,9 @@ detect_inversions <- function(
     windows = tibble::as_tibble(window.table),
     candidates = tibble::as_tibble(candidate.regions),
     diagnostics = diagnostics,
+    arrangement.genotypes = arrangement.genotypes,
+    homokaryotype.whitelist = homokaryotype.whitelist,
+    homokaryotype.all.candidates = homokaryotype.all.candidates,
     sensitivity = sensitivity,
     path.folder = path.folder,
     output.files = output.files,
@@ -537,6 +672,10 @@ detect_inversions <- function(
       step.snps = step.snps,
       window.bp = window.bp,
       step.bp = step.bp,
+      window.method = window.method,
+      ld.window.threshold = ld.window.threshold,
+      ld.window.min.snps = ld.window.min.snps,
+      ld.window.max.snps = ld.window.max.snps,
       sensitivity.window.snps = sensitivity.window.snps,
       n.pcs = n.pcs,
       mds.axes = mds.k,
@@ -546,6 +685,7 @@ detect_inversions <- function(
       min.call.rate = min.call.rate,
       min.candidate.windows = min.candidate.windows,
       cluster.k = cluster.k,
+      arrangement.labels = arrangement.labels,
       known.regions = known.regions,
       ld.max.snps = ld.max.snps,
       random.seed = random.seed
@@ -677,6 +817,30 @@ detect_inversions <- function(
     )
 }
 
+.inversion_classify_candidates <- function(x) {
+  if (!nrow(x)) {
+    x$candidate_class <- character()
+    x$alternative_explanations <- character()
+    return(x)
+  }
+  annotation <- tolower(x$known_region_overlap)
+  technical <- grepl("assembly|gap|repeat|mapping|coverage|missing|batch", annotation)
+  recombination <- grepl("centromere|low.recomb|recombination", annotation)
+  structural <- grepl("structural|sv|duplication|translocation", annotation)
+  x$candidate_class <- dplyr::case_when(
+    technical ~ "candidate technical or assembly-associated region",
+    recombination ~ "candidate low-recombination or centromeric region",
+    structural ~ "candidate structural-variation-associated haploblock",
+    x$evidence_strength == "strong" ~ "putative inversion-associated haploblock",
+    .default = "unresolved candidate haploblock"
+  )
+  x$alternative_explanations <- paste(
+    "centromere or low recombination; assembly or mapping problem;",
+    "introgression; population-specific missingness; other structural variation"
+  )
+  x
+}
+
 .inversion_chromosome_order <- function(x) {
   stripped <- sub("^(chr|chromosome)", "", x, ignore.case = TRUE)
   numeric.part <- suppressWarnings(as.numeric(stripped))
@@ -724,6 +888,53 @@ detect_inversions <- function(
     })
   }), recursive = FALSE)
   windows
+}
+
+# Experimental adaptive windows. Starting at the next unused marker, extend a
+# window until the median r-squared between adjacent markers drops below the
+# requested threshold, or until the maximum size is reached. This is a local
+# scaling device, not an LD-block or breakpoint estimator.
+.inversion_make_ld_windows <- function(
+    gds, marker.table, sample.id, min.snps, max.snps, threshold
+) {
+  split.markers <- split(marker.table, marker.table$chromosome, drop = TRUE)
+  unlist(purrr::map(split.markers, function(x) {
+    x <- x[order(x$position, x$variant_id), , drop = FALSE]
+    if (nrow(x) < min.snps) return(list())
+    windows <- list()
+    first <- 1L
+    while (first <= nrow(x) - min.snps + 1L) {
+      last.available <- min(nrow(x), first + max.snps - 1L)
+      idx <- seq.int(first, last.available)
+      dosage <- .inversion_get_dosage(gds, x$variant_id[idx], sample.id)
+      if (ncol(dosage) > min.snps) {
+        adjacent.r2 <- purrr::map_dbl(seq_len(ncol(dosage) - 1L), function(j) {
+          value <- suppressWarnings(stats::cor(
+            dosage[, j], dosage[, j + 1L], use = "pairwise.complete.obs"
+          ))^2
+          if (is.finite(value)) value else NA_real_
+        })
+        rolling <- purrr::map_dbl(seq.int(min.snps, ncol(dosage)), function(n) {
+          values <- adjacent.r2[seq_len(n - 1L)]
+          if (all(!is.finite(values))) NA_real_ else
+            stats::median(values[is.finite(values)])
+        })
+        stop.at <- which(is.finite(rolling) & rolling < threshold)[1L]
+        n.use <- if (is.na(stop.at)) ncol(dosage) else min.snps + stop.at - 1L
+      } else {
+        n.use <- ncol(dosage)
+      }
+      use <- idx[seq_len(max(min.snps, n.use))]
+      windows[[length(windows) + 1L]] <- list(
+        chromosome = x$chromosome[use[1L]],
+        start = min(x$position[use]),
+        end = max(x$position[use]),
+        variant_id = x$variant_id[use]
+      )
+      first <- max(use) + 1L
+    }
+    windows
+  }), recursive = FALSE)
 }
 
 .inversion_get_dosage <- function(gds, variant.id, sample.id) {
@@ -958,7 +1169,8 @@ detect_inversions <- function(
 }
 
 .inversion_region_diagnostics <- function(
-    dosage, sample.id, cluster.k, min.call.rate, ld.max.snps, return.ld
+    dosage, sample.id, cluster.k, min.call.rate, ld.max.snps, return.ld,
+    arrangement.labels
 ) {
   # Candidate-level PCA uses every usable SNP in the joined candidate interval,
   # not only the smaller covariance representation used for window scoring.
@@ -990,6 +1202,24 @@ detect_inversions <- function(
   ordered.cluster <- order(cluster.means)
   cluster.labels <- match(cluster, ordered.cluster)
   scores$cluster <- factor(cluster.labels, levels = seq_len(cluster.k))
+
+  centre <- as.numeric(tapply(pc1, scores$cluster, mean))
+  distances <- abs(outer(pc1, centre, "-"))
+  nearest <- apply(distances, 1L, min)
+  second <- apply(distances, 1L, function(z) sort(z, partial = 2L)[2L])
+  confidence <- second / pmax(nearest + second, sqrt(.Machine$double.eps))
+  if (cluster.k == 3L) {
+    scores$arrangement <- factor(
+      arrangement.labels[cluster.labels], levels = arrangement.labels
+    )
+    scores$arrangement_dosage <- cluster.labels - 1L
+  } else {
+    scores$arrangement <- factor(paste0("cluster_", cluster.labels))
+    scores$arrangement_dosage <- NA_integer_
+  }
+  scores$distance_nearest <- nearest
+  scores$distance_second <- second
+  scores$arrangement_confidence <- confidence
 
   cluster.counts <- as.integer(table(scores$cluster))
   cluster.frequencies <- cluster.counts / length(pc1)
@@ -1200,7 +1430,8 @@ detect_inversions <- function(
 }
 
 .inversion_write_outputs <- function(
-    path.folder, window.table, candidate.regions, diagnostics, sensitivity,
+    path.folder, window.table, candidate.regions, diagnostics,
+    arrangement.genotypes, homokaryotype.all.candidates, sensitivity,
     threshold, save.plots, plot.formats, verbose
 ) {
   files <- character()
@@ -1212,6 +1443,11 @@ detect_inversions <- function(
   }
   write_table(window.table, "inversion_windows.tsv")
   write_table(candidate.regions, "candidate_inversion_regions.tsv")
+  write_table(arrangement.genotypes, "inversion_arrangement_genotypes.tsv")
+  write_table(
+    homokaryotype.all.candidates,
+    "homokaryotypes_all_candidates_whitelist.tsv"
+  )
   if (nrow(sensitivity) > 0L) {
     write_table(sensitivity, "window_size_sensitivity.tsv")
   }
@@ -1228,6 +1464,32 @@ detect_inversions <- function(
     write_table(
       diagnostic$ld_summary,
       paste0(prefix, "_ld_summary.tsv")
+    )
+    arrangement.table <- diagnostic$scores |>
+      dplyr::select(dplyr::all_of(c(
+        "individual", "arrangement", "arrangement_dosage",
+        "arrangement_confidence", "distance_nearest", "distance_second",
+        "heterozygosity"
+      )))
+    write_table(
+      arrangement.table,
+      paste0(prefix, "_arrangement_genotypes.tsv")
+    )
+    purrr::walk(unique(as.character(arrangement.table$arrangement)), function(label) {
+      write_table(
+        dplyr::filter(
+          arrangement.table, as.character(.data$arrangement) == label
+        ) |>
+          dplyr::select(.data$individual),
+        paste0(prefix, "_", label, "_individuals_whitelist.tsv")
+      )
+    })
+    write_table(
+      dplyr::filter(
+        arrangement.table, .data$arrangement_dosage %in% c(0L, 2L)
+      ) |>
+        dplyr::select(.data$individual, .data$arrangement),
+      paste0(prefix, "_homokaryotypes_whitelist.tsv")
     )
   })
 
@@ -1329,7 +1591,7 @@ detect_inversions <- function(
       out <- list()
       out[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
         d$scores,
-        ggplot2::aes(x = PC1, y = PC2, colour = cluster)
+        ggplot2::aes(x = PC1, y = PC2, colour = arrangement)
       ) +
         ggplot2::geom_point(size = 2, alpha = 0.85) +
         ggplot2::labs(
@@ -1345,7 +1607,9 @@ detect_inversions <- function(
       out[[paste0(d$candidate_id, "_heterozygosity")]] <-
         ggplot2::ggplot(
           d$scores,
-          ggplot2::aes(x = cluster, y = heterozygosity, colour = cluster)
+          ggplot2::aes(
+            x = arrangement, y = heterozygosity, colour = arrangement
+          )
         ) +
         ggplot2::geom_boxplot(outlier.shape = NA) +
         ggplot2::geom_jitter(width = 0.12, alpha = 0.45, size = 1) +

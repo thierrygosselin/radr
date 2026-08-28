@@ -11,6 +11,10 @@ detect_inversions(
   step.snps = window.snps,
   window.bp = NULL,
   step.bp = window.bp,
+  window.method = c("snps", "bp", "ld"),
+  ld.window.threshold = 0.1,
+  ld.window.min.snps = 50L,
+  ld.window.max.snps = 500L,
   sensitivity.window.snps = c(100L, 250L, 500L, 1000L),
   n.pcs = 2L,
   mds.axes = 2L,
@@ -19,6 +23,7 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  arrangement.labels = c("AA", "AB", "BB"),
   known.regions = NULL,
   ld.max.snps = 500L,
   return.ld = FALSE,
@@ -46,6 +51,22 @@ supplied, physical windows are used instead of fixed-SNP windows.}
 \item{step.bp}{Distance in base pairs between physical window starts.
 Defaults to \code{window.bp}.}
 
+\item{window.method}{Window construction method: \code{"snps"} for a fixed number
+of SNPs, \code{"bp"} for fixed physical windows, or \code{"ld"} for experimental
+LD-scaled windows. Supplying \code{window.bp} selects \code{"bp"}. Default:
+\code{window.method = "snps"}.}
+
+\item{ld.window.threshold}{Adjacent-marker r-squared threshold used to end an
+experimental LD-scaled window after the minimum number of markers.
+Default: \code{ld.window.threshold = 0.1}.}
+
+\item{ld.window.min.snps}{Minimum markers in an LD-scaled window. Default:
+\code{ld.window.min.snps = 50}.}
+
+\item{ld.window.max.snps}{Maximum markers examined in an LD-scaled window.
+This bounds memory and computation. Default:
+\code{ld.window.max.snps = 500}.}
+
 \item{sensitivity.window.snps}{Additional fixed-SNP window sizes used for a
 sensitivity analysis. These runs summarise PC1 variance and LD along the
 genome without replacing the primary candidate scan. Use \code{NULL} to skip
@@ -71,6 +92,10 @@ required to form a candidate region.}
 for a common polymorphic inversion is often three, representing the two
 homokaryotypes and their heterokaryotype, but this is diagnostic rather
 than proof.}
+
+\item{arrangement.labels}{Three labels, ordered from the lowest to highest
+regional PC1 cluster, used when \code{cluster.k = 3}. Default:
+\code{arrangement.labels = c("AA", "AB", "BB")}.}
 
 \item{known.regions}{Optional data frame describing centromeres, regions of
 low recombination, assembly gaps, or other annotations. It must contain
@@ -104,6 +129,10 @@ scores, and candidate flags for all analysed windows;
 \item \code{candidates}: one row per contiguous candidate region;
 \item \code{diagnostics}: regional PCA scores, cluster assignments,
 heterozygosity summaries, and optional LD matrices;
+\item \code{arrangement.genotypes}: one row per individual and candidate with
+putative arrangement genotype and relative assignment confidence;
+\item \code{homokaryotype.whitelist}: candidate-specific \code{AA} and \code{BB}
+individuals, plus \code{homokaryotype.all.candidates} for the intersection;
 \item \code{sensitivity}: optional summaries for additional fixed-SNP window
 sizes;
 \item \code{path.folder} and \code{output.files}: locations of written results;
@@ -120,6 +149,12 @@ windows. Candidate regions are then summarised using regional PCA,
 heterozygosity, and linkage disequilibrium (LD).
 }
 \details{
+Run this screen before LD pruning. LD pruning can remove the extended
+correlation pattern that makes an inversion-associated haploblock
+detectable. After candidates have been reviewed, repeat downstream analyses
+with the complete genome, with candidate regions excluded, and within each
+candidate region or inferred arrangement.
+
 This is a screening method. A candidate region is not proof of a physical
 inversion, and the returned coordinates describe an inversion-associated
 haploblock rather than validated breakpoints. Long-read, read-pair, split-read,
@@ -183,6 +218,30 @@ Scores of 0--2 are labelled \code{weak}, 3--4 \code{moderate}, and 5 \code{stron
 labels prioritise review; they do not convert a candidate into a structurally
 confirmed inversion. Known-region overlaps are reported separately and do
 not increase or decrease the evidence score.
+
+Every candidate is described conservatively. A local-PCA signal can reflect
+a putative inversion-associated haploblock, but it can also arise near a
+centromere, in a region of low recombination, from assembly or mapping
+problems, introgression, population-specific missingness, or another form of
+structural variation. The \code{candidate_class} and \code{alternative_explanations}
+columns make these alternatives explicit. The function never reports a
+structurally confirmed inversion.
+}
+
+\section{Arrangement genotypes and sensitivity datasets}{
+
+For a three-cluster regional PCA, clusters are ordered along PC1 and labelled
+\code{AA}, \code{AB}, and \code{BB} by default. These are putative arrangement genotypes,
+not sequence-level breakpoint genotypes. The individual table includes the
+arrangement call, its numeric dosage (0, 1, or 2), and a relative
+assignment-confidence score.
+
+For every candidate, the function writes whitelists for each arrangement and
+a homokaryotype-only whitelist containing \code{AA} and \code{BB}. It also returns a
+combined whitelist for individuals classified as an outer arrangement in
+every candidate region. These datasets support analyses that exclude
+putative heterokaryotypes. This is useful before haplotype scans: \code{selscan},
+for example, does not accept missing genotype or haplotype data.
 }
 
 \section{Output and plotting}{
@@ -194,6 +253,19 @@ window and candidate tables, individual PCA scores, cluster summaries, LD
 summaries, and standard diagnostic plots. PNG and PDF are written by default.
 }
 
+\references{
+Li H, Ralph P (2019). Local PCA shows how the effect of
+population structure differs along the genome. Genetics, 211, 289-304.
+\doi{10.1534/genetics.118.301747}.
+
+Faria R, Johannesson K, Butlin RK, Westram AM (2019). Evolving inversions.
+Trends in Ecology & Evolution, 34, 239-248.
+\doi{10.1016/j.tree.2018.12.005}.
+
+Wellenreuther M, Bernatchez L (2018). Eco-evolutionary genomics of
+chromosomal inversions. Trends in Ecology & Evolution, 33, 427-440.
+\doi{10.1016/j.tree.2018.04.002}.
+}
 \author{
 Thierry Gosselin \email{Thierry.Gosselin@csiro.au}
 }

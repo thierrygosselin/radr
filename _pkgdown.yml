@@ -40,6 +40,7 @@ reference:
   - detect_duplicate_genomes
   - detect_het_outliers
   - detect_inversions
+  - genome_scan_context
   - detect_mixed_genomes
   - detect_paralogs
   - detect_ref_genome
