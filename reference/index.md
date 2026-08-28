@@ -104,7 +104,7 @@ variation.
 - [`allele_frequencies()`](https://thierrygosselin.github.io/radr/reference/allele_frequencies.md)
   : Compute allele frequencies per markers and populations
 - [`beta_estimator()`](https://thierrygosselin.github.io/radr/reference/beta_estimator.md)
-  : Estimate population-specific beta
+  : Estimate population-specific allelic FST
 - [`ibdg_fh()`](https://thierrygosselin.github.io/radr/reference/ibdg_fh.md)
   : FH measure of IBDg
 - [`pi()`](https://thierrygosselin.github.io/radr/reference/pi.md) :
@@ -135,7 +135,5 @@ workflows.
 Compatibility names retained for older scripts; use the recommended
 replacement documented on each page.
 
-- [`betas_estimator()`](https://thierrygosselin.github.io/radr/reference/betas_estimator.md)
-  : Legacy plural name for population-specific beta
 - [`radr_pkg_install()`](https://thierrygosselin.github.io/radr/reference/radr_pkg_install.md)
   : Legacy radr dependency helper

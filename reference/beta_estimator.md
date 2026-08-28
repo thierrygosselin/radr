@@ -1,14 +1,20 @@
-# Estimate population-specific beta
+# Estimate population-specific allelic FST
 
-Estimates population-specific \\\beta_i\\ following Weir and Goudet
-(2017). The implementation uses diploid, biallelic alternate-allele
-dosage (`ALT_DOSAGE`: 0, 1, 2, or `NA`) and works directly from a GDS
-file, an open `SeqVarGDSClass` object, or a tidy genotype table.
+Estimates the population-specific allelic FST of Weir and Goudet (2017),
+\\\beta^i\_{WT}\\. Each value measures the differentiation of one
+population relative to the complete set of populations included in the
+analysis.
 
-`beta_estimator()` does not filter individuals or markers. Missing
-genotypes are omitted within each marker-population combination. A
-marker contributes only when it has observed genotypes in at least two
-populations and its between-population diversity is finite.
+Use a quality-controlled, filtered dataset. This function does not
+perform quality filtering, LD pruning, or sample removal. It requires
+diploid, biallelic alternate-allele dosage (`ALT_DOSAGE`: 0, 1, 2, or
+`NA`). For GDS input, biallelic status is checked before genotype chunks
+are read.
+
+The estimator uses only markers with at least one observed genotype in
+every included population. This common-marker requirement does not
+modify the GDS or input table. It ensures that all reported population
+estimates use the same loci and the same population reference.
 
 ## Usage
 
@@ -16,8 +22,11 @@ populations and its between-population diversity is finite.
 beta_estimator(
   data,
   strata = NULL,
+  populations = NULL,
+  random.mating = FALSE,
   filename = NULL,
-  parallel.core = parallel::detectCores() - 1,
+  chunk.size = 10000L,
+  parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE),
   verbose = TRUE
 )
 ```
@@ -27,8 +36,7 @@ beta_estimator(
 - data:
 
   A GDS filepath, an open `SeqVarGDSClass` object, or a tidy data frame
-  containing `MARKERS`, `INDIVIDUALS`, `STRATA` (or `POP_ID`), and
-  `ALT_DOSAGE`.
+  containing `MARKERS`, `INDIVIDUALS`, `STRATA`, and `ALT_DOSAGE`.
 
 - strata:
 
@@ -36,23 +44,48 @@ beta_estimator(
   population assignments. It must contain `INDIVIDUALS` and `STRATA`.
   Default: `strata = NULL`.
 
+- populations:
+
+  Optional character vector of populations to include. Use exactly two
+  names for a separate two-population analysis. Its estimates have a
+  pair-specific reference and should not be compared directly with
+  estimates from another pair or from the full population set. Default:
+  `populations = NULL`.
+
+- random.mating:
+
+  Logical. Random mating means that, within each `STRATA`, gametes unite
+  independently of the genotypes carried by individuals. Under this
+  assumption, genotype frequencies are expected to follow Hardy-Weinberg
+  proportions given the observed allele frequencies. If `FALSE`, use
+  dosage-based allelic matching among distinct individuals without
+  making this assumption. If `TRUE`, use the allele-frequency and
+  gene-diversity formulation implemented by `hierfstat::betas()`.
+  Default: `random.mating = FALSE`.
+
 - filename:
 
   Optional output prefix. When supplied, three tab-delimited files are
   written with suffixes `_beta.tsv`, `_within_population.tsv`, and
   `_between_populations.tsv`. Default: `filename = NULL`.
 
+- chunk.size:
+
+  Number of markers processed at once for GDS and tidy input. Smaller
+  chunks reduce peak memory use but may increase computation time.
+  Default: `chunk.size = 10000L`.
+
 - parallel.core:
 
   Number of processor cores passed to
   [`genometranslator::read_genome()`](https://thierrygosselin.github.io/genometranslator/reference/read_genome.html)
   when file input must be imported. Default:
-  `parallel.core = parallel::detectCores() - 1`.
+  `parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE)`.
 
 - verbose:
 
-  Logical. Display progress and a population beta summary. Default:
-  `verbose = TRUE`.
+  Logical. Display progress and a population-specific FST summary.
+  Default: `verbose = TRUE`.
 
 ## Value
 
@@ -60,39 +93,76 @@ A named list containing:
 
 - beta:
 
-  One row per population with `BETA`, the number of contributing
-  markers, and the summed within- and between-population diversities.
+  One row per population with `BETA`, the shared number of contributing
+  markers, estimator name, and estimator-specific statistics.
 
 - within_population:
 
-  Marker-population allele counts, frequencies, and `HW`.
+  Within-population matching summaries when `random.mating = FALSE`, or
+  summed within-population gene diversity when `random.mating = TRUE`.
 
 - between_populations:
 
-  Marker-level number of represented populations and `HB`.
+  Between-population matching summaries when `random.mating = FALSE`, or
+  summed between-population gene diversity when `random.mating = TRUE`.
 
 ## Details
 
-For marker \\l\\ and population \\i\\, within-population gene diversity
-is estimated as \$\$H\_{W,li} = \frac{n\_{li}}{n\_{li}-1} \left(1 -
-p\_{li}^2 - (1-p\_{li})^2\right),\$\$ where \\n\_{li}\\ is the number of
-observed gene copies and \\p\_{li}\\ is the alternate-allele frequency.
+With `random.mating = FALSE`, allelic matching for individuals \\j\\ and
+\\k\\ is calculated from their alternate-allele dosages across jointly
+observed markers. At a marker, matching is 1 for the same homozygote, 0
+for opposite homozygotes, and 0.5 when at least one individual is
+heterozygous. Missing genotypes are omitted separately for each pair of
+individuals.
 
-Between-population diversity is calculated for every marker from the
-populations with observed genotypes. Population-specific beta is then
-\$\$\beta_i = 1 - \frac{\sum_l H\_{W,li}}{\sum_l H\_{B,l}}.\$\$
-Consequently, populations can be compared using different numbers of
-loci when their missingness patterns differ. Review `N_MARKERS` in the
-returned summary before interpreting differences among populations.
+Let \\M_W^i\\ be the mean matching between distinct individuals within
+population \\i\\, and \\M_B\\ the equally weighted mean matching across
+every distinct pair of populations. Population-specific allelic FST is
+\$\$\beta^i\_{WT} = \frac{M_W^i-M_B}{1-M_B}.\$\$ This dosage-based
+matching formulation follows `hierfstat::fs.dosage()` and does not
+require random mating within populations.
+
+With `random.mating = TRUE`, within-population gene diversity is
+estimated from sample allele frequencies with the finite-sample
+correction used by `hierfstat::betas()`. Population-specific allelic FST
+is then \$\$\beta^i\_{WT} = 1 - \frac{\sum_l H\_{W,li}}{\sum_l
+H\_{B,l}}.\$\$ Here, random mating is an assumption about mating and the
+union of gametes within each `STRATA`; it is not simply a description of
+how samples were collected. The assumption can be violated by
+inbreeding, self-fertilization, assortative mating, close-family
+sampling, recent admixture, or hidden population subdivision. These
+processes can cause observed genotype frequencies to differ from the
+Hardy-Weinberg proportions predicted by allele frequencies. The
+allele-frequency and matching formulations therefore answer closely
+related, but not identical, questions and can produce different
+estimates.
+
+The reference is defined by the sampled population set. Adding,
+removing, or pairing populations changes that reference. Negative
+estimates are valid and indicate less within-population allele matching
+than the sampled reference.
+
+Filtering should address genotyping quality, problematic samples, batch
+effects, duplicated or structurally unsuitable markers, and the intended
+dependence among loci. However, Weir and Goudet (2017) recommend
+including rare variants for this estimator; filtering loci solely by
+allele frequency can alter the estimate.
+
+GDS genotypes are processed by marker chunks and are not expanded into
+one complete individual-by-marker tidy table. With
+`random.mating = FALSE`, exact pairwise matching requires two square
+sample-by-sample accumulator matrices, so memory use grows with the
+square of the number of individuals. The allele-frequency formulation is
+lighter because it accumulates population summaries instead.
 
 ## References
 
 Weir, B. S. and Goudet, J. (2017). A unified characterization of
-population structure and relatedness. *Genetics*, 206, 2085–2103.
+population structure and relatedness. *Genetics*, 206, 2085-2103.
 [doi:10.1534/genetics.116.198424](https://doi.org/10.1534/genetics.116.198424)
 
 Goudet, J., Kay, T. and Weir, B. S. (2018). How to estimate kinship.
-*Molecular Ecology*, 27, 4121–4135.
+*Molecular Ecology*, 27, 4121-4135.
 [doi:10.1111/mec.14833](https://doi.org/10.1111/mec.14833)
 
 ## Author
@@ -110,7 +180,16 @@ genome <- genometranslator::read_genome(
 
 beta <- beta_estimator(genome)
 beta$beta
-beta$within_population
-beta$between_populations
+
+beta_random_mating <- beta_estimator(
+  genome,
+  random.mating = TRUE
+)
+
+# A separate analysis whose reference contains only NORTH and SOUTH.
+north_south <- beta_estimator(
+  genome,
+  populations = c("NORTH", "SOUTH")
+)
 } # }
 ```
