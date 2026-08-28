@@ -2,6 +2,7 @@ url: https://thierrygosselin.github.io/radr/
 
 template:
   bootstrap: 5
+  math-rendering: katex
 
 navbar:
   type: default
