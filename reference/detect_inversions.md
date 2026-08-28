@@ -18,6 +18,10 @@ detect_inversions(
   step.snps = window.snps,
   window.bp = NULL,
   step.bp = window.bp,
+  window.method = c("snps", "bp", "ld"),
+  ld.window.threshold = 0.1,
+  ld.window.min.snps = 50L,
+  ld.window.max.snps = 500L,
   sensitivity.window.snps = c(100L, 250L, 500L, 1000L),
   n.pcs = 2L,
   mds.axes = 2L,
@@ -26,6 +30,7 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  arrangement.labels = c("AA", "AB", "BB"),
   known.regions = NULL,
   ld.max.snps = 500L,
   return.ld = FALSE,
@@ -67,6 +72,29 @@ detect_inversions(
   Distance in base pairs between physical window starts. Defaults to
   `window.bp`.
 
+- window.method:
+
+  Window construction method: `"snps"` for a fixed number of SNPs,
+  `"bp"` for fixed physical windows, or `"ld"` for experimental
+  LD-scaled windows. Supplying `window.bp` selects `"bp"`. Default:
+  `window.method = "snps"`.
+
+- ld.window.threshold:
+
+  Adjacent-marker r-squared threshold used to end an experimental
+  LD-scaled window after the minimum number of markers. Default:
+  `ld.window.threshold = 0.1`.
+
+- ld.window.min.snps:
+
+  Minimum markers in an LD-scaled window. Default:
+  `ld.window.min.snps = 50`.
+
+- ld.window.max.snps:
+
+  Maximum markers examined in an LD-scaled window. This bounds memory
+  and computation. Default: `ld.window.max.snps = 500`.
+
 - sensitivity.window.snps:
 
   Additional fixed-SNP window sizes used for a sensitivity analysis.
@@ -106,6 +134,12 @@ detect_inversions(
   common polymorphic inversion is often three, representing the two
   homokaryotypes and their heterokaryotype, but this is diagnostic
   rather than proof.
+
+- arrangement.labels:
+
+  Three labels, ordered from the lowest to highest regional PC1 cluster,
+  used when `cluster.k = 3`. Default:
+  `arrangement.labels = c("AA", "AB", "BB")`.
 
 - known.regions:
 
@@ -159,6 +193,12 @@ An object of class `detect_inversions` containing:
 - `diagnostics`: regional PCA scores, cluster assignments,
   heterozygosity summaries, and optional LD matrices;
 
+- `arrangement.genotypes`: one row per individual and candidate with
+  putative arrangement genotype and relative assignment confidence;
+
+- `homokaryotype.whitelist`: candidate-specific `AA` and `BB`
+  individuals, plus `homokaryotype.all.candidates` for the intersection;
+
 - `sensitivity`: optional summaries for additional fixed-SNP window
   sizes;
 
@@ -167,6 +207,12 @@ An object of class `detect_inversions` containing:
 - `settings`: the effective analysis settings.
 
 ## Details
+
+Run this screen before LD pruning. LD pruning can remove the extended
+correlation pattern that makes an inversion-associated haploblock
+detectable. After candidates have been reviewed, repeat downstream
+analyses with the complete genome, with candidate regions excluded, and
+within each candidate region or inferred arrangement.
 
 This is a screening method. A candidate region is not proof of a
 physical inversion, and the returned coordinates describe an
@@ -235,6 +281,30 @@ candidate into a structurally confirmed inversion. Known-region overlaps
 are reported separately and do not increase or decrease the evidence
 score.
 
+Every candidate is described conservatively. A local-PCA signal can
+reflect a putative inversion-associated haploblock, but it can also
+arise near a centromere, in a region of low recombination, from assembly
+or mapping problems, introgression, population-specific missingness, or
+another form of structural variation. The `candidate_class` and
+`alternative_explanations` columns make these alternatives explicit. The
+function never reports a structurally confirmed inversion.
+
+## Arrangement genotypes and sensitivity datasets
+
+For a three-cluster regional PCA, clusters are ordered along PC1 and
+labelled `AA`, `AB`, and `BB` by default. These are putative arrangement
+genotypes, not sequence-level breakpoint genotypes. The individual table
+includes the arrangement call, its numeric dosage (0, 1, or 2), and a
+relative assignment-confidence score.
+
+For every candidate, the function writes whitelists for each arrangement
+and a homokaryotype-only whitelist containing `AA` and `BB`. It also
+returns a combined whitelist for individuals classified as an outer
+arrangement in every candidate region. These datasets support analyses
+that exclude putative heterokaryotypes. This is useful before haplotype
+scans: `selscan`, for example, does not accept missing genotype or
+haplotype data.
+
 ## Output and plotting
 
 Following other `radr` detection functions, each call creates a dated
@@ -243,6 +313,23 @@ the parent supplied with `path.folder`). It records the function
 arguments, window and candidate tables, individual PCA scores, cluster
 summaries, LD summaries, and standard diagnostic plots. PNG and PDF are
 written by default.
+
+## References
+
+Li H, Ralph P (2019). Local PCA shows how the effect of population
+structure differs along the genome. Genetics, 211, 289-304.
+[doi:10.1534/genetics.118.301747](https://doi.org/10.1534/genetics.118.301747)
+.
+
+Faria R, Johannesson K, Butlin RK, Westram AM (2019). Evolving
+inversions. Trends in Ecology & Evolution, 34, 239-248.
+[doi:10.1016/j.tree.2018.12.005](https://doi.org/10.1016/j.tree.2018.12.005)
+.
+
+Wellenreuther M, Bernatchez L (2018). Eco-evolutionary genomics of
+chromosomal inversions. Trends in Ecology & Evolution, 33, 427-440.
+[doi:10.1016/j.tree.2018.04.002](https://doi.org/10.1016/j.tree.2018.04.002)
+.
 
 ## Author
 

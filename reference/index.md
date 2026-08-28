@@ -31,6 +31,8 @@ and data origin before filtering.
   : Detect heterozygotes outliers and estimate miscall rate
 - [`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
   : Detect candidate inversion-associated genomic regions
+- [`genome_scan_context()`](https://thierrygosselin.github.io/radr/reference/genome_scan_context.md)
+  : Summarise genomic context around genome-scan signals
 - [`detect_mixed_genomes()`](https://thierrygosselin.github.io/radr/reference/detect_mixed_genomes.md)
   : Detect mixed genomes
 - [`detect_paralogs()`](https://thierrygosselin.github.io/radr/reference/detect_paralogs.md)

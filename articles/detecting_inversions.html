@@ -66,6 +66,12 @@
 <div class="section level2">
 <h2 id="scope">Scope<a class="anchor" aria-label="anchor" href="#scope"></a>
 </h2>
+<p>The analytical starting points are Li and Ralph (2019) for local PCA,
+Faria et al. (2019) and Wellenreuther and Bernatchez (2018) for
+inversion biology and interpretation, and empirical work combining
+genotype groups, LD, recombination, diversity, and structural evidence.
+These references should be read before treating a local-structure signal
+as an inversion.</p>
 <p><code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> is a screening tool for finding
 genomic regions whose local population structure is unusual relative to
 the rest of a GDS dataset. It is designed for diploid, biallelic SNP
@@ -78,7 +84,7 @@ chromosome orientation or locate physical breakpoints. Use long reads,
 split reads, discordant read pairs, linkage maps, comparative
 assemblies, or cytogenetics for structural confirmation.</p>
 <div class="alert alert-warning" role="alert">
-<p><strong>Caution — do not scan unfiltered or batch-confounded
+<p><strong>Caution: do not scan unfiltered or batch-confounded
 data.</strong> Structured missingness, uneven depth, allele dropout,
 paralogs, close relatives, and plate, lane, library, sequencing-run, or
 genotype-calling effects can create local PCA clusters, heterozygosity
@@ -88,6 +94,12 @@ biological groups with technical batches, and cross-tabulate every
 candidate genotype group against the available technical metadata.
 <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> is not a substitute for data filtering
 or batch assessment.</p>
+</div>
+<div class="alert alert-info" role="alert">
+<p><strong>Screen before LD pruning.</strong> Extended LD is part of the
+signal being investigated. Run the first inversion screen before LD
+pruning, then use the inferred regions and arrangements in explicit
+sensitivity analyses.</p>
 </div>
 </div>
 <div class="section level2">
@@ -111,6 +123,8 @@ similar datasets already used in <code>radr</code>. In particular,
 <li>reads genotypes directly from GDS;</li>
 <li>constructs every window within a chromosome, linkage group, or
 scaffold;</li>
+<li>offers fixed-SNP, fixed-base-pair, and experimental LD-scaled
+windows;</li>
 <li>combines local covariance PCA with contiguous-window candidate
 detection;</li>
 <li>evaluates regional PCA groups quantitatively instead of treating a
@@ -118,6 +132,9 @@ requested three-group k-means solution as evidence by itself;</li>
 <li>summarises heterozygosity, overall and within-group LD, candidate
 boundaries, flanking windows, internal transitions, and window-size
 sensitivity;</li>
+<li>returns ordered putative arrangement genotypes, relative call
+confidence, arrangement-specific whitelists, and homokaryotype-only
+sensitivity sets;</li>
 <li>accepts centromere, low-recombination, repeat, and assembly-gap
 annotations without allowing them to determine the candidate calls;</li>
 <li>explicitly records the consequences of missing-data filtering and
@@ -456,6 +473,9 @@ linkage group and therefore does not itself require an LG facet.</p>
 <span></span>
 <span><span class="va">inv</span></span>
 <span><span class="va">inv</span><span class="op">$</span><span class="va">candidates</span></span>
+<span><span class="va">inv</span><span class="op">$</span><span class="va">arrangement.genotypes</span></span>
+<span><span class="va">inv</span><span class="op">$</span><span class="va">homokaryotype.whitelist</span></span>
+<span><span class="va">inv</span><span class="op">$</span><span class="va">homokaryotype.all.candidates</span></span>
 <span><span class="va">inv</span><span class="op">$</span><span class="va">path.folder</span></span></code></pre></div>
 <p>Known centromeres, assembly gaps, or other low-recombination
 annotations can be supplied without allowing those annotations to
@@ -504,6 +524,19 @@ a candidate is robust to variation in RAD marker density:</p>
 <span>  step.bp <span class="op">=</span> <span class="fl">5e5</span>,</span>
 <span>  min.window.snps <span class="op">=</span> <span class="fl">20</span></span>
 <span><span class="op">)</span></span></code></pre></div>
+<p>Experimental LD-scaled windows adapt their number of markers to local
+adjacent LD. They help assess whether a signal depends on an arbitrary
+fixed marker count, but they do not estimate an inversion breakpoint or
+a formal LD block:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">chr14_ld</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_inversions.html">detect_inversions</a></span><span class="op">(</span></span>
+<span>  data <span class="op">=</span> <span class="va">genome</span>,</span>
+<span>  chromosome <span class="op">=</span> <span class="st">"14"</span>,</span>
+<span>  window.method <span class="op">=</span> <span class="st">"ld"</span>,</span>
+<span>  ld.window.threshold <span class="op">=</span> <span class="fl">0.10</span>,</span>
+<span>  ld.window.min.snps <span class="op">=</span> <span class="fl">50</span>,</span>
+<span>  ld.window.max.snps <span class="op">=</span> <span class="fl">500</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="plot-window-evidence-by-linkage-group">Plot window evidence by linkage group<a class="anchor" aria-label="anchor" href="#plot-window-evidence-by-linkage-group"></a>
@@ -513,7 +546,7 @@ window-score, MDS, LD, call-rate, regional-PCA, heterozygosity, and
 candidate-LD figures. It also returns the <code>ggplot2</code> objects
 in <code>inv$output.files$plots</code>, so they can be changed without
 rerunning the genomic calculations.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span></span>
@@ -539,7 +572,7 @@ rerunning the genomic calculations.</p>
 position. The MDS coordinates can also be inspected, but faceting them
 by linkage group answers a different question because MDS axes represent
 similarity among windows rather than physical position.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">inv</span><span class="op">$</span><span class="va">windows</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">MDS1</span>, <span class="va">MDS2</span>, colour <span class="op">=</span> <span class="va">chromosome</span>,</span>
 <span>                        shape <span class="op">=</span> <span class="va">candidate_window</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_point.html" class="external-link">geom_point</a></span><span class="op">(</span>size <span class="op">=</span> <span class="fl">2</span><span class="op">)</span> <span class="op">+</span></span>
@@ -550,15 +583,31 @@ similarity among windows rather than physical position.</p>
 </h2>
 <p>Each candidate has a matching entry in <code>inv$diagnostics</code>.
 A regional PCA plot shows individuals, not windows:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">candidate1</span> <span class="op">&lt;-</span> <span class="va">inv</span><span class="op">$</span><span class="va">diagnostics</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
 <span></span>
-<span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">candidate1</span><span class="op">$</span><span class="va">scores</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">PC1</span>, <span class="va">PC2</span>, colour <span class="op">=</span> <span class="va">cluster</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
+<span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">candidate1</span><span class="op">$</span><span class="va">scores</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">PC1</span>, <span class="va">PC2</span>, colour <span class="op">=</span> <span class="va">arrangement</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_point.html" class="external-link">geom_point</a></span><span class="op">(</span>size <span class="op">=</span> <span class="fl">2</span>, alpha <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>colour <span class="op">=</span> <span class="st">"Putative arrangement genotype"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggtheme.html" class="external-link">theme_bw</a></span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">candidate1</span><span class="op">$</span><span class="va">cluster_summary</span></span></code></pre></div>
+<span><span class="va">candidate1</span><span class="op">$</span><span class="va">cluster_summary</span></span>
+<span><span class="va">candidate1</span><span class="op">$</span><span class="va">scores</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">individual</span>, <span class="va">arrangement</span>, <span class="va">arrangement_dosage</span>,</span>
+<span>                <span class="va">arrangement_confidence</span><span class="op">)</span></span></code></pre></div>
+<p><code>AA</code>, <code>AB</code>, and <code>BB</code> mean the low,
+middle, and high regional-PC1 clusters. They are convenient putative
+arrangement genotypes, not validated breakpoint genotypes. Relative
+confidence describes separation from the next cluster; it is not a
+posterior probability. The result folder contains one whitelist per
+arrangement, one homokaryotype-only whitelist per candidate, and a
+whitelist of individuals classified as a homokaryotype across every
+candidate.</p>
+<p>The homokaryotype sets are useful for asking whether a downstream
+signal persists after excluding putative heterokaryotypes. Haplotype
+scans need further care: <code>selscan</code>, for example, does not
+accept missing genotype or haplotype data. Do not convert missing calls
+silently into a homozygous arrangement.</p>
 <p>Three clusters are biologically suggestive only when the central PCA
 cluster also has the expected heterozygosity and the pattern is not
 explained by population, family, or batch. Two clusters may occur when
@@ -643,7 +692,7 @@ prevent a normal run from overwriting an earlier analysis. The returned
 object also contains the window table, candidate table, PCA scores,
 cluster summaries, LD summaries, and plot objects. A standard plot can
 therefore be adjusted and saved under an additional name:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">p</span> <span class="op">&lt;-</span> <span class="va">inv</span><span class="op">$</span><span class="va">output.files</span><span class="op">$</span><span class="va">plots</span><span class="op">$</span><span class="va">window_scores</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>title <span class="op">=</span> <span class="st">"Candidate inversion scan after batch QC"</span><span class="op">)</span></span>
 <span></span>
@@ -652,6 +701,40 @@ therefore be adjusted and saved under an additional name:</p>
 <p>Use <code>save.plots = FALSE</code> when only tables and returned
 objects are wanted. The results folder and reproducibility tables are
 still created.</p>
+</div>
+<div class="section level2">
+<h2 id="add-context-to-genome-scans">Add context to genome scans<a class="anchor" aria-label="anchor" href="#add-context-to-genome-scans"></a>
+</h2>
+<p>Use <code><a href="../reference/genome_scan_context.html">genome_scan_context()</a></code> to place scan peaks beside
+marker density, missingness, heterozygosity, allele frequency, LD, and
+candidate-region annotations:</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">context</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/genome_scan_context.html">genome_scan_context</a></span><span class="op">(</span></span>
+<span>  data <span class="op">=</span> <span class="va">genome</span>,</span>
+<span>  inversion.regions <span class="op">=</span> <span class="va">inv</span>,</span>
+<span>  scan.statistics <span class="op">=</span> <span class="va">bayescan_or_fst_table</span>,</span>
+<span>  window.snps <span class="op">=</span> <span class="fl">250</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">context</span><span class="op">$</span><span class="va">context</span></span></code></pre></div>
+<p>For each regional peak, ask:</p>
+<ul>
+<li>Does it overlap low recombination or a centromere?</li>
+<li>Is marker density unusual?</li>
+<li>Does missingness increase in the same region?</li>
+<li>Is the signal restricted to one caller, mapping strategy, sequencing
+batch, or reference assembly?</li>
+<li>Does it remain after excluding putative inversion
+heterozygotes?</li>
+<li>Is it supported by a method based on a different genomic
+signature?</li>
+</ul>
+<p>These questions should also guide analyses in <code>assigner</code>
+and <code>grouper</code>. Population structure should be explored with
+the full marker set, with candidate inversion regions excluded, and with
+arrangement genotypes included explicitly. Otherwise a large haploblock
+can dominate clustering and make one regional feature look like
+genome-wide structure.</p>
 </div>
 <div class="section level2">
 <h2 id="interpreting-coordinates">Interpreting coordinates<a class="anchor" aria-label="anchor" href="#interpreting-coordinates"></a>
@@ -706,7 +789,18 @@ nested signals; and</li>
 <li>
 <code>known_region_overlap</code>: any user-supplied centromere,
 low-recombination, assembly-gap, or other annotation intersecting the
-candidate.</li>
+candidate;</li>
+<li>
+<code>candidate_class</code>: a cautious interpretation such as
+putative inversion-associated haploblock, unresolved haploblock,
+low-recombination or centromeric candidate, technical or
+assembly-associated region, or another structural-variation-associated
+haploblock; and</li>
+<li>
+<code>alternative_explanations</code>: reminders that local PCA can
+reflect a centromere, low recombination, assembly or mapping problems,
+introgression, population-specific missingness, or another structural
+variant.</li>
 </ul>
 <p><code>three_cluster_evidence</code> is not merely a record that
 k-means was run with <code>cluster.k = 3</code>. It additionally
@@ -742,6 +836,20 @@ alternative arrangements; and</li>
 assembly, or cytogenetic evidence before calling a structurally
 confirmed inversion.</li>
 </ol>
+<p>For genome scans and population-structure analyses, report three
+deliberate views whenever the data permit:</p>
+<ol style="list-style-type: decimal">
+<li>the complete genome;</li>
+<li>a collinear sensitivity dataset excluding candidate
+inversion-associated or major low-recombination regions; and</li>
+<li>candidate-region analyses using arrangement frequencies,
+heterozygosity, LD, differentiation, environmental associations, and
+homokaryotype-only sensitivity datasets.</li>
+</ol>
+<p>Inversions should be detected, annotated, and analysed explicitly.
+They should neither be ignored nor automatically removed. Use
+“candidate”, “putative”, or “inversion-associated haploblock” until
+structural evidence justifies a more definitive term.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
