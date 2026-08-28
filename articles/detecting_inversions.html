@@ -11,7 +11,8 @@
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
 <link rel="icon" sizes="any" href="../favicon.ico">
 <link rel="manifest" href="../site.webmanifest">
-<script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<!-- katex math --><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script><script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script><script src="../katex-auto.js"></script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
@@ -206,9 +207,8 @@ variables.</li>
 <li>
 <strong>Population differentiation:</strong> when biologically
 defined populations differ in arrangement frequency, a broad windowed
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-peak overlaps the local structure signal and helps prioritise the region
-for follow-up.</li>
+<span class="math inline">F_{ST}</span> peak overlaps the local
+structure signal and helps prioritise the region for follow-up.</li>
 </ol>
 <p>None of these criteria alone proves an inversion. For example, LD may
 be uneven inside an old inversion because gene conversion and double
@@ -279,13 +279,11 @@ putative centromeres. Regional PCA in centromeric regions could also
 reflect reduced recombination, but the individuals were more dispersed
 and retained more haplotype variation than in the inversion regions.</p>
 <p>The study also demonstrates why relative differentiation alone can
-mislead. Elevated
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-near centromeres resulted partly from low within-population diversity,
-whereas absolute sequence divergence
-(<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>)
-was elevated in the large inversions but reduced near centromeres. For
-<code>radr</code>, the transferable diagnostic lessons are to:</p>
+mislead. Elevated <span class="math inline">F_{ST}</span> near
+centromeres resulted partly from low within-population diversity,
+whereas absolute sequence divergence (<span class="math inline">d_{XY}</span>) was elevated in the large inversions
+but reduced near centromeres. For <code>radr</code>, the transferable
+diagnostic lessons are to:</p>
 <ol style="list-style-type: decimal">
 <li>compare broad, abrupt and contiguous haploblocks with narrow or
 gradual peaks;</li>
@@ -298,28 +296,21 @@ maps, marker density, repeats, and assembly gaps; and</li>
 independent structural or linkage evidence.</li>
 </ol>
 <p>Sparse, ascertained RADseq markers generally do not support the same
-robust windowed
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>
-analysis as whole-genome sequence. <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code>
-therefore does not manufacture an absolute-divergence statistic from
-insufficient data. Where dense sequence data and defensible population
-groups are available,
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>,
-diversity, and
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>
-provide valuable downstream validation alongside the <code>radr</code>
-candidate scan.</p>
+robust windowed <span class="math inline">d_{XY}</span> analysis as
+whole-genome sequence. <code><a href="../reference/detect_inversions.html">detect_inversions()</a></code> therefore does
+not manufacture an absolute-divergence statistic from insufficient data.
+Where dense sequence data and defensible population groups are
+available, <span class="math inline">F_{ST}</span>, diversity, and <span class="math inline">d_{XY}</span> provide valuable downstream validation
+alongside the <code>radr</code> candidate scan.</p>
 </div>
 <div class="section level3">
-<h3 id="cross-reference-candidates-with-chromosome-resolved-f_st">Cross-reference candidates with chromosome-resolved
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math><a class="anchor" aria-label="anchor" href="#cross-reference-candidates-with-chromosome-resolved-f_st"></a>
+<h3 id="cross-reference-candidates-with-chromosome-resolved-f_st">Cross-reference candidates with chromosome-resolved <span class="math inline">F_{ST}</span><a class="anchor" aria-label="anchor" href="#cross-reference-candidates-with-chromosome-resolved-f_st"></a>
 </h3>
 <p>Population differentiation is most informative when it is plotted
 along each linkage group rather than reduced to one genome-wide value.
 The complementary <code>assigner::fst_WC84()</code> function calculates
-Weir and Cockerham’s (1984)
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-from independently defined populations and, when <code>CHROM</code> and
+Weir and Cockerham’s (1984) <span class="math inline">F_{ST}</span> from
+independently defined populations and, when <code>CHROM</code> and
 numeric <code>POS</code> metadata are available, returns:</p>
 <ul>
 <li>
@@ -383,26 +374,20 @@ and marker filters in both analyses.</p>
 <span>    colour <span class="op">=</span> <span class="st">"Exploratory outlier"</span></span>
 <span>  <span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggtheme.html" class="external-link">theme_bw</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
-<p>An overlapping, spatially coherent
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-peak strengthens the case that a candidate haploblock contributes to
-differentiation among the sampled populations. Its absence does not
-reject an inversion: both arrangements may occur at similar frequencies
-among populations. Conversely, an
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-peak can arise from local selection, a centromere, low recombination,
-reduced diversity, marker ascertainment, or technical structure without
-an inversion.</p>
+<p>An overlapping, spatially coherent <span class="math inline">F_{ST}</span> peak strengthens the case that a
+candidate haploblock contributes to differentiation among the sampled
+populations. Its absence does not reject an inversion: both arrangements
+may occur at similar frequencies among populations. Conversely, an <span class="math inline">F_{ST}</span> peak can arise from local selection, a
+centromere, low recombination, reduced diversity, marker ascertainment,
+or technical structure without an inversion.</p>
 <p>Population strata must be specified independently of the inversion
-scan. Calculating
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mrow><mi>S</mi><mi>T</mi></mrow></msub><annotation encoding="application/x-tex">F_{ST}</annotation></semantics></math>
-between the regional PCA clusters inferred from the same candidate
-genotypes is circular and should not be presented as independent
-support. Where whole-genome sequence is available, compare relative
-differentiation with
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>X</mi><mi>Y</mi></mrow></msub><annotation encoding="application/x-tex">d_{XY}</annotation></semantics></math>,
-within-population diversity, recombination, and structural evidence, as
-illustrated by Akopyan et al. (2025).</p>
+scan. Calculating <span class="math inline">F_{ST}</span> between the
+regional PCA clusters inferred from the same candidate genotypes is
+circular and should not be presented as independent support. Where
+whole-genome sequence is available, compare relative differentiation
+with <span class="math inline">d_{XY}</span>, within-population
+diversity, recombination, and structural evidence, as illustrated by
+Akopyan et al. (2025).</p>
 </div>
 <div class="section level3">
 <h3 id="rainbow-trout-across-populations-inversion-signals-are-context-dependent">Rainbow trout across populations: inversion signals are

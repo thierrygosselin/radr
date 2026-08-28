@@ -135,7 +135,7 @@ A convincing candidate normally combines several lines of evidence:
     libraries, missingness, coverage, or other processing variables.
 7.  **Population differentiation:** when biologically defined
     populations differ in arrangement frequency, a broad windowed
-    $`F_{ST}`$ peak overlaps the local structure signal and helps
+    F\_{ST} peak overlaps the local structure signal and helps
     prioritise the region for follow-up.
 
 None of these criteria alone proves an inversion. For example, LD may be
@@ -208,9 +208,9 @@ reflect reduced recombination, but the individuals were more dispersed
 and retained more haplotype variation than in the inversion regions.
 
 The study also demonstrates why relative differentiation alone can
-mislead. Elevated $`F_{ST}`$ near centromeres resulted partly from low
+mislead. Elevated F\_{ST} near centromeres resulted partly from low
 within-population diversity, whereas absolute sequence divergence
-($`d_{XY}`$) was elevated in the large inversions but reduced near
+(d\_{XY}) was elevated in the large inversions but reduced near
 centromeres. For `radr`, the transferable diagnostic lessons are to:
 
 1.  compare broad, abrupt and contiguous haploblocks with narrow or
@@ -223,20 +223,20 @@ centromeres. For `radr`, the transferable diagnostic lessons are to:
     independent structural or linkage evidence.
 
 Sparse, ascertained RADseq markers generally do not support the same
-robust windowed $`d_{XY}`$ analysis as whole-genome sequence.
+robust windowed d\_{XY} analysis as whole-genome sequence.
 [`detect_inversions()`](https://thierrygosselin.github.io/radr/reference/detect_inversions.md)
 therefore does not manufacture an absolute-divergence statistic from
 insufficient data. Where dense sequence data and defensible population
-groups are available, $`F_{ST}`$, diversity, and $`d_{XY}`$ provide
-valuable downstream validation alongside the `radr` candidate scan.
+groups are available, F\_{ST}, diversity, and d\_{XY} provide valuable
+downstream validation alongside the `radr` candidate scan.
 
-### Cross-reference candidates with chromosome-resolved $`F_{ST}`$
+### Cross-reference candidates with chromosome-resolved F\_{ST}
 
 Population differentiation is most informative when it is plotted along
 each linkage group rather than reduced to one genome-wide value. The
 complementary `assigner::fst_WC84()` function calculates Weir and
-Cockerham’s (1984) $`F_{ST}`$ from independently defined populations
-and, when `CHROM` and numeric `POS` metadata are available, returns:
+Cockerham’s (1984) F\_{ST} from independently defined populations and,
+when `CHROM` and numeric `POS` metadata are available, returns:
 
 - `fst.linkage.groups`, with one summary per chromosome or linkage
   group;
@@ -299,19 +299,19 @@ ggplot(fst$fst.windows, aes(WINDOW_MID, FST_WC84)) +
   theme_bw()
 ```
 
-An overlapping, spatially coherent $`F_{ST}`$ peak strengthens the case
+An overlapping, spatially coherent F\_{ST} peak strengthens the case
 that a candidate haploblock contributes to differentiation among the
 sampled populations. Its absence does not reject an inversion: both
 arrangements may occur at similar frequencies among populations.
-Conversely, an $`F_{ST}`$ peak can arise from local selection, a
+Conversely, an F\_{ST} peak can arise from local selection, a
 centromere, low recombination, reduced diversity, marker ascertainment,
 or technical structure without an inversion.
 
 Population strata must be specified independently of the inversion scan.
-Calculating $`F_{ST}`$ between the regional PCA clusters inferred from
-the same candidate genotypes is circular and should not be presented as
+Calculating F\_{ST} between the regional PCA clusters inferred from the
+same candidate genotypes is circular and should not be presented as
 independent support. Where whole-genome sequence is available, compare
-relative differentiation with $`d_{XY}`$, within-population diversity,
+relative differentiation with d\_{XY}, within-population diversity,
 recombination, and structural evidence, as illustrated by Akopyan et
 al. (2025).
 
