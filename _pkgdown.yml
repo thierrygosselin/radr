@@ -99,5 +99,4 @@ reference:
 - title: Superseded interfaces
   desc: Compatibility names retained for older scripts; use the recommended replacement documented on each page.
   contents:
-  - betas_estimator
   - radr_pkg_install

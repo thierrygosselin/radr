@@ -58,7 +58,9 @@ Suggests:
     ragg,
     rmarkdown,
     SNPRelate,
-    stringdist
+    stringdist,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 VignetteBuilder: knitr
 Encoding: UTF-8
 Language: en-US
