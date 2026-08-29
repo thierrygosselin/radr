@@ -131,7 +131,13 @@ the numbers are reported.</p></li>
 <li><p><code>filter.short.ld = "mac"</code> will select the SNP on the locus with the maximum global
 Minor Allele Count (MAC).</p>
 <p>Using <code>filter.short.ld = NULL</code>, skip this filter.</p></li>
-</ol><p>Default: <code>filter.short.ld = "mac"</code>.</p></dd>
+</ol><p>Default: <code>filter.short.ld = "mac"</code>.</p>
+<p>Short-distance pruning requires multiple VCF records to share the same
+<code>LOCUS</code>. Reference-based VCFs often contain genomic coordinates but no
+RAD/read locus identifier; in that situation each variant is its own locus,
+short-distance pruning is skipped, and long-distance LD pruning can still be
+performed. A REF allele spanning several bases is not by itself evidence that
+several SNP records belong to one RAD locus.</p></dd>
 
 
 <dt id="arg-filter-long-ld">filter.long.ld<a class="anchor" aria-label="anchor" href="#arg-filter-long-ld"></a></dt>

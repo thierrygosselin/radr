@@ -168,7 +168,13 @@ criterion from one marker to another as missingness changes.
 **MAF** remains useful when a frequency threshold is scientifically
 required or when marker call rates are sufficiently uniform. Its
 dependence on the observed denominator should be considered and
-reported.
+reported. With `calibrate.alleles = "depth"`, MAF identifies the less
+abundant allele from total allele depth. With
+`calibrate.alleles = "count"`, it uses observed allele counts. If depth
+information is unavailable, the function falls back to the
+count-calibrated MAF. Although both MAF estimates may be reported as
+diagnostics, only the estimate selected by `calibrate.alleles` is used
+for filtering.
 
 **MAD** uses the total read support for the less abundant allele. It can
 identify variants that pass a count threshold but whose minor allele is

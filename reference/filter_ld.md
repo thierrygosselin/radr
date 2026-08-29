@@ -79,6 +79,13 @@ filter_ld(
 
   Default: `filter.short.ld = "mac"`.
 
+  Short-distance pruning requires multiple VCF records to share the same
+  `LOCUS`. Reference-based VCFs often contain genomic coordinates but no
+  RAD/read locus identifier; in that situation each variant is its own
+  locus, short-distance pruning is skipped, and long-distance LD pruning
+  can still be performed. A REF allele spanning several bases is not by
+  itself evidence that several SNP records belong to one RAD locus.
+
 - filter.long.ld:
 
   (optional, double) The threshold to prune SNP based on Long Distance

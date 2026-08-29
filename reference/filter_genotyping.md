@@ -102,7 +102,8 @@ to assist in choosing a threshold:
   thresholds from 0 to 1 by 0.1;
 
 - if strata are present, `markers.pop.missing.helper.table.tsv`
-  summarises missingness per population;
+  summarises missingness per population using the samples and variants
+  currently active in the GDS;
 
 - a PDF/PNG helper plot summarising these patterns.
 

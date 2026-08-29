@@ -49,7 +49,7 @@ combining regional genotype groups, linkage disequilibrium,
 recombination, diversity, and structural evidence when interpreting
 inversion-associated haploblocks.
 
-The function is an independent, implementation rather than a wrapper
+The function is an independent implementation rather than a wrapper
 around another inversion package. It was designed to make these
 transferable ideas practical for the quality-controlled RADseq and
 similar datasets already used in `radr`. In particular,
@@ -354,11 +354,27 @@ The analysis is not one PCA per linkage group. Instead:
 7.  a regional PCA, clustering, heterozygosity summary, and LD summary
     are calculated for each candidate.
 
+The window calculations are independent. `parallel.core` can distribute
+them across separate R workers. Each worker opens its own read-only GDS
+connection; workers do not share one SeqArray connection. A progress bar
+reports completed windows in sequential and parallel mode. Because every
+worker constructs a sample covariance matrix, more workers also require
+more memory. Start with two or four workers rather than automatically
+using every available core.
+
 When several linkage groups are scanned, their window summaries are
 compared in the same MDS analysis. The returned table retains the
 linkage-group label, so chromosome-position plots should normally be
 faceted by linkage group. A regional PCA belongs to one candidate on one
 linkage group and therefore does not itself require an LG facet.
+
+As a complementary diagnostic, `chromosome.pca = TRUE` also calculates
+one independent PCA for every chromosome or linkage group. These
+chromosome-wide PCAs do not select candidates. After a candidate has
+been inferred, its AA, AB, and BB labels are projected as colours onto
+every panel. This makes it easy to ask whether the same individual
+grouping is localized to the candidate linkage group or recurs
+throughout the genome.
 
 ## Run a scan from GDS
 
@@ -370,13 +386,31 @@ library(radr)
 
 genome <- genometranslator::read_genome("filtered_dataset.gds")
 
+sample_metadata <- readr::read_tsv("maintained_sample_metadata.tsv")
+
+# Stage 1: ordinary discovery scan with the defaults
+screen <- detect_inversions(
+  data = genome,
+  strata = sample_metadata,
+  parallel.core = 4
+)
+
+screen$candidates
+screen$chromosome.lengths
+
+# Stage 2: a more detailed genome-wide scan
 inv <- detect_inversions(
   data = genome,
+  strata = sample_metadata,
   window.snps = 100,
   step.snps = 100,
   sensitivity.window.snps = c(100, 250, 500, 1000),
   min.call.rate = 0.90,
   min.candidate.windows = 2,
+  stability.replicates = 100,
+  parallel.core = 4,
+  chromosome.pca = TRUE,
+  chromosome.pca.max.snps = 2000,
   return.ld = TRUE
 )
 
@@ -387,6 +421,31 @@ inv$homokaryotype.whitelist
 inv$homokaryotype.all.candidates
 inv$path.folder
 ```
+
+The first call is the normal starting point. It scans the filtered
+genome before LD pruning and reports candidate regions without requiring
+the user to choose a large set of tuning values. The second call adds
+SNP-window sensitivity, assignment stability, retained LD matrices, and
+more parallel workers. These extra diagnostics are valuable, but they
+need not be paid for before the basic signal has been located.
+
+`strata` requires `INDIVIDUALS`. Its rows act as a sample whitelist and
+its other columns remain descriptive metadata. Include useful variables
+such as `STRATA`, sequencing batch, library, lane, plate, extraction
+method, caller, sampling year, or other project-specific factors. The
+function compares these variables with regional PC1 and inferred
+arrangements, but does not copy them into or use them to modify the GDS.
+
+Window-size sensitivity and SNP-resampling stability are optional
+because both add computation. `sensitivity.window.snps = NULL` and
+`stability.replicates = 0` skip them. A rapid first screen can use those
+defaults; a focused rerun of promising chromosomes can then request
+both. Chromosome-wide PCA also adds computation. Set
+`chromosome.pca = FALSE` for a minimal screen, or reduce
+`chromosome.pca.max.snps` when chromosomes contain very dense
+whole-genome data. SNPs are selected at evenly distributed marker
+indices within each chromosome so the cap preserves chromosome-wide
+coverage.
 
 Known centromeres, assembly gaps, or other low-recombination annotations
 can be supplied without allowing those annotations to determine which
@@ -414,6 +473,44 @@ overlap is a warning for interpretation, not evidence for or against an
 inversion, and it does not change candidate selection or the evidence
 score.
 
+## Chromosome size and candidate extent
+
+When the GDS retains the original VCF contig dictionary, chromosome
+lengths are read automatically. Candidate tables then report
+`candidate_span_bp`, `chromosome_length_bp`, `chromosome_fraction`,
+`chromosome_percent`, and the left and right flanking lengths. The
+complete length provenance is returned in `inv$chromosome.lengths` and
+written to `chromosome_length_context.tsv`.
+
+If declared lengths are absent from the GDS, provide either a named
+vector or a table with `CHROM` and `LENGTH` columns:
+
+``` r
+
+lengths <- readr::read_tsv("chromosome_lengths.tsv")
+
+inv <- detect_inversions(
+  data = genome,
+  chromosome.lengths = lengths
+)
+```
+
+A reference FASTA path or its existing `.fai` index can instead be
+supplied with `reference.genome`. The function reads the index rather
+than scanning the complete FASTA:
+
+``` r
+
+inv <- detect_inversions(
+  data = genome,
+  reference.genome = "genome.fasta"
+)
+```
+
+Without declared sequence lengths, the largest observed marker position
+is used only as a labelled fallback. It underestimates chromosome length
+and can therefore overestimate the percentage occupied by a candidate.
+
 To investigate a known chromosome-14 signal without letting other
 linkage groups define the background:
 
@@ -421,6 +518,7 @@ linkage groups define the background:
 
 chr14 <- detect_inversions(
   data = genome,
+  strata = sample_metadata,
   chromosome = "14",
   window.snps = 100,
   step.snps = 50,
@@ -428,6 +526,59 @@ chr14 <- detect_inversions(
   min.candidate.windows = 2
 )
 ```
+
+Once this focused call confirms the signal, compare independent primary
+window definitions. These calls genuinely recall the candidate
+boundaries:
+
+``` r
+
+chr14_50_25 <- detect_inversions(
+  data = genome, strata = sample_metadata, chromosome = "14",
+  window.snps = 50, step.snps = 25, parallel.core = 4
+)
+
+chr14_100_50 <- detect_inversions(
+  data = genome, strata = sample_metadata, chromosome = "14",
+  window.snps = 100, step.snps = 50, parallel.core = 4
+)
+
+chr14_250_125 <- detect_inversions(
+  data = genome, strata = sample_metadata, chromosome = "14",
+  window.snps = 250, step.snps = 125, parallel.core = 4
+)
+```
+
+Compare candidate start, end, span, chromosome percentage, and
+reciprocal overlap across these runs. The shared interval is a
+defensible stable candidate core; the union describes boundary
+uncertainty. Do not select only the run that produces the cleanest or
+widest interval.
+
+`sensitivity.window.snps` is complementary. It summarizes PC1 variance
+and LD at additional scales within one run, but it does not
+independently rerun candidate selection at every size:
+
+``` r
+
+chr14_sensitivity <- detect_inversions(
+  data = genome,
+  strata = sample_metadata,
+  chromosome = "14",
+  window.snps = 100,
+  step.snps = 50,
+  sensitivity.window.snps = c(50, 100, 250, 500),
+  stability.replicates = 100,
+  parallel.core = 4
+)
+```
+
+After boundary sensitivity, repeat the candidate analysis with stricter
+call-rate thresholds and alternative sample sets, particularly after
+removing close relatives or suspect sequencing batches. Only then should
+stable marker boundaries be compared with recombination maps,
+structural-variant callers, long reads, read-pair evidence, assemblies,
+or breakpoint assays.
 
 Overlapping windows (`step.snps < window.snps`) can help localise
 transitions, but adjacent results are then strongly dependent.
@@ -527,18 +678,59 @@ ggplot(candidate1$scores, aes(PC1, PC2, colour = arrangement)) +
   theme_bw()
 
 candidate1$cluster_summary
+candidate1$cluster_models
+candidate1$assignment_stability
+candidate1$metadata_audit
 candidate1$scores |>
   dplyr::select(individual, arrangement, arrangement_dosage,
-                arrangement_confidence)
+                arrangement_confidence, assignment_stability)
 ```
 
-`AA`, `AB`, and `BB` mean the low, middle, and high regional-PC1
-clusters. They are convenient putative arrangement genotypes, not
-validated breakpoint genotypes. Relative confidence describes separation
-from the next cluster; it is not a posterior probability. The result
-folder contains one whitelist per arrangement, one homokaryotype-only
-whitelist per candidate, and a whitelist of individuals classified as a
-homokaryotype across every candidate.
+## Compare candidate groups across linkage groups
+
+The chromosome-PCA overview uses the arrangement calls from one
+candidate only as colours. It does not rerun clustering or force three
+groups independently on every linkage group. Every panel is calculated
+from genotypes on that linkage group, using at most
+`chromosome.pca.max.snps` evenly distributed SNPs.
+
+``` r
+
+inv$chromosome.pca$summary
+inv$output.files$plots$`INV-CAND-1_chromosome_pca`
+```
+
+Separation that is strongest on the candidate linkage group and weak
+elsewhere supports a localized haploblock interpretation. Similar
+separation across many linkage groups instead suggests genome-wide
+population structure, family structure, admixture, or a technical batch
+effect that needs to be resolved before describing the region as a
+putative inversion.
+
+The reverse is not a formal rejection test. A short candidate interval
+can be diluted by thousands of unrelated SNPs in a whole-linkage-group
+PCA, so weak or absent separation in the candidate linkage-group panel
+does not invalidate a clear regional PCA. Interpret this overview
+together with the window scan, regional PCA, heterozygosity, LD,
+missingness, depth, sample metadata, and window-size sensitivity.
+
+For candidates with quantitative three-cluster support, `AA`, `AB`, and
+`BB` mean the low, middle, and high regional-PC1 clusters. They are
+convenient putative arrangement genotypes, not validated breakpoint
+genotypes. `AA` and `BB` do not identify which arrangement is reference,
+ancestral, derived, or physically inverted. Reversing the arbitrary sign
+of PC1 can exchange the two outer labels without changing the biological
+result.
+
+Candidates without quantitative three-cluster support use neutral
+`Group 1`, `Group 2`, and `Group 3` labels. Their numeric cluster IDs
+remain in exported tables, but arrangement dosage and homokaryotype
+classification are withheld. Relative confidence describes separation
+from the next algorithmic cluster; it is not a posterior probability.
+For supported candidates, the result folder contains one whitelist per
+arrangement, one homokaryotype-only whitelist per candidate, and a
+whitelist of individuals classified as a homokaryotype across every
+candidate.
 
 The homokaryotype sets are useful for asking whether a downstream signal
 persists after excluding putative heterokaryotypes. Haplotype scans need
@@ -553,6 +745,19 @@ one arrangement is rare or absent, while continuous PCA scores may
 indicate ordinary population structure rather than a polymorphic
 inversion.
 
+The requested `cluster.k` controls the reported arrangement calls, but
+`cluster_models` compares one-, two-, and three-cluster descriptions of
+PC1 using an approximate Gaussian BIC. `recommended_cluster_k` in the
+candidate table records the lowest-BIC model. This check prevents a
+three-group story from being accepted only because k-means was asked for
+three centres.
+
+When `stability.replicates > 0`, regional SNPs are resampled and the PCA
+and clustering are repeated. `assignment_stability` is the proportion of
+repeated calls that agree after accounting for the arbitrary direction
+of PC1. Low overall stability or unstable individuals near cluster
+boundaries should make arrangement labels provisional.
+
 The LD diagnostic uses the upper triangle for all individuals and the
 lower triangle for the more common outer PCA cluster, treated
 provisionally as a homokaryotype. This comparison is useful because
@@ -560,6 +765,64 @@ mixing arrangements can create strong LD even when LD is lower within
 one arrangement. It is not independent validation: the subset was
 inferred from the same candidate-region genotypes. The group-specific
 values are available in `candidate1$ld_summary`.
+
+## Coverage, allele balance, and missingness artifacts
+
+Technical summaries are generated from whatever compatible count
+information was retained in the GDS, not from the original filename or
+input format. The function recognizes standard `DP` and biallelic `AD`
+nodes and genometranslator genotype-metadata fields named `READ_DEPTH`,
+`ALLELE_REF_DEPTH`, and `ALLELE_ALT_DEPTH`. These may originate from a
+VCF, DArT two-row count file, or another count-based format.
+
+``` r
+
+candidate1$coverage_source
+candidate1$technical_summary
+
+candidate1$scores |>
+  dplyr::select(individual, arrangement, call_rate, mean_depth,
+                mean_heterozygote_allele_balance)
+
+inv$output.files$plots$`INV-CAND-1_coverage_call_rate`
+```
+
+A depth shift among arrangement classes may reflect a real structural
+variant, but it can also indicate paralogy, a copy-number variant,
+collapsed repeats, or mapping bias. Allele balance far from 0.5 among
+called heterozygotes is another warning. These measurements help
+distinguish a local genotype signal from a coverage artifact; they do
+not prove which biological mechanism produced it.
+
+## Diagnostic SNP loadings and arrangement differentiation
+
+Regional PC1 loadings rank the SNPs contributing most strongly to the
+local structure. They can guide diagnostic-panel exploration, but marker
+selection and evaluation must use separate samples or resampling to
+avoid upward bias.
+
+``` r
+
+candidate1$pc1_loadings |>
+  dplyr::slice_min(loading_rank, n = 25)
+
+candidate1$arrangement_differentiation
+inv$output.files$plots$`INV-CAND-1_marker_loadings`
+```
+
+The arrangement table reports mean absolute allele-frequency differences
+and pairwise Hudson FST. Hudson FST is used only as a compact
+description of allele-frequency separation between inferred classes. AA,
+AB, and BB are not natural populations, and the same regional SNPs
+helped define the classes. Consequently, this FST is partly circular and
+is not independent evidence for an inversion. Population differentiation
+should instead be estimated from independently defined populations with
+an estimator such as `assigner::fst_WC84()`.
+
+Dxy is not calculated among AA, AB, and BB. In particular, AB is an
+inferred heterokaryotype rather than an independently sampled
+evolutionary lineage. Population-level Dxy belongs in a later comparison
+among genuine populations or lineages.
 
 ## Mean imputation: what it does
 
@@ -701,6 +964,10 @@ simple screening grade. Important columns include:
   deviation;
 - `cluster_compactness`: the proportion of regional PC1 variation
   explained by the inferred clusters;
+- `recommended_cluster_k`: the one-, two-, or three-cluster PC1 model
+  with the lowest approximate BIC;
+- `assignment_stability`: agreement of arrangement calls across
+  SNP-resampling replicates, when requested;
 - `smallest_cluster_n` and `smallest_cluster_frequency`: protection
   against treating a few outlying individuals as an inversion
   arrangement;
@@ -784,6 +1051,10 @@ Campbell MA, Anderson EC, Garza JC, Pearse DE (2021) Polygenic basis and
 the role of genome duplication in adaptation to similar selective
 environments. *Journal of Heredity*, 112, 614-625.
 
+Bhatia G, Patterson N, Sankararaman S, Price AL (2013) Estimating and
+interpreting FST: the impact of rare variants. *Genome Research*, 23,
+1514-1521.
+
 Faria R, Johannesson K, Butlin RK, Westram AM (2019) Evolving
 inversions. *Trends in Ecology & Evolution*, 34, 239-248.
 
@@ -795,6 +1066,9 @@ Hoffmann AA, Rieseberg LH (2008) Revisiting the impact of inversions in
 evolution: from population genetic markers to drivers of adaptive shifts
 and speciation? *Annual Review of Ecology, Evolution, and Systematics*,
 39, 21-42.
+
+Hudson RR, Slatkin M, Maddison WP (1992) Estimation of levels of gene
+flow from DNA sequence data. *Genetics*, 132, 583-589.
 
 Huang K, Andrew RL, Owens GL, Ostevik KL, Rieseberg LH (2020) Multiple
 chromosomal inversions contribute to adaptive divergence of a dune

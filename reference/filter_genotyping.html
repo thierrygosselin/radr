@@ -140,7 +140,8 @@ proportion greater than the chosen threshold are blacklisted and have their
 to assist in choosing a threshold:</p><ul><li><p><code>genotyping.helper.table.tsv</code>:
 number of markers kept/removed for thresholds from 0 to 1 by 0.1;</p></li>
 <li><p>if strata are present, <code>markers.pop.missing.helper.table.tsv</code>
-summarises missingness per population;</p></li>
+summarises missingness per population using the samples and variants
+currently active in the GDS;</p></li>
 <li><p>a PDF/PNG helper plot summarising these patterns.</p></li>
 </ul><p>This function operates on the GDS representation of the data and is meant
 for genotyping/missingness-based pruning <em>after</em> VCF import

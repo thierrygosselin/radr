@@ -7,7 +7,14 @@ assembly artifacts or bad assembly parameters.
 This filter is population-agnostic, but still requires a strata
 file if a vcf file is used as input.
 Filter target: Markers.
-Statistics: The number of SNPs per locus.'><meta property="og:description" content='This filter removes outlier markers
+Statistics: The number of SNPs per locus.
+For reference-based VCFs, this statistic is the number of VCF records sharing
+the same stored LOCUS. If the VCF does not preserve a RAD/read locus
+identifier, each record has a unique LOCUS; the function then reports
+one SNP per locus and leaves the data unchanged. The nucleotide length of a
+FreeBayes REF allele is not interpreted as a SNP count because complex
+substitutions and indels can span several bases without representing several
+independently stored SNP records.'><meta property="og:description" content='This filter removes outlier markers
 with too many SNP number per locus/read.
 The data requires snp and locus information (e.g. from a VCF file).
 Having a higher than "normal" SNP number is usually the results of
@@ -15,7 +22,14 @@ assembly artifacts or bad assembly parameters.
 This filter is population-agnostic, but still requires a strata
 file if a vcf file is used as input.
 Filter target: Markers.
-Statistics: The number of SNPs per locus.'><meta property="og:image" content="https://thierrygosselin.github.io/radr/logo.png"></head><body>
+Statistics: The number of SNPs per locus.
+For reference-based VCFs, this statistic is the number of VCF records sharing
+the same stored LOCUS. If the VCF does not preserve a RAD/read locus
+identifier, each record has a unique LOCUS; the function then reports
+one SNP per locus and leaves the data unchanged. The nucleotide length of a
+FreeBayes REF allele is not interpreted as a SNP count because complex
+substitutions and indels can span several bases without representing several
+independently stored SNP records.'><meta property="og:image" content="https://thierrygosselin.github.io/radr/logo.png"></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -59,6 +73,13 @@ This filter is population-agnostic, but still requires a strata
 file if a vcf file is used as input.</p>
 <p><strong>Filter target:</strong> Markers.</p>
 <p><strong>Statistics</strong>: The number of SNPs per locus.</p>
+<p>For reference-based VCFs, this statistic is the number of VCF records sharing
+the same stored <code>LOCUS</code>. If the VCF does not preserve a RAD/read locus
+identifier, each record has a unique <code>LOCUS</code>; the function then reports
+one SNP per locus and leaves the data unchanged. The nucleotide length of a
+FreeBayes REF allele is not interpreted as a SNP count because complex
+substitutions and indels can span several bases without representing several
+independently stored SNP records.</p>
     </div>
 
     <div class="section level2">
@@ -127,6 +148,30 @@ functions.</p></dd>
     <p>The filtered data in the same representation as the input. GDS
 marker metadata and active variants are updated in place. Diagnostic files,
 marker lists, and filtering parameters are written to the output folder.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="stacks-loci-and-freebayes-haplotypes">STACKS loci and FreeBayes haplotypes<a class="anchor" aria-label="anchor" href="#stacks-loci-and-freebayes-haplotypes"></a></h2>
+
+
+<p>STACKS reconstructs RAD loci and preserves a locus identifier shared by the
+SNPs observed on the same read or locus. In that setting, asking whether a
+roughly 70-100-bp sequence contains an unusually large number of SNPs is
+meaningful: dense polymorphism can be consistent with paralogy, poor locus
+assembly, misalignment, or unexpectedly high local diversity.</p>
+<p>FreeBayes is haplotype-aware in a different sense. During variant calling it
+evaluates nearby alleles jointly and may emit a SNP, multi-nucleotide
+polymorphism, indel, or complex allele as one VCF record. This does not imply
+that the record represents one reconstructed RAD locus, and the number of
+bases in its REF or ALT allele is not the number of SNPs on a read. Unless an
+upstream shared RAD/read locus identifier was retained, genomic coordinates
+cannot unambiguously recover the original read boundaries. Consequently,
+<code>filter_snp_number()</code> does not infer them and skips filtering when every
+VCF record has a unique <code>LOCUS</code>.</p>
+<p>For reference-based FreeBayes data without retained locus identifiers, use
+genotype quality, allele balance, depth and coverage, excess
+heterozygosity, mapping diagnostics, local variant density, and genomic LD
+as complementary diagnostics. Local variant-density windows must be
+interpreted as genomic windows, not automatically as individual RAD reads.</p>
     </div>
     <div class="section level2">
     <h2 id="interactive-version">Interactive version<a class="anchor" aria-label="anchor" href="#interactive-version"></a></h2>

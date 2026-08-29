@@ -11,6 +11,14 @@ used as input.
 
 **Statistics**: The number of SNPs per locus.
 
+For reference-based VCFs, this statistic is the number of VCF records
+sharing the same stored `LOCUS`. If the VCF does not preserve a RAD/read
+locus identifier, each record has a unique `LOCUS`; the function then
+reports one SNP per locus and leaves the data unchanged. The nucleotide
+length of a FreeBayes REF allele is not interpreted as a SNP count
+because complex substitutions and indels can span several bases without
+representing several independently stored SNP records.
+
 ## Usage
 
 ``` r
@@ -74,6 +82,33 @@ filter_snp_number(
 The filtered data in the same representation as the input. GDS marker
 metadata and active variants are updated in place. Diagnostic files,
 marker lists, and filtering parameters are written to the output folder.
+
+## STACKS loci and FreeBayes haplotypes
+
+STACKS reconstructs RAD loci and preserves a locus identifier shared by
+the SNPs observed on the same read or locus. In that setting, asking
+whether a roughly 70-100-bp sequence contains an unusually large number
+of SNPs is meaningful: dense polymorphism can be consistent with
+paralogy, poor locus assembly, misalignment, or unexpectedly high local
+diversity.
+
+FreeBayes is haplotype-aware in a different sense. During variant
+calling it evaluates nearby alleles jointly and may emit a SNP,
+multi-nucleotide polymorphism, indel, or complex allele as one VCF
+record. This does not imply that the record represents one reconstructed
+RAD locus, and the number of bases in its REF or ALT allele is not the
+number of SNPs on a read. Unless an upstream shared RAD/read locus
+identifier was retained, genomic coordinates cannot unambiguously
+recover the original read boundaries. Consequently,
+`filter_snp_number()` does not infer them and skips filtering when every
+VCF record has a unique `LOCUS`.
+
+For reference-based FreeBayes data without retained locus identifiers,
+use genotype quality, allele balance, depth and coverage, excess
+heterozygosity, mapping diagnostics, local variant density, and genomic
+LD as complementary diagnostics. Local variant-density windows must be
+interpreted as genomic windows, not automatically as individual RAD
+reads.
 
 ## Interactive version
 
