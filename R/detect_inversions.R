@@ -2881,8 +2881,12 @@ detect_inversions <- function(
     }
     midpoint <- (window.table$start + window.table$end) / 2
     plot.data <- transform(window.table, midpoint_mb = midpoint / 1e6)
-    plots$window_scores <- ggplot2::ggplot(
+    score.plot.data <- dplyr::filter(
       plot.data,
+      is.finite(.data$midpoint_mb), is.finite(.data$robust_score)
+    )
+    plots$window_scores <- ggplot2::ggplot(
+      score.plot.data,
       ggplot2::aes(
         x = midpoint_mb, y = robust_score, colour = candidate_window
       )
@@ -2900,8 +2904,12 @@ detect_inversions <- function(
       ggplot2::theme_bw()
 
     if (all(c("MDS1", "MDS2") %in% names(window.table))) {
-      plots$window_mds <- ggplot2::ggplot(
+      mds.plot.data <- dplyr::filter(
         window.table,
+        is.finite(.data$MDS1), is.finite(.data$MDS2)
+      )
+      plots$window_mds <- ggplot2::ggplot(
+        mds.plot.data,
         ggplot2::aes(
           x = MDS1, y = MDS2, colour = chromosome,
           shape = candidate_window
@@ -2915,8 +2923,12 @@ detect_inversions <- function(
         ggplot2::theme_bw()
     }
 
-    plots$window_ld <- ggplot2::ggplot(
+    ld.plot.data <- dplyr::filter(
       plot.data,
+      is.finite(.data$midpoint_mb), is.finite(.data$mean_ld_r2)
+    )
+    plots$window_ld <- ggplot2::ggplot(
+      ld.plot.data,
       ggplot2::aes(x = midpoint_mb, y = mean_ld_r2)
     ) +
       ggplot2::geom_line(colour = "grey50") +
@@ -2931,8 +2943,12 @@ detect_inversions <- function(
       ) +
       ggplot2::theme_bw()
 
-    plots$window_call_rate <- ggplot2::ggplot(
+    call.rate.plot.data <- dplyr::filter(
       plot.data,
+      is.finite(.data$midpoint_mb), is.finite(.data$mean_call_rate)
+    )
+    plots$window_call_rate <- ggplot2::ggplot(
+      call.rate.plot.data,
       ggplot2::aes(x = midpoint_mb, y = mean_call_rate)
     ) +
       ggplot2::geom_line(colour = "grey50") +
@@ -2979,8 +2995,13 @@ detect_inversions <- function(
       } else {
         "Algorithmic group"
       }
-      out[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
+      pca.scores <- dplyr::filter(
         d$scores,
+        is.finite(.data$PC1), is.finite(.data$PC2),
+        !is.na(.data$arrangement)
+      )
+      out[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
+        pca.scores,
         ggplot2::aes(x = PC1, y = PC2, colour = arrangement)
       ) +
         ggplot2::geom_point(size = 2, alpha = 0.85) +
@@ -3011,6 +3032,11 @@ detect_inversions <- function(
         chromosome.scores$chromosome <- factor(
           chromosome.scores$chromosome,
           levels = chromosome.levels
+        )
+        chromosome.scores <- dplyr::filter(
+          chromosome.scores,
+          is.finite(.data$PC1), is.finite(.data$PC2),
+          !is.na(.data$chromosome)
         )
         out[[paste0(d$candidate_id, "_chromosome_pca")]] <-
           ggplot2::ggplot(
@@ -3043,9 +3069,13 @@ detect_inversions <- function(
           )
       }
 
+      heterozygosity.scores <- dplyr::filter(
+        d$scores,
+        is.finite(.data$heterozygosity), !is.na(.data$arrangement)
+      )
       out[[paste0(d$candidate_id, "_heterozygosity")]] <-
         ggplot2::ggplot(
-          d$scores,
+          heterozygosity.scores,
           ggplot2::aes(
             x = arrangement, y = heterozygosity, colour = arrangement
           )
@@ -3059,9 +3089,13 @@ detect_inversions <- function(
         ggplot2::theme_bw() +
         ggplot2::theme(legend.position = "none")
 
+      loading.scores <- dplyr::filter(
+        d$pc1_loadings,
+        is.finite(.data$position), is.finite(.data$PC1_loading)
+      )
       out[[paste0(d$candidate_id, "_marker_loadings")]] <-
         ggplot2::ggplot(
-          d$pc1_loadings,
+          loading.scores,
           ggplot2::aes(x = .data$position / 1e6, y = .data$PC1_loading)
         ) +
         ggplot2::geom_hline(yintercept = 0, colour = "grey70") +
@@ -3073,9 +3107,14 @@ detect_inversions <- function(
         ggplot2::theme_bw()
 
       if (any(is.finite(d$scores$mean_depth))) {
+        technical.scores <- dplyr::filter(
+          d$scores,
+          is.finite(.data$mean_depth), is.finite(.data$call_rate),
+          !is.na(.data$arrangement)
+        )
         out[[paste0(d$candidate_id, "_coverage_call_rate")]] <-
           ggplot2::ggplot(
-            d$scores,
+            technical.scores,
             ggplot2::aes(
               x = .data$mean_depth, y = .data$call_rate,
               colour = .data$arrangement

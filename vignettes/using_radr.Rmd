@@ -129,6 +129,74 @@ After learning the dataset, call individual functions with recorded thresholds.
 The filtering order should express a hypothesis about how the data became
 problematic. The two examples below deliberately use opposite orders.
 
+### Computational strategy: remove clear failures before expensive comparisons
+
+Runtime and memory depend primarily on the number of active markers, number of
+individuals, availability of depth fields, requested figures, and number of
+cores. The order therefore matters computationally as well as biologically. A
+filter applied early to 400,000 markers can make every subsequent genotype,
+coverage, LD, distance, and local-PCA calculation substantially cheaper.
+
+The following timing classes are intentionally approximate for contemporary
+desktop hardware. Tens of thousands of markers and hundreds of individuals may
+finish near the lower end; several hundred thousand markers and 1,000-2,000
+individuals can move a step into the next class.
+
+| Operation | Typical scale | Main cost and strategy |
+|---|---:|---|
+| Metadata validation, existing VCF filters, reproducibility fields, and monomorphic checks | seconds to a few minutes | Usually inexpensive; run first when applicable. |
+| `filter_genotyping()` | seconds to a few minutes | Very fast even for large datasets and often removes many markers. It is usually the first marker-targeting filter to run. |
+| `filter_ma()` | seconds to several minutes | Low memory cost with substantial potential to remove low-information markers. It is usually the second marker-targeting filter. Prefer MAC when preservation of the allele-frequency spectrum matters. |
+| `filter_snp_number()` | seconds to a few minutes | Fast, but usually removes fewer markers. Use only when `LOCUS` represents a genuine shared read or RAD locus; it is generally not informative for one-record-per-locus reference VCFs. |
+| `filter_coverage()` | minutes to tens of minutes | Can remove a substantial number of markers, but reading and summarizing DP/AD is computationally and memory intensive. Run it last among the routine marker-targeting filters, after the dataset has already been reduced. |
+| Individual missingness, heterozygosity, and coverage | minutes to tens of minutes | Recalculate after consequential marker filtering; remove known failed libraries earlier when project QC already identifies them. |
+| Short-distance LD | seconds to minutes | Cheap only when genuine shared RAD/read `LOCUS` identifiers exist; it is skipped for one-record-per-locus reference VCFs. |
+| Long-distance LD | minutes to hours | One of the expensive filters; cost grows with active marker count, chromosome size, missingness-aware selection, and requested figures. Run after basic marker and sample QC. |
+| Pairwise genome comparisons, duplicate/mixed-genome diagnostics, HWE by groups, local PCA, and inversion diagnostics | minutes to hours | Potentially expensive in markers, samples, groups, windows, or pairs. Reserve for the reduced dataset unless the scientific question requires unfiltered data. |
+
+A useful default computational order for the routine marker filters is:
+
+1. Validate samples, caller provenance, metadata, and already assigned VCF
+   filters. Remove samples known from laboratory or sequencing QC to have
+   failed completely.
+2. Run `filter_genotyping()`. It is quick, works well on very large datasets,
+   and frequently provides the largest early reduction in marker number.
+3. Run `filter_ma()` with a defensible global MAC threshold. It has a relatively
+   small memory footprint and can remove many low-information markers. Low-count alleles contribute little
+   information to many analyses and can make later calculations expensive or
+   unstable. Preserve the unfiltered master when the downstream analysis needs
+   the rare-allele spectrum.
+4. Run `filter_snp_number()` when loci genuinely group several SNP records.
+   This filter is fast, although it commonly removes fewer markers than the two
+   preceding filters. Skip it when every VCF record has a unique `LOCUS`, as is
+   common for reference-based FreeBayes data.
+5. Run `filter_coverage()` last among the routine marker-targeting filters.
+   Coverage and allele-depth information can identify many technical failures,
+   but DP/AD extraction and summarization are substantially more expensive than
+   the preceding filters.
+6. Recalculate individual statistics and remove supported sample failures.
+7. Run short-distance pruning only when loci genuinely group several SNP
+   records. Run long-distance LD and the more expensive pairwise or windowed
+   diagnostics after the dataset has been reduced.
+
+In compact form, the recommended marker-filtering sequence is therefore:
+
+```{r efficient-marker-pipeline, eval=FALSE}
+filtered <- genome |>
+  radr::filter_genotyping() |>
+  radr::filter_ma() |>
+  radr::filter_snp_number() |> # omit when LOCUS does not group genuine reads
+  radr::filter_coverage()
+```
+
+This is not a universal biological filter order. For example, severely failed
+samples can inflate marker missingness and should be removed first, whereas
+widespread bad markers can make good samples appear poor. Use the initial
+diagnostics to decide which problem dominates, record before-and-after
+dimensions and elapsed time, and recalculate statistics affected by each major
+decision. A fast filter is not automatically a valid filter, and computational
+convenience should not erase variation required by the intended analysis.
+
 ### Chain filters with a pipe
 
 Most radr filters take `data` as their first argument, update the active GDS,
