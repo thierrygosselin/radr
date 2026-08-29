@@ -272,6 +272,18 @@ filter_snp_number <- function(
       read.length <- NULL
     }
 
+    if (all(wl$SNP_PER_LOCUS == 1L)) {
+      if (verbose) {
+        message(
+          "\nSNP-number filtering skipped: every active LOCUS contains one ",
+          "SNP record.\n",
+          "For a reference-based VCF, short-range RAD/read grouping requires ",
+          "a shared locus identifier preserved during variant calling or import.\n"
+        )
+      }
+      return(data)
+    }
+
 
     # Generate box plot ---------------------------------------------------------
     snp.per.locus.fig <- tgbase::boxplot_stats(
@@ -372,18 +384,6 @@ filter_snp_number <- function(
       limitsize = FALSE)
     helper.table <- markers.plot <- NULL
     if (verbose) message("Files written: helper tables and plots")
-
-    if (all(wl$SNP_PER_LOCUS == 1L)) {
-      if (verbose) {
-        message(
-          "\nSNP-number filtering skipped: every active LOCUS contains one ",
-          "SNP record.\n",
-          "For a reference-based VCF, short-range RAD/read grouping requires ",
-          "a shared locus identifier preserved during variant calling or import.\n"
-        )
-      }
-      return(data)
-    }
 
     # Step 2. Thresholds selection ---------------------------------------------
     if (interactive.filter) {
