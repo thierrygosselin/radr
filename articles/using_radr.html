@@ -178,12 +178,150 @@ thresholds. The filtering order should express a hypothesis about how
 the data became problematic. The two examples below deliberately use
 opposite orders.</p>
 <div class="section level3">
+<h3 id="computational-strategy-remove-clear-failures-before-expensive-comparisons">Computational strategy: remove clear failures before expensive
+comparisons<a class="anchor" aria-label="anchor" href="#computational-strategy-remove-clear-failures-before-expensive-comparisons"></a>
+</h3>
+<p>Runtime and memory depend primarily on the number of active markers,
+number of individuals, availability of depth fields, requested figures,
+and number of cores. The order therefore matters computationally as well
+as biologically. A filter applied early to 400,000 markers can make
+every subsequent genotype, coverage, LD, distance, and local-PCA
+calculation substantially cheaper.</p>
+<p>The following timing classes are intentionally approximate for
+contemporary desktop hardware. Tens of thousands of markers and hundreds
+of individuals may finish near the lower end; several hundred thousand
+markers and 1,000-2,000 individuals can move a step into the next
+class.</p>
+<table class="table">
+<colgroup>
+<col width="30%">
+<col width="40%">
+<col width="30%">
+</colgroup>
+<thead><tr class="header">
+<th>Operation</th>
+<th align="right">Typical scale</th>
+<th>Main cost and strategy</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Metadata validation, existing VCF filters, reproducibility fields,
+and monomorphic checks</td>
+<td align="right">seconds to a few minutes</td>
+<td>Usually inexpensive; run first when applicable.</td>
+</tr>
+<tr class="even">
+<td><code><a href="../reference/filter_genotyping.html">filter_genotyping()</a></code></td>
+<td align="right">seconds to a few minutes</td>
+<td>Very fast even for large datasets and often removes many markers. It
+is usually the first marker-targeting filter to run.</td>
+</tr>
+<tr class="odd">
+<td><code><a href="../reference/filter_ma.html">filter_ma()</a></code></td>
+<td align="right">seconds to several minutes</td>
+<td>Low memory cost with substantial potential to remove low-information
+markers. It is usually the second marker-targeting filter. Prefer MAC
+when preservation of the allele-frequency spectrum matters.</td>
+</tr>
+<tr class="even">
+<td><code><a href="../reference/filter_snp_number.html">filter_snp_number()</a></code></td>
+<td align="right">seconds to a few minutes</td>
+<td>Fast, but usually removes fewer markers. Use only when
+<code>LOCUS</code> represents a genuine shared read or RAD locus; it is
+generally not informative for one-record-per-locus reference VCFs.</td>
+</tr>
+<tr class="odd">
+<td><code><a href="../reference/filter_coverage.html">filter_coverage()</a></code></td>
+<td align="right">minutes to tens of minutes</td>
+<td>Can remove a substantial number of markers, but reading and
+summarizing DP/AD is computationally and memory intensive. Run it last
+among the routine marker-targeting filters, after the dataset has
+already been reduced.</td>
+</tr>
+<tr class="even">
+<td>Individual missingness, heterozygosity, and coverage</td>
+<td align="right">minutes to tens of minutes</td>
+<td>Recalculate after consequential marker filtering; remove known
+failed libraries earlier when project QC already identifies them.</td>
+</tr>
+<tr class="odd">
+<td>Short-distance LD</td>
+<td align="right">seconds to minutes</td>
+<td>Cheap only when genuine shared RAD/read <code>LOCUS</code>
+identifiers exist; it is skipped for one-record-per-locus reference
+VCFs.</td>
+</tr>
+<tr class="even">
+<td>Long-distance LD</td>
+<td align="right">minutes to hours</td>
+<td>One of the expensive filters; cost grows with active marker count,
+chromosome size, missingness-aware selection, and requested figures. Run
+after basic marker and sample QC.</td>
+</tr>
+<tr class="odd">
+<td>Pairwise genome comparisons, duplicate/mixed-genome diagnostics, HWE
+by groups, local PCA, and inversion diagnostics</td>
+<td align="right">minutes to hours</td>
+<td>Potentially expensive in markers, samples, groups, windows, or
+pairs. Reserve for the reduced dataset unless the scientific question
+requires unfiltered data.</td>
+</tr>
+</tbody>
+</table>
+<p>A useful default computational order for the routine marker filters
+is:</p>
+<ol style="list-style-type: decimal">
+<li>Validate samples, caller provenance, metadata, and already assigned
+VCF filters. Remove samples known from laboratory or sequencing QC to
+have failed completely.</li>
+<li>Run <code><a href="../reference/filter_genotyping.html">filter_genotyping()</a></code>. It is quick, works well on
+very large datasets, and frequently provides the largest early reduction
+in marker number.</li>
+<li>Run <code><a href="../reference/filter_ma.html">filter_ma()</a></code> with a defensible global MAC threshold.
+It has a relatively small memory footprint and can remove many
+low-information markers. Low-count alleles contribute little information
+to many analyses and can make later calculations expensive or unstable.
+Preserve the unfiltered master when the downstream analysis needs the
+rare-allele spectrum.</li>
+<li>Run <code><a href="../reference/filter_snp_number.html">filter_snp_number()</a></code> when loci genuinely group
+several SNP records. This filter is fast, although it commonly removes
+fewer markers than the two preceding filters. Skip it when every VCF
+record has a unique <code>LOCUS</code>, as is common for reference-based
+FreeBayes data.</li>
+<li>Run <code><a href="../reference/filter_coverage.html">filter_coverage()</a></code> last among the routine
+marker-targeting filters. Coverage and allele-depth information can
+identify many technical failures, but DP/AD extraction and summarization
+are substantially more expensive than the preceding filters.</li>
+<li>Recalculate individual statistics and remove supported sample
+failures.</li>
+<li>Run short-distance pruning only when loci genuinely group several
+SNP records. Run long-distance LD and the more expensive pairwise or
+windowed diagnostics after the dataset has been reduced.</li>
+</ol>
+<p>In compact form, the recommended marker-filtering sequence is
+therefore:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">filtered</span> <span class="op">&lt;-</span> <span class="va">genome</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_ma.html">filter_ma</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_snp_number.html">filter_snp_number</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="co"># omit when LOCUS does not group genuine reads</span></span>
+<span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_coverage.html">filter_coverage</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<p>This is not a universal biological filter order. For example,
+severely failed samples can inflate marker missingness and should be
+removed first, whereas widespread bad markers can make good samples
+appear poor. Use the initial diagnostics to decide which problem
+dominates, record before-and-after dimensions and elapsed time, and
+recalculate statistics affected by each major decision. A fast filter is
+not automatically a valid filter, and computational convenience should
+not erase variation required by the intended analysis.</p>
+</div>
+<div class="section level3">
 <h3 id="chain-filters-with-a-pipe">Chain filters with a pipe<a class="anchor" aria-label="anchor" href="#chain-filters-with-a-pipe"></a>
 </h3>
 <p>Most radr filters take <code>data</code> as their first argument,
 update the active GDS, and return its connection. They can therefore be
 chained directly with the native R pipe:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">filtered</span> <span class="op">&lt;-</span> <span class="va">genome</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_ma.html">filter_ma</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
@@ -193,7 +331,7 @@ This works in interactive mode too: the first filter completes its
 questions and updates the GDS before the second filter begins.</p>
 <p>For a reproducible scripted analysis, provide the thresholds
 explicitly:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">filtered</span> <span class="op">&lt;-</span> <span class="va">genome</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span></span>
 <span>    interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -205,12 +343,12 @@ explicitly:</p>
 <span>  <span class="op">)</span></span></code></pre></div>
 <p>If an explicit placeholder is useful, the native <code>|&gt;</code>
 pipe uses <code>_</code>, not <code>.</code>:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">filtered</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">genome</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_ma.html">filter_ma</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">_</span><span class="op">)</span></span></code></pre></div>
 <p>The <code>.</code> placeholder belongs to the magrittr pipe
 <code>%&gt;%</code>:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">filtered</span> <span class="op">&lt;-</span> <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">genome</span><span class="op">)</span> <span class="op"><a href="../reference/pipe.html">%&gt;%</a></span></span>
 <span>  <span class="fu">radr</span><span class="fu">::</span><span class="fu"><a href="../reference/filter_ma.html">filter_ma</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">.</span><span class="op">)</span></span></code></pre></div>
 <p>Prefer the first form when <code>data</code> is the first argument.
@@ -222,7 +360,7 @@ new object name is not a snapshot of the result.</p>
 <p>To compare alternative thresholds or filter orders, create separate
 physical GDS files from an unfiltered master <em>before</em> running
 either workflow. Close its open connection before copying the file:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Create and preserve this master before applying any radr filter.</span></span>
 <span><span class="va">master_path</span> <span class="op">&lt;-</span> <span class="st">"genome_unfiltered.gds"</span></span>
 <span></span>
@@ -290,7 +428,7 @@ inconsistently genotyped SNPs. These markers can make otherwise
 acceptable samples appear to have high missingness.</p>
 <p>Remove clear marker failures first, then recalculate individual
 statistics:</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">markers_first</span> <span class="op">&lt;-</span> <span class="va">genome</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/filter_genotyping.html">filter_genotyping</a></span><span class="op">(</span></span>
 <span>    interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -322,7 +460,7 @@ perform well in the rest of the project.</p>
 <code><a href="../reference/explore_genomes.html">explore_genomes()</a></code> with the individuals that remain. This
 resumes the normal guided discovery workflow without assuming which
 marker filter should come next:</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">samples_first</span> <span class="op">&lt;-</span> <span class="va">genome</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/filter_individuals.html">filter_individuals</a></span><span class="op">(</span></span>
 <span>    interactive.filter <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -364,7 +502,7 @@ study.</p>
 <p>The parameter file documents how the dataset reached its current
 state. To see which individual and marker filters are currently active
 in the GDS metadata, use:</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/list_filters.html" class="external-link">list_filters</a></span><span class="op">(</span><span class="va">genome</span><span class="op">)</span></span></code></pre></div>
 <p>This current-state summary complements the chronological parameter
 log. Keep both: the active-filter list answers <em>what is applied
@@ -376,7 +514,7 @@ was done, in which order, and with which thresholds</em>.</p>
 </h2>
 <p>The <code>detect_*()</code> functions investigate particular
 structures or problems:</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">duplicates</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_duplicate_genomes.html">detect_duplicate_genomes</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span>
 <span><span class="va">mixed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_mixed_genomes.html">detect_mixed_genomes</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span>
 <span><span class="va">paralogs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/detect_paralogs.html">detect_paralogs</a></span><span class="op">(</span>data <span class="op">=</span> <span class="va">filtered</span><span class="op">)</span></span></code></pre></div>
@@ -390,7 +528,7 @@ sample may be important information rather than an error.</p>
 <p>Use <code>genometranslator</code> to write the final GDS to a
 downstream format. The writer does not silently improve or filter the
 data:</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/write_genome.html" class="external-link">write_genome</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">filtered</span>,</span>
 <span>  output <span class="op">=</span> <span class="st">"vcf"</span>,</span>
@@ -405,7 +543,7 @@ treatments.</p>
 <h2 id="dependencies-and-external-tools">Dependencies and external tools<a class="anchor" aria-label="anchor" href="#dependencies-and-external-tools"></a>
 </h2>
 <p>Inspect requirements at any time with:</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/radr_dependencies.html">radr_dependencies</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>The diagnostic separates the required package foundation from
 optional components. <code>SNPRelate</code> supports LD and IBS
