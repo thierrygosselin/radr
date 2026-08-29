@@ -6,7 +6,10 @@
 \usage{
 detect_inversions(
   data,
+  strata = NULL,
   chromosome = NULL,
+  chromosome.lengths = NULL,
+  reference.genome = NULL,
   window.snps = 100L,
   step.snps = window.snps,
   window.bp = NULL,
@@ -15,7 +18,7 @@ detect_inversions(
   ld.window.threshold = 0.1,
   ld.window.min.snps = 50L,
   ld.window.max.snps = 500L,
-  sensitivity.window.snps = c(100L, 250L, 500L, 1000L),
+  sensitivity.window.snps = NULL,
   n.pcs = 2L,
   mds.axes = 2L,
   outlier.quantile = 0.99,
@@ -23,6 +26,11 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  stability.replicates = 0L,
+  stability.fraction = 0.8,
+  parallel.core = 1L,
+  chromosome.pca = TRUE,
+  chromosome.pca.max.snps = 2000L,
   arrangement.labels = c("AA", "AB", "BB"),
   known.regions = NULL,
   ld.max.snps = 500L,
@@ -37,8 +45,25 @@ detect_inversions(
 \arguments{
 \item{data}{A GDS filepath or an open \code{SeqVarGDSClass} object.}
 
+\item{strata}{Optional sample metadata supplied as a data frame or a tabular
+file. It must contain \code{INDIVIDUALS}; all other columns are retained. Rows
+act as a sample whitelist, and metadata such as \code{STRATA}, sequencing batch,
+library, lane, plate, or caller can be compared with regional PCA and
+putative arrangement assignments. The strata file remains sample metadata;
+it is not copied into or used to modify the GDS.}
+
 \item{chromosome}{Optional chromosome or scaffold names to scan. By default,
 all chromosomes represented by at least one complete window are scanned.}
+
+\item{chromosome.lengths}{Optional chromosome-length information supplied as
+a named numeric vector, a data frame with \code{CHROM} and \code{LENGTH} columns, or
+a tabular filepath containing those columns. Explicit values override
+lengths stored in the GDS.}
+
+\item{reference.genome}{Optional reference FASTA or FASTA-index (\code{.fai})
+filepath used to recover chromosome lengths. When a FASTA is supplied, its
+accompanying \code{FASTA.fai} file must already exist. This is unnecessary when
+the GDS retains a VCF contig dictionary with declared sequence lengths.}
 
 \item{window.snps}{Number of SNPs per window.}
 
@@ -69,8 +94,9 @@ This bounds memory and computation. Default:
 
 \item{sensitivity.window.snps}{Additional fixed-SNP window sizes used for a
 sensitivity analysis. These runs summarise PC1 variance and LD along the
-genome without replacing the primary candidate scan. Use \code{NULL} to skip
-this additional work.}
+genome without replacing the primary candidate scan. This additional work
+is opt-in; the default \code{NULL} skips it. A useful focused set is
+\code{c(50, 100, 250, 500)}.}
 
 \item{n.pcs}{Number of local covariance axes retained per window.}
 
@@ -93,8 +119,32 @@ for a common polymorphic inversion is often three, representing the two
 homokaryotypes and their heterokaryotype, but this is diagnostic rather
 than proof.}
 
+\item{stability.replicates}{Number of SNP-resampling replicates used to test
+arrangement-assignment stability within every candidate. Use \code{0} to skip.
+Each replicate samples regional SNPs with replacement, repeats PCA and
+clustering, and compares assignments after matching cluster order on PC1.}
+
+\item{stability.fraction}{Fraction of regional SNPs sampled in each stability
+replicate. Default: \code{stability.fraction = 0.8}.}
+
+\item{parallel.core}{Number of independent R workers used for the local-PCA
+window scan. The default \code{1} is memory-conscious. Values greater than one
+open a separate read-only GDS connection in each worker, avoiding concurrent
+use of one connection. Each worker holds its own sample covariance matrix,
+so increase this value gradually on large datasets.}
+
+\item{chromosome.pca}{Logical indicating whether an independent PCA is
+calculated for every chromosome or linkage group and coloured afterward
+with each candidate region's arrangement assignments. This diagnoses
+whether the same groups separate locally or throughout the genome.}
+
+\item{chromosome.pca.max.snps}{Maximum number of evenly distributed SNPs
+used for each chromosome PCA. This bounds computation while retaining
+chromosome-wide coverage. Default: \code{2000}.}
+
 \item{arrangement.labels}{Three labels, ordered from the lowest to highest
-regional PC1 cluster, used when \code{cluster.k = 3}. Default:
+regional PC1 cluster, used when \code{cluster.k = 3} and quantitative
+three-cluster support is present. Default:
 \code{arrangement.labels = c("AA", "AB", "BB")}.}
 
 \item{known.regions}{Optional data frame describing centromeres, regions of
@@ -127,14 +177,23 @@ An object of class \code{detect_inversions} containing:
 \item \code{windows}: coordinates, quality statistics, MDS coordinates, robust
 scores, and candidate flags for all analysed windows;
 \item \code{candidates}: one row per contiguous candidate region;
+\item \code{candidate.summaries}: concise narrative summaries of the evidence,
+arrangement groups, regional LD, and boundary caution for each candidate;
 \item \code{diagnostics}: regional PCA scores, cluster assignments,
-heterozygosity summaries, and optional LD matrices;
+heterozygosity, coverage, allele balance, cluster-number comparison,
+assignment stability, sample-metadata audit, marker loadings,
+arrangement differentiation, and optional LD matrices;
 \item \code{arrangement.genotypes}: one row per individual and candidate with
 putative arrangement genotype and relative assignment confidence;
 \item \code{homokaryotype.whitelist}: candidate-specific \code{AA} and \code{BB}
 individuals, plus \code{homokaryotype.all.candidates} for the intersection;
 \item \code{sensitivity}: optional summaries for additional fixed-SNP window
 sizes;
+\item \code{chromosome.pca}: independent chromosome or linkage-group PCA
+scores and summaries. Candidate-region arrangement labels are joined
+only for plotting and never influence these chromosome-wide PCAs;
+\item \code{chromosome.lengths}: declared or estimated chromosome lengths,
+observed marker maxima, and the provenance of each length;
 \item \code{path.folder} and \code{output.files}: locations of written results;
 \item \code{settings}: the effective analysis settings.
 }
@@ -170,6 +229,37 @@ resulting window-level covariance summaries are compared across all valid
 windows in the requested scan. Use \code{chromosome} to restrict that comparison
 to one or more linkage groups. Standard genomic-position figures are faceted
 by chromosome or linkage group in the results folder.
+}
+
+\section{Chromosome length and candidate extent}{
+
+Candidate tables report physical span, chromosome length, chromosome
+fraction and percentage, and the left and right flanking lengths. Declared
+chromosome lengths are preferred. The function first uses explicit
+\code{chromosome.lengths}, then \code{reference.genome}, then the VCF contig dictionary
+retained in the GDS. Chromosome names such as \code{14} and \code{chr14} are matched.
+If no declared length is available, the largest observed marker position is
+used as a clearly labelled underestimate of chromosome length; the resulting
+candidate percentage may therefore be overestimated.
+}
+
+\section{Recommended staged workflow}{
+
+Begin with the default genome-wide scan on a carefully filtered dataset,
+before LD pruning. Use the default result to locate unusual chromosomes and
+inspect chromosome-wide PCA, regional PCA, missingness, depth,
+heterozygosity, LD, cluster support, and sample metadata.
+
+When a candidate is found, rerun its chromosome separately. Compare several
+primary \code{window.snps} and \code{step.snps} combinations, and optionally physical
+or LD-scaled windows. Record the candidate start, end, span, chromosome
+percentage, and interval overlap for every run. \code{sensitivity.window.snps}
+provides complementary PC1-variance and LD summaries at additional scales,
+but it does not formally recall candidate boundaries. Boundary stability
+therefore requires separate focused calls with different primary window
+settings. Repeat promising candidates under stricter call-rate, sample,
+relatedness, and batch filters before seeking linkage, recombination,
+long-read, read-pair, assembly, or breakpoint confirmation.
 }
 
 \section{Missing genotypes and RADseq data}{
@@ -228,13 +318,87 @@ columns make these alternatives explicit. The function never reports a
 structurally confirmed inversion.
 }
 
+\section{Sample metadata and technical confounders}{
+
+\code{strata} may contain \code{STRATA} and any additional sample-level variables such
+as sequencing batch, library, lane, plate, extraction method, genotype caller,
+or sampling year. Its rows first act as a whitelist. For every candidate, the
+function then measures the association of each metadata variable with
+regional PC1 and with arrangement assignments. A strong association does not
+automatically reject a candidate,
+but it identifies a biological or technical alternative that must be checked.
+
+Candidate outputs also compare call rate, mean read depth, and heterozygote
+allele balance among putative arrangements when those quantities are stored
+in the GDS. Standard \code{DP} and biallelic \code{AD} nodes are recognized, as are the
+genometranslator genotype-metadata nodes \code{READ_DEPTH}, \code{ALLELE_REF_DEPTH}, and
+\code{ALLELE_ALT_DEPTH}. Consequently, these diagnostics can be available for a
+VCF, DArT two-row count file, or another source that retained read counts.
+Depth or allele-balance shifts can indicate
+mapping artifacts, paralogy, copy-number variation, or other structural
+variation. They should not be interpreted automatically as inversion support.
+}
+
+\section{Cluster number and assignment stability}{
+
+The requested \code{cluster.k} controls the arrangement calls, but the function
+also compares one-, two-, and three-cluster descriptions of regional PC1
+using an approximate Gaussian BIC. This prevents three clusters from being
+accepted merely because three centres were requested.
+
+With \code{stability.replicates > 0}, regional SNPs are resampled and arrangement
+calls are repeated. The individual and overall agreement values quantify how
+dependent the calls are on the exact SNP set. PC direction is arbitrary, so
+reversed cluster labels are aligned before agreement is measured.
+}
+
+\section{Chromosome-wide PCA context}{
+
+When \code{chromosome.pca = TRUE}, the function calculates an independent PCA for
+every chromosome or linkage group, using at most
+\code{chromosome.pca.max.snps} evenly distributed SNPs. The arrangement labels
+inferred from each candidate interval are then used only to colour these
+chromosome-wide PCA panels. They do not influence the PCA or force three
+groups on any chromosome.
+
+Separation concentrated on the candidate linkage group supports a localized
+haploblock interpretation. Similar separation across many linkage groups
+instead suggests genome-wide population structure, relatedness, admixture,
+or technical confounding. Absence of separation in a whole-linkage-group PCA
+does not reject a shorter candidate: unrelated SNPs elsewhere on the linkage
+group can dilute a strong regional signal. Use this overview with the local
+window scan and the candidate-specific technical diagnostics.
+}
+
+\section{Arrangement differentiation and marker loadings}{
+
+Regional PC1 loadings are returned for every SNP and ranked by absolute
+magnitude. Pairwise allele-frequency differences and Hudson's FST are also
+reported between inferred arrangement classes. These summaries describe the
+regional genetic contrast and help select diagnostic markers. They do not
+make the arrangement classes populations.
+
+Dxy is deliberately not calculated between \code{AA}, \code{AB}, and \code{BB}. In
+particular, \code{AB} is an inferred heterokaryotype rather than an independently
+sampled lineage. Population-level Dxy may be appropriate later when genuine
+populations or evolutionary lineages are compared.
+}
+
 \section{Arrangement genotypes and sensitivity datasets}{
 
 For a three-cluster regional PCA, clusters are ordered along PC1 and labelled
-\code{AA}, \code{AB}, and \code{BB} by default. These are putative arrangement genotypes,
-not sequence-level breakpoint genotypes. The individual table includes the
-arrangement call, its numeric dosage (0, 1, or 2), and a relative
-assignment-confidence score.
+\code{AA}, \code{AB}, and \code{BB} by default when quantitative three-cluster support is
+present. \code{AA} and \code{BB} identify the two outer PC1 clusters; neither label
+establishes the reference, ancestral, derived, or physically inverted
+arrangement. \code{AB} is the intermediate cluster and is interpreted as a
+putative heterokaryotype. Candidates without quantitative three-cluster
+support retain their numeric cluster IDs but use neutral \verb{Group 1},
+\verb{Group 2}, and \verb{Group 3} labels and do not receive arrangement dosages.
+
+These are putative arrangement genotypes, not sequence-level breakpoint
+genotypes. For supported candidates, the individual table includes the
+arrangement call, its numeric dosage (0, 1, or 2), the original numeric
+cluster ID, and a relative assignment-confidence score.
 
 For every candidate, the function writes whitelists for each arrangement and
 a homokaryotype-only whitelist containing \code{AA} and \code{BB}. It also returns a
@@ -265,6 +429,13 @@ Trends in Ecology & Evolution, 34, 239-248.
 Wellenreuther M, Bernatchez L (2018). Eco-evolutionary genomics of
 chromosomal inversions. Trends in Ecology & Evolution, 33, 427-440.
 \doi{10.1016/j.tree.2018.04.002}.
+
+Hudson RR, Slatkin M, Maddison WP (1992). Estimation of levels of gene flow
+from DNA sequence data. Genetics, 132, 583-589.
+
+Bhatia G, Patterson N, Sankararaman S, Price AL (2013). Estimating and
+interpreting FST: the impact of rare variants. Genome Research, 23,
+1514-1521. \doi{10.1101/gr.154831.113}.
 }
 \author{
 Thierry Gosselin \email{Thierry.Gosselin@csiro.au}

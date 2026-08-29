@@ -199,6 +199,9 @@ detect_duplicate_genomes <- function(
   ...
 ) {
 
+  # Force piped input before printing this function's startup banner.
+  force(data)
+
   # # Testing
   # interactive.filter = TRUE
   # detect.duplicate.genomes = TRUE

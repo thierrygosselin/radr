@@ -100,7 +100,13 @@
 #'
 #' \strong{MAF} remains useful when a frequency threshold is scientifically
 #' required or when marker call rates are sufficiently uniform. Its dependence
-#' on the observed denominator should be considered and reported.
+#' on the observed denominator should be considered and reported. With
+#' \code{calibrate.alleles = "depth"}, MAF identifies the less abundant allele
+#' from total allele depth. With \code{calibrate.alleles = "count"}, it uses
+#' observed allele counts. If depth information is unavailable, the function
+#' falls back to the count-calibrated MAF. Although both MAF estimates may be
+#' reported as diagnostics, only the estimate selected by
+#' \code{calibrate.alleles} is used for filtering.
 #'
 #' \strong{MAD} uses the total read support for the less abundant allele. It can
 #' identify variants that pass a count threshold but whose minor allele is
@@ -238,6 +244,9 @@ filter_ma <- function(
     verbose = TRUE,
     ...
 ) {
+
+  # Force piped input before printing this function's startup banner.
+  force(data)
 
   ## testing
   # data <- "radr_20221205@1134.gds"
@@ -395,6 +404,18 @@ filter_ma <- function(
   if (verbose) message("File written: ma.global.tsv")
   n.markers <- nrow(mac.data)
 
+  # Select one unambiguous MAF definition for helper output and filtering.
+  # Both estimates may be retained in mac.data for diagnostic comparison.
+  maf.column <- "MAF_GLOBAL_COUNT_CORR"
+  maf.calibration <- "count"
+  if (
+    calibrate.alleles == "depth" &&
+    rlang::has_name(mac.data, "MAF_GLOBAL_DEPTH_CORR")
+  ) {
+    maf.column <- "MAF_GLOBAL_DEPTH_CORR"
+    maf.calibration <- "depth"
+  }
+
   # Stats
   want <- c("MAC_GLOBAL", "MAC_GLOBAL_CORR", "MAD_GLOBAL", "MAD_GLOBAL_CORR", "MAF_GLOBAL", "MAF_GLOBAL_COUNT_CORR", "MAF_GLOBAL_DEPTH_CORR")
   have <- names(mac.data)
@@ -525,9 +546,9 @@ filter_ma <- function(
   cli::cli_progress_update()
 
   # MAF
-  if (rlang::has_name(mac.data, "MAF_GLOBAL_DEPTH_CORR")) {
+  if (rlang::has_name(mac.data, maf.column)) {
 
-    min.maf <- min(mac.data$MAF_GLOBAL_DEPTH_CORR, na.rm = TRUE)
+    min.maf <- min(mac.data[[maf.column]], na.rm = TRUE)
     maf.round <- signif(min.maf, digits = 1)
     maf.digits <- nchar(maf.round) - 2
 
@@ -535,7 +556,12 @@ filter_ma <- function(
 
     maf.helper.table <- tibble::tibble(MAF = maf.seq) %>%
       dplyr::mutate(
-        WHITELISTED_MARKERS = purrr::map_int(.x = maf.seq, .f = how_many_markers, x = mac.data, stats = "MAF_GLOBAL_DEPTH_CORR"),
+        WHITELISTED_MARKERS = purrr::map_int(
+          .x = maf.seq,
+          .f = how_many_markers,
+          x = mac.data,
+          stats = maf.column
+        ),
         BLACKLISTED_MARKERS = n.markers - WHITELISTED_MARKERS
       ) %>%
       readr::write_tsv(
@@ -604,15 +630,10 @@ filter_ma <- function(
 
   # Step 2. Thresholds selection ---------------------------------------------
   if (interactive.filter) {
-    want <- c("MAC_GLOBAL_CORR", "MAD_GLOBAL_CORR", "MAF_GLOBAL_DEPTH_CORR", "MAF_GLOBAL_COUNT_CORR")
-    have <- names(mac.data)
-    available.options <- purrr::keep(.x = have, .p = have %in% want)
-    available.options <- stringi::stri_replace_all_fixed(
-      str = available.options,
-      pattern = want,
-      replacement = c("mac", "mad", "maf", "maf"),
-      vectorize_all = FALSE
-    )
+    available.options <- c("mac", "maf")
+    if (rlang::has_name(mac.data, "MAD_GLOBAL_CORR")) {
+      available.options <- append(available.options, "mad", after = 1L)
+    }
 
     message("\nStep 2. Minor Allele statistic selection required\n")
     message("Your available options: ", stringi::stri_join(available.options, collapse = ", "))
@@ -644,11 +665,9 @@ filter_ma <- function(
   if (ma.stats == "mad") mac.data %<>% dplyr::filter(MAD_GLOBAL_CORR < filter.ma)
   if (ma.stats == "mac") mac.data %<>% dplyr::filter(MAC_GLOBAL_CORR < filter.ma)
   if (ma.stats == "maf") {
-    if ("MAF_GLOBAL_DEPTH_CORR" %in% have) {
-      mac.data %<>% dplyr::filter(MAF_GLOBAL_DEPTH_CORR < filter.ma)
-    }
-    if ("MAF_GLOBAL_COUNT_CORR" %in% have) {
-      mac.data %<>% dplyr::filter(MAF_GLOBAL_COUNT_CORR < filter.ma)
+    mac.data %<>% dplyr::filter(.data[[maf.column]] < filter.ma)
+    if (verbose) {
+      cli::cli_alert_info("MAF filtering used {maf.calibration}-calibrated allele frequencies")
     }
   }
 

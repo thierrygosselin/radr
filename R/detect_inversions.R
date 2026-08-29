@@ -29,6 +29,33 @@
 #' to one or more linkage groups. Standard genomic-position figures are faceted
 #' by chromosome or linkage group in the results folder.
 #'
+#' @section Chromosome length and candidate extent:
+#' Candidate tables report physical span, chromosome length, chromosome
+#' fraction and percentage, and the left and right flanking lengths. Declared
+#' chromosome lengths are preferred. The function first uses explicit
+#' `chromosome.lengths`, then `reference.genome`, then the VCF contig dictionary
+#' retained in the GDS. Chromosome names such as `14` and `chr14` are matched.
+#' If no declared length is available, the largest observed marker position is
+#' used as a clearly labelled underestimate of chromosome length; the resulting
+#' candidate percentage may therefore be overestimated.
+#'
+#' @section Recommended staged workflow:
+#' Begin with the default genome-wide scan on a carefully filtered dataset,
+#' before LD pruning. Use the default result to locate unusual chromosomes and
+#' inspect chromosome-wide PCA, regional PCA, missingness, depth,
+#' heterozygosity, LD, cluster support, and sample metadata.
+#'
+#' When a candidate is found, rerun its chromosome separately. Compare several
+#' primary `window.snps` and `step.snps` combinations, and optionally physical
+#' or LD-scaled windows. Record the candidate start, end, span, chromosome
+#' percentage, and interval overlap for every run. `sensitivity.window.snps`
+#' provides complementary PC1-variance and LD summaries at additional scales,
+#' but it does not formally recall candidate boundaries. Boundary stability
+#' therefore requires separate focused calls with different primary window
+#' settings. Repeat promising candidates under stricter call-rate, sample,
+#' relatedness, and batch filters before seeking linkage, recombination,
+#' long-read, read-pair, assembly, or breakpoint confirmation.
+#'
 #' @section Missing genotypes and RADseq data:
 #' SNPs below `min.call.rate` are excluded separately within each window. For the
 #' remaining SNPs, each missing genotype is replaced temporarily by that SNP's
@@ -81,12 +108,78 @@
 #' columns make these alternatives explicit. The function never reports a
 #' structurally confirmed inversion.
 #'
+#' @section Sample metadata and technical confounders:
+#' `strata` may contain `STRATA` and any additional sample-level variables such
+#' as sequencing batch, library, lane, plate, extraction method, genotype caller,
+#' or sampling year. Its rows first act as a whitelist. For every candidate, the
+#' function then measures the association of each metadata variable with
+#' regional PC1 and with arrangement assignments. A strong association does not
+#' automatically reject a candidate,
+#' but it identifies a biological or technical alternative that must be checked.
+#'
+#' Candidate outputs also compare call rate, mean read depth, and heterozygote
+#' allele balance among putative arrangements when those quantities are stored
+#' in the GDS. Standard `DP` and biallelic `AD` nodes are recognized, as are the
+#' genometranslator genotype-metadata nodes `READ_DEPTH`, `ALLELE_REF_DEPTH`, and
+#' `ALLELE_ALT_DEPTH`. Consequently, these diagnostics can be available for a
+#' VCF, DArT two-row count file, or another source that retained read counts.
+#' Depth or allele-balance shifts can indicate
+#' mapping artifacts, paralogy, copy-number variation, or other structural
+#' variation. They should not be interpreted automatically as inversion support.
+#'
+#' @section Cluster number and assignment stability:
+#' The requested `cluster.k` controls the arrangement calls, but the function
+#' also compares one-, two-, and three-cluster descriptions of regional PC1
+#' using an approximate Gaussian BIC. This prevents three clusters from being
+#' accepted merely because three centres were requested.
+#'
+#' With `stability.replicates > 0`, regional SNPs are resampled and arrangement
+#' calls are repeated. The individual and overall agreement values quantify how
+#' dependent the calls are on the exact SNP set. PC direction is arbitrary, so
+#' reversed cluster labels are aligned before agreement is measured.
+#'
+#' @section Chromosome-wide PCA context:
+#' When `chromosome.pca = TRUE`, the function calculates an independent PCA for
+#' every chromosome or linkage group, using at most
+#' `chromosome.pca.max.snps` evenly distributed SNPs. The arrangement labels
+#' inferred from each candidate interval are then used only to colour these
+#' chromosome-wide PCA panels. They do not influence the PCA or force three
+#' groups on any chromosome.
+#'
+#' Separation concentrated on the candidate linkage group supports a localized
+#' haploblock interpretation. Similar separation across many linkage groups
+#' instead suggests genome-wide population structure, relatedness, admixture,
+#' or technical confounding. Absence of separation in a whole-linkage-group PCA
+#' does not reject a shorter candidate: unrelated SNPs elsewhere on the linkage
+#' group can dilute a strong regional signal. Use this overview with the local
+#' window scan and the candidate-specific technical diagnostics.
+#'
+#' @section Arrangement differentiation and marker loadings:
+#' Regional PC1 loadings are returned for every SNP and ranked by absolute
+#' magnitude. Pairwise allele-frequency differences and Hudson's FST are also
+#' reported between inferred arrangement classes. These summaries describe the
+#' regional genetic contrast and help select diagnostic markers. They do not
+#' make the arrangement classes populations.
+#'
+#' Dxy is deliberately not calculated between `AA`, `AB`, and `BB`. In
+#' particular, `AB` is an inferred heterokaryotype rather than an independently
+#' sampled lineage. Population-level Dxy may be appropriate later when genuine
+#' populations or evolutionary lineages are compared.
+#'
 #' @section Arrangement genotypes and sensitivity datasets:
 #' For a three-cluster regional PCA, clusters are ordered along PC1 and labelled
-#' `AA`, `AB`, and `BB` by default. These are putative arrangement genotypes,
-#' not sequence-level breakpoint genotypes. The individual table includes the
-#' arrangement call, its numeric dosage (0, 1, or 2), and a relative
-#' assignment-confidence score.
+#' `AA`, `AB`, and `BB` by default when quantitative three-cluster support is
+#' present. `AA` and `BB` identify the two outer PC1 clusters; neither label
+#' establishes the reference, ancestral, derived, or physically inverted
+#' arrangement. `AB` is the intermediate cluster and is interpreted as a
+#' putative heterokaryotype. Candidates without quantitative three-cluster
+#' support retain their numeric cluster IDs but use neutral `Group 1`,
+#' `Group 2`, and `Group 3` labels and do not receive arrangement dosages.
+#'
+#' These are putative arrangement genotypes, not sequence-level breakpoint
+#' genotypes. For supported candidates, the individual table includes the
+#' arrangement call, its numeric dosage (0, 1, or 2), the original numeric
+#' cluster ID, and a relative assignment-confidence score.
 #'
 #' For every candidate, the function writes whitelists for each arrangement and
 #' a homokaryotype-only whitelist containing `AA` and `BB`. It also returns a
@@ -103,8 +196,22 @@
 #' summaries, and standard diagnostic plots. PNG and PDF are written by default.
 #'
 #' @param data A GDS filepath or an open `SeqVarGDSClass` object.
+#' @param strata Optional sample metadata supplied as a data frame or a tabular
+#'   file. It must contain `INDIVIDUALS`; all other columns are retained. Rows
+#'   act as a sample whitelist, and metadata such as `STRATA`, sequencing batch,
+#'   library, lane, plate, or caller can be compared with regional PCA and
+#'   putative arrangement assignments. The strata file remains sample metadata;
+#'   it is not copied into or used to modify the GDS.
 #' @param chromosome Optional chromosome or scaffold names to scan. By default,
 #'   all chromosomes represented by at least one complete window are scanned.
+#' @param chromosome.lengths Optional chromosome-length information supplied as
+#'   a named numeric vector, a data frame with `CHROM` and `LENGTH` columns, or
+#'   a tabular filepath containing those columns. Explicit values override
+#'   lengths stored in the GDS.
+#' @param reference.genome Optional reference FASTA or FASTA-index (`.fai`)
+#'   filepath used to recover chromosome lengths. When a FASTA is supplied, its
+#'   accompanying `FASTA.fai` file must already exist. This is unnecessary when
+#'   the GDS retains a VCF contig dictionary with declared sequence lengths.
 #' @param window.snps Number of SNPs per window.
 #' @param step.snps Number of SNPs between consecutive window starts. Defaults
 #'   to `window.snps` (non-overlapping windows).
@@ -126,8 +233,9 @@
 #'   \code{ld.window.max.snps = 500}.
 #' @param sensitivity.window.snps Additional fixed-SNP window sizes used for a
 #'   sensitivity analysis. These runs summarise PC1 variance and LD along the
-#'   genome without replacing the primary candidate scan. Use `NULL` to skip
-#'   this additional work.
+#'   genome without replacing the primary candidate scan. This additional work
+#'   is opt-in; the default `NULL` skips it. A useful focused set is
+#'   `c(50, 100, 250, 500)`.
 #' @param n.pcs Number of local covariance axes retained per window.
 #' @param mds.axes Number of MDS axes used to score unusual windows.
 #' @param outlier.quantile Quantile of the robust window score used as the
@@ -142,8 +250,27 @@
 #'   for a common polymorphic inversion is often three, representing the two
 #'   homokaryotypes and their heterokaryotype, but this is diagnostic rather
 #'   than proof.
+#' @param stability.replicates Number of SNP-resampling replicates used to test
+#'   arrangement-assignment stability within every candidate. Use `0` to skip.
+#'   Each replicate samples regional SNPs with replacement, repeats PCA and
+#'   clustering, and compares assignments after matching cluster order on PC1.
+#' @param stability.fraction Fraction of regional SNPs sampled in each stability
+#'   replicate. Default: \code{stability.fraction = 0.8}.
+#' @param parallel.core Number of independent R workers used for the local-PCA
+#'   window scan. The default `1` is memory-conscious. Values greater than one
+#'   open a separate read-only GDS connection in each worker, avoiding concurrent
+#'   use of one connection. Each worker holds its own sample covariance matrix,
+#'   so increase this value gradually on large datasets.
+#' @param chromosome.pca Logical indicating whether an independent PCA is
+#'   calculated for every chromosome or linkage group and coloured afterward
+#'   with each candidate region's arrangement assignments. This diagnoses
+#'   whether the same groups separate locally or throughout the genome.
+#' @param chromosome.pca.max.snps Maximum number of evenly distributed SNPs
+#'   used for each chromosome PCA. This bounds computation while retaining
+#'   chromosome-wide coverage. Default: \code{2000}.
 #' @param arrangement.labels Three labels, ordered from the lowest to highest
-#'   regional PC1 cluster, used when `cluster.k = 3`. Default:
+#'   regional PC1 cluster, used when `cluster.k = 3` and quantitative
+#'   three-cluster support is present. Default:
 #'   \code{arrangement.labels = c("AA", "AB", "BB")}.
 #' @param known.regions Optional data frame describing centromeres, regions of
 #'   low recombination, assembly gaps, or other annotations. It must contain
@@ -167,14 +294,23 @@
 #'   \item `windows`: coordinates, quality statistics, MDS coordinates, robust
 #'     scores, and candidate flags for all analysed windows;
 #'   \item `candidates`: one row per contiguous candidate region;
+#'   \item `candidate.summaries`: concise narrative summaries of the evidence,
+#'     arrangement groups, regional LD, and boundary caution for each candidate;
 #'   \item `diagnostics`: regional PCA scores, cluster assignments,
-#'     heterozygosity summaries, and optional LD matrices;
+#'     heterozygosity, coverage, allele balance, cluster-number comparison,
+#'     assignment stability, sample-metadata audit, marker loadings,
+#'     arrangement differentiation, and optional LD matrices;
 #'   \item `arrangement.genotypes`: one row per individual and candidate with
 #'     putative arrangement genotype and relative assignment confidence;
 #'   \item `homokaryotype.whitelist`: candidate-specific `AA` and `BB`
 #'     individuals, plus `homokaryotype.all.candidates` for the intersection;
 #'   \item `sensitivity`: optional summaries for additional fixed-SNP window
 #'     sizes;
+#'   \item `chromosome.pca`: independent chromosome or linkage-group PCA
+#'     scores and summaries. Candidate-region arrangement labels are joined
+#'     only for plotting and never influence these chromosome-wide PCAs;
+#'   \item `chromosome.lengths`: declared or estimated chromosome lengths,
+#'     observed marker maxima, and the provenance of each length;
 #'   \item `path.folder` and `output.files`: locations of written results;
 #'   \item `settings`: the effective analysis settings.
 #'   }
@@ -191,12 +327,22 @@
 #' chromosomal inversions. Trends in Ecology & Evolution, 33, 427-440.
 #' \doi{10.1016/j.tree.2018.04.002}.
 #'
+#' Hudson RR, Slatkin M, Maddison WP (1992). Estimation of levels of gene flow
+#' from DNA sequence data. Genetics, 132, 583-589.
+#'
+#' Bhatia G, Patterson N, Sankararaman S, Price AL (2013). Estimating and
+#' interpreting FST: the impact of rare variants. Genome Research, 23,
+#' 1514-1521. \doi{10.1101/gr.154831.113}.
+#'
 #' @export
 #' @author Thierry Gosselin \email{Thierry.Gosselin@@csiro.au}
 
 detect_inversions <- function(
     data,
+    strata = NULL,
     chromosome = NULL,
+    chromosome.lengths = NULL,
+    reference.genome = NULL,
     window.snps = 100L,
     step.snps = window.snps,
     window.bp = NULL,
@@ -205,7 +351,7 @@ detect_inversions <- function(
     ld.window.threshold = 0.1,
     ld.window.min.snps = 50L,
     ld.window.max.snps = 500L,
-    sensitivity.window.snps = c(100L, 250L, 500L, 1000L),
+    sensitivity.window.snps = NULL,
     n.pcs = 2L,
     mds.axes = 2L,
     outlier.quantile = 0.99,
@@ -213,6 +359,11 @@ detect_inversions <- function(
     min.call.rate = 0.8,
     min.candidate.windows = 1L,
     cluster.k = 3L,
+    stability.replicates = 0L,
+    stability.fraction = 0.8,
+    parallel.core = 1L,
+    chromosome.pca = TRUE,
+    chromosome.pca.max.snps = 2000L,
     arrangement.labels = c("AA", "AB", "BB"),
     known.regions = NULL,
     ld.max.snps = 500L,
@@ -272,6 +423,8 @@ detect_inversions <- function(
     min.window.snps = min.window.snps,
     min.candidate.windows = min.candidate.windows,
     cluster.k = cluster.k,
+    parallel.core = parallel.core,
+    chromosome.pca.max.snps = chromosome.pca.max.snps,
     ld.window.min.snps = ld.window.min.snps,
     ld.window.max.snps = ld.window.max.snps,
     ld.max.snps = ld.max.snps,
@@ -298,6 +451,15 @@ detect_inversions <- function(
   min.window.snps <- integer.args$min.window.snps
   min.candidate.windows <- integer.args$min.candidate.windows
   cluster.k <- integer.args$cluster.k
+  parallel.core <- integer.args$parallel.core
+  chromosome.pca.max.snps <- integer.args$chromosome.pca.max.snps
+  if (length(stability.replicates) != 1L || !is.numeric(stability.replicates) ||
+      is.na(stability.replicates) || !is.finite(stability.replicates) ||
+      stability.replicates < 0 ||
+      stability.replicates != as.integer(stability.replicates)) {
+    rlang::abort("`stability.replicates` must be a non-negative whole number.")
+  }
+  stability.replicates <- as.integer(stability.replicates)
   ld.window.min.snps <- integer.args$ld.window.min.snps
   ld.window.max.snps <- integer.args$ld.window.max.snps
   ld.max.snps <- integer.args$ld.max.snps
@@ -337,6 +499,9 @@ detect_inversions <- function(
   .inversion_check_probability(outlier.quantile, "outlier.quantile", open = TRUE)
   .inversion_check_probability(min.call.rate, "min.call.rate", open = FALSE)
   .inversion_check_probability(
+    stability.fraction, "stability.fraction", open = TRUE
+  )
+  .inversion_check_probability(
     ld.window.threshold, "ld.window.threshold", open = FALSE
   )
   if (ld.window.max.snps < ld.window.min.snps) {
@@ -355,6 +520,10 @@ detect_inversions <- function(
   }
   if (!is.logical(save.plots) || length(save.plots) != 1L || is.na(save.plots)) {
     rlang::abort("`save.plots` must be TRUE or FALSE.")
+  }
+  if (!is.logical(chromosome.pca) || length(chromosome.pca) != 1L ||
+      is.na(chromosome.pca)) {
+    rlang::abort("`chromosome.pca` must be TRUE or FALSE.")
   }
   known.regions <- .inversion_validate_known_regions(known.regions)
   plot.formats <- unique(tolower(as.character(plot.formats)))
@@ -387,6 +556,18 @@ detect_inversions <- function(
   on.exit(try(SeqArray::seqFilterPop(gds), silent = TRUE), add = TRUE)
 
   sample.id <- as.character(SeqArray::seqGetData(gds, "sample.id"))
+  sample.metadata <- .inversion_read_sample_metadata(strata, sample.id)
+  if (!is.null(sample.metadata)) {
+    sample.id <- sample.metadata$INDIVIDUALS
+    SeqArray::seqSetFilter(gds, sample.id = sample.id, verbose = FALSE)
+    if (verbose) {
+      message(
+        "Sample metadata whitelist retained ", length(sample.id),
+        " individual(s) and ", ncol(sample.metadata) - 1L,
+        " descriptive variable(s)."
+      )
+    }
+  }
   variant.id <- SeqArray::seqGetData(gds, "variant.id")
   chrom <- as.character(SeqArray::seqGetData(gds, "chromosome"))
   position <- suppressWarnings(as.numeric(SeqArray::seqGetData(gds, "position")))
@@ -423,6 +604,13 @@ detect_inversions <- function(
     position = position[marker.order],
     stringsAsFactors = FALSE
   )
+  chromosome.length.info <- .inversion_chromosome_lengths(
+    gds = gds,
+    marker.table = marker.table,
+    chromosome.lengths = chromosome.lengths,
+    reference.genome = reference.genome,
+    verbose = verbose
+  )
   windows <- if (window.method == "ld") {
     if (verbose) message("Constructing experimental LD-scaled windows...")
     .inversion_make_ld_windows(
@@ -457,23 +645,17 @@ detect_inversions <- function(
   }
 
   # Each window is read independently. This keeps memory proportional to one
-  # window rather than materialising the complete GDS dosage matrix.
-  window.results <- purrr::map2(windows, seq_along(windows), function(w, i) {
-    dosage <- .inversion_get_dosage(gds, w$variant_id, sample.id)
-    local <- .inversion_local_covariance(
-      dosage = dosage,
-      n.pcs = n.pcs,
-      min.call.rate = min.call.rate,
-      min.window.snps = min.window.snps
-    )
-    local$window_id <- i
-    local$chromosome <- w$chromosome
-    local$start <- w$start
-    local$end <- w$end
-    local$n_input_snps <- length(w$variant_id)
-    local$variant_id <- w$variant_id
-    local
-  })
+  # window per worker rather than materialising the complete dosage matrix.
+  window.results <- .inversion_scan_windows(
+    gds = gds,
+    windows = windows,
+    sample.id = sample.id,
+    n.pcs = n.pcs,
+    min.call.rate = min.call.rate,
+    min.window.snps = min.window.snps,
+    parallel.core = parallel.core,
+    verbose = verbose
+  )
 
   valid <- purrr::map_lgl(window.results, ~ isTRUE(.x$valid))
   if (sum(valid) < 3L) {
@@ -536,40 +718,95 @@ detect_inversions <- function(
     candidate.regions = candidate.regions,
     known.regions = known.regions
   )
+  candidate.regions <- .inversion_add_chromosome_context(
+    candidate.regions = candidate.regions,
+    chromosome.length.info = chromosome.length.info
+  )
+  # Create diagnostic columns before indexed assignment. This avoids tibble's
+  # unknown-column warning while candidate rows are filled one at a time.
+  candidate.regions$recommended_cluster_k <- rep(
+    NA_integer_, nrow(candidate.regions)
+  )
+  candidate.regions$assignment_stability <- rep(
+    NA_real_, nrow(candidate.regions)
+  )
 
   diagnostics <- vector("list", nrow(candidate.regions))
   if (nrow(candidate.regions) > 0L) {
     if (verbose) {
       message(nrow(candidate.regions), " candidate region(s) selected for diagnostics.")
+      message(
+        "Candidate diagnostics may take time for large regions. Progress will ",
+        "be reported for genotype extraction, regional PCA and clustering, ",
+        "LD, resampling, and metadata summaries."
+      )
     }
     # Keep this indexed loop because each GDS read, diagnostic list element,
     # and candidate-table row must remain synchronized for the same region.
     for (i in seq_len(nrow(candidate.regions))) {
-      region.windows <- window.table$window_id[
-        window.table$chromosome == candidate.regions$chromosome[i] &
-          window.table$start <= candidate.regions$end[i] &
-          window.table$end >= candidate.regions$start[i]
+      # Overlapping scan windows may extend beyond the joined candidate
+      # boundaries. Select diagnostic markers by the reported physical interval
+      # so PCA, LD, heterozygosity, and exported genotypes all describe exactly
+      # the region printed in the candidate table and plot titles.
+      region.variant.id <- marker.table$variant_id[
+        marker.table$chromosome == candidate.regions$chromosome[i] &
+          marker.table$position >= candidate.regions$start[i] &
+          marker.table$position <= candidate.regions$end[i]
       ]
-      region.variant.id <- unique(unlist(
-        purrr::map(window.results[region.windows], "variant_id"),
-        use.names = FALSE
-      ))
+      candidate.label <- paste0(
+        candidate.regions$candidate_id[i], " | chromosome ",
+        candidate.regions$chromosome[i], ": ",
+        format(round(candidate.regions$start[i] / 1e6, 3L), nsmall = 3L),
+        "-",
+        format(round(candidate.regions$end[i] / 1e6, 3L), nsmall = 3L),
+        " Mb"
+      )
+      candidate.start <- proc.time()[["elapsed"]]
+      if (verbose) {
+        message(
+          "\nCandidate ", i, " of ", nrow(candidate.regions), ": ",
+          candidate.label
+        )
+        message(
+          "  Reading ", length(region.variant.id),
+          " regional SNPs for ", length(sample.id), " individuals..."
+        )
+      }
       dosage <- .inversion_get_dosage(gds, region.variant.id, sample.id)
+      if (verbose) message("  Reading retained depth and allele-count data...")
+      coverage <- .inversion_get_coverage(gds, region.variant.id, sample.id)
       diagnostics[[i]] <- .inversion_region_diagnostics(
         dosage = dosage,
+        depth = coverage$depth,
+        allele.balance = coverage$allele.balance,
         sample.id = sample.id,
         cluster.k = cluster.k,
         min.call.rate = min.call.rate,
         ld.max.snps = ld.max.snps,
         return.ld = return.ld,
-        arrangement.labels = arrangement.labels
+        arrangement.labels = arrangement.labels,
+        sample.metadata = sample.metadata,
+        stability.replicates = stability.replicates,
+        stability.fraction = stability.fraction,
+        verbose = verbose
       )
+      diagnostics[[i]]$coverage_source <- if (length(coverage$source)) {
+        paste(coverage$source, collapse = ";")
+      } else {
+        "none"
+      }
+      diagnostics[[i]]$technical_summary$coverage_source <-
+        diagnostics[[i]]$coverage_source
       diagnostics[[i]]$candidate_id <- candidate.regions$candidate_id[i]
       diagnostics[[i]]$chromosome <- candidate.regions$chromosome[i]
       diagnostics[[i]]$start <- candidate.regions$start[i]
       diagnostics[[i]]$end <- candidate.regions$end[i]
       diagnostics[[i]]$ld_position <- marker.table$position[
         match(diagnostics[[i]]$ld_variant_id, marker.table$variant_id)
+      ]
+      diagnostics[[i]]$pc1_loadings$chromosome <- candidate.regions$chromosome[i]
+      diagnostics[[i]]$pc1_loadings$position <- marker.table$position[
+        match(diagnostics[[i]]$pc1_loadings$variant_id, marker.table$variant_id)
       ]
       candidate.regions$n_samples[i] <- nrow(diagnostics[[i]]$scores)
       candidate.regions$n_snps[i] <- diagnostics[[i]]$n_snps
@@ -588,14 +825,31 @@ detect_inversions <- function(
       candidate.regions$cluster_compactness[i] <- diagnostics[[i]]$cluster_compactness
       candidate.regions$three_cluster_evidence[i] <-
         diagnostics[[i]]$three_cluster_evidence
+      candidate.regions$recommended_cluster_k[i] <-
+        diagnostics[[i]]$cluster_models$k[
+          which.min(diagnostics[[i]]$cluster_models$bic)
+        ]
+      candidate.regions$assignment_stability[i] <-
+        diagnostics[[i]]$assignment_stability
       candidate.regions$heterozygote_like_middle_cluster[i] <-
         diagnostics[[i]]$heterozygote_like_middle_cluster
       candidate.regions$middle_heterozygosity_excess[i] <-
         diagnostics[[i]]$middle_heterozygosity_excess
+      if (verbose) {
+        message(
+          "  Candidate diagnostics completed in ",
+          round(proc.time()[["elapsed"]] - candidate.start, 1L), " sec."
+        )
+      }
     }
   }
   candidate.regions <- .inversion_evidence_summary(candidate.regions)
   candidate.regions <- .inversion_classify_candidates(candidate.regions)
+  candidate.summaries <- .inversion_candidate_summaries(
+    candidate.regions = candidate.regions,
+    diagnostics = diagnostics,
+    arrangement.labels = arrangement.labels
+  )
 
   arrangement.genotypes <- purrr::map_dfr(diagnostics, function(x) {
     if (is.null(x$scores) || !nrow(x$scores)) return(tibble::tibble())
@@ -606,12 +860,18 @@ detect_inversions <- function(
       start = x$start,
       end = x$end,
       individual = .data$individual,
+      cluster = .data$cluster,
       arrangement = .data$arrangement,
       arrangement_dosage = .data$arrangement_dosage,
       arrangement_confidence = .data$arrangement_confidence,
       distance_nearest = .data$distance_nearest,
       distance_second = .data$distance_second,
-      heterozygosity = .data$heterozygosity
+      heterozygosity = .data$heterozygosity,
+      call_rate = .data$call_rate,
+      mean_depth = .data$mean_depth,
+      mean_heterozygote_allele_balance =
+        .data$mean_heterozygote_allele_balance,
+      assignment_stability = .data$assignment_stability
     )
   })
   homokaryotype.whitelist <- arrangement.genotypes |>
@@ -635,14 +895,31 @@ detect_inversions <- function(
     min.window.snps = min.window.snps
   )
 
+  chromosome.pca.results <- if (chromosome.pca) {
+    .inversion_chromosome_pca(
+      gds = gds,
+      marker.table = marker.table,
+      sample.id = sample.id,
+      max.snps = chromosome.pca.max.snps,
+      min.call.rate = min.call.rate,
+      parallel.core = parallel.core,
+      verbose = verbose
+    )
+  } else {
+    list(scores = tibble::tibble(), summary = tibble::tibble())
+  }
+
   output.files <- .inversion_write_outputs(
     path.folder = path.folder,
     window.table = window.table,
     candidate.regions = candidate.regions,
     diagnostics = diagnostics,
+    candidate.summaries = candidate.summaries,
     arrangement.genotypes = arrangement.genotypes,
     homokaryotype.all.candidates = homokaryotype.all.candidates,
     sensitivity = sensitivity,
+    chromosome.pca = chromosome.pca.results,
+    chromosome.lengths = chromosome.length.info,
     threshold = threshold,
     save.plots = save.plots,
     plot.formats = plot.formats,
@@ -660,14 +937,18 @@ detect_inversions <- function(
     windows = tibble::as_tibble(window.table),
     candidates = tibble::as_tibble(candidate.regions),
     diagnostics = diagnostics,
+    candidate.summaries = candidate.summaries,
     arrangement.genotypes = arrangement.genotypes,
     homokaryotype.whitelist = homokaryotype.whitelist,
     homokaryotype.all.candidates = homokaryotype.all.candidates,
     sensitivity = sensitivity,
+    chromosome.pca = chromosome.pca.results,
+    chromosome.lengths = chromosome.length.info,
     path.folder = path.folder,
     output.files = output.files,
     settings = list(
       chromosome = chromosome,
+      reference.genome = reference.genome,
       window.snps = window.snps,
       step.snps = step.snps,
       window.bp = window.bp,
@@ -677,6 +958,11 @@ detect_inversions <- function(
       ld.window.min.snps = ld.window.min.snps,
       ld.window.max.snps = ld.window.max.snps,
       sensitivity.window.snps = sensitivity.window.snps,
+      stability.replicates = stability.replicates,
+      stability.fraction = stability.fraction,
+      parallel.core = parallel.core,
+      chromosome.pca = chromosome.pca,
+      chromosome.pca.max.snps = chromosome.pca.max.snps,
       n.pcs = n.pcs,
       mds.axes = mds.k,
       outlier.quantile = outlier.quantile,
@@ -695,6 +981,92 @@ detect_inversions <- function(
   out
 }
 
+.inversion_candidate_summaries <- function(
+    candidate.regions, diagnostics, arrangement.labels
+) {
+  if (!nrow(candidate.regions)) return(character())
+  summaries <- purrr::map2_chr(
+    seq_len(nrow(candidate.regions)),
+    diagnostics,
+    function(i, diagnostic) {
+      candidate <- candidate.regions[i, , drop = FALSE]
+      cluster.summary <- diagnostic$cluster_summary
+      cluster.labels <- if (
+        isTRUE(diagnostic$three_cluster_evidence) &&
+          nrow(cluster.summary) == length(arrangement.labels)
+      ) {
+        arrangement.labels
+      } else {
+        paste("Group", cluster.summary$cluster)
+      }
+      cluster.sizes <- paste0(
+        cluster.summary$n, " ", cluster.labels,
+        collapse = ", "
+      )
+      heterozygosity <- paste0(
+        format(round(cluster.summary$mean_heterozygosity, 3L), nsmall = 3L),
+        " ", cluster.labels,
+        collapse = ", "
+      )
+      convincing <- identical(candidate$evidence_strength, "strong")
+      paste0(
+        candidate$candidate_id, "\n",
+        "- Candidate interval: chromosome ", candidate$chromosome, ", ",
+        format(candidate$start / 1e6, digits = 4L, nsmall = 3L), "-",
+        format(candidate$end / 1e6, digits = 4L, nsmall = 3L), " Mb.\n",
+        "- Candidate span: ",
+        format(round(candidate$candidate_span_bp / 1e6, 3L), nsmall = 3L),
+        " Mb, representing ",
+        format(round(candidate$chromosome_percent, 1L), nsmall = 1L),
+        "% of a ",
+        format(round(candidate$chromosome_length_bp / 1e6, 3L), nsmall = 3L),
+        " Mb chromosome",
+        if (isTRUE(candidate$chromosome_length_declared)) {
+          paste0(" (", candidate$chromosome_length_source, ").\n")
+        } else {
+          paste0(
+            " (estimated from the largest observed marker position; the ",
+            "percentage may be overestimated).\n"
+          )
+        },
+        "- Diagnostic SNPs: ", candidate$n_snps,
+        ", all inside the reported interval.\n",
+        "- Evidence: ", candidate$evidence_score, "/5, ",
+        candidate$evidence_strength, ".\n",
+        "- PC1 variance: ",
+        format(round(100 * candidate$pc1_variance, 1L), nsmall = 1L), "%.", "\n",
+        "- Cluster separation: ",
+        format(round(candidate$cluster_separation, 2L), nsmall = 2L), ".\n",
+        "- Preferred PC1 cluster count by approximate BIC: ",
+        candidate$recommended_cluster_k, ".\n",
+        if (is.finite(candidate$assignment_stability)) {
+          paste0(
+            "- SNP-resampling assignment stability: ",
+            format(round(100 * candidate$assignment_stability, 1L), nsmall = 1L),
+            "%.\n"
+          )
+        } else {
+          "- SNP-resampling assignment stability: not requested.\n"
+        },
+        "- Cluster sizes: ", cluster.sizes, ".\n",
+        "- Mean heterozygosity: ", heterozygosity, ".\n",
+        "- Regional mean r2: ",
+        format(round(candidate$regional_mean_ld_r2, 5L), nsmall = 5L),
+        ", compared with ",
+        format(round(candidate$flanking_mean_ld_r2, 5L), nsmall = 5L),
+        " in flanking windows.\n",
+        if (convincing) {
+          "Interpretation: the candidate remains convincing.\n"
+        } else {
+          "Interpretation: the candidate warrants further evaluation.\n"
+        },
+        "Caution: this is a threshold-defined candidate core, not a definitive inversion boundary."
+      )
+    }
+  )
+  stats::setNames(summaries, candidate.regions$candidate_id)
+}
+
 # =============================================================================
 # Argument and annotation helpers
 # =============================================================================
@@ -708,6 +1080,262 @@ detect_inversions <- function(
     rlang::abort(paste0("`", name, "` must be ", interval, "."))
   }
   invisible(x)
+}
+
+.inversion_chromosome_key <- function(x) {
+  key <- tolower(trimws(as.character(x)))
+  key <- sub("^chromosome[_ .-]*", "", key)
+  key <- sub("^chr[_ .-]*", "", key)
+  numeric.key <- grepl("^[0-9]+$", key)
+  key[numeric.key] <- as.character(as.integer(key[numeric.key]))
+  key
+}
+
+.inversion_read_length_table <- function(x, source) {
+  if (is.numeric(x) && !is.null(names(x))) {
+    out <- tibble::tibble(
+      declared_chromosome = names(x),
+      chromosome_length_bp = as.numeric(x)
+    )
+  } else {
+    if (is.character(x) && length(x) == 1L && file.exists(x)) {
+      x <- vroom::vroom(x, show_col_types = FALSE, progress = FALSE)
+    }
+    if (!is.data.frame(x)) {
+      rlang::abort(
+        "`chromosome.lengths` must be a named numeric vector, data frame, or tabular filepath."
+      )
+    }
+    names(x) <- toupper(names(x))
+    chromosome.column <- intersect(
+      c("CHROM", "CHROMOSOME", "CONTIG", "SEQUENCE", "ID"), names(x)
+    )
+    length.column <- intersect(
+      c("LENGTH", "LENGTH_BP", "CHROMOSOME_LENGTH", "SEQUENCE_LENGTH"),
+      names(x)
+    )
+    if (!length(chromosome.column) || !length(length.column)) {
+      rlang::abort(
+        "The chromosome-length table requires chromosome and length columns, such as `CHROM` and `LENGTH`."
+      )
+    }
+    out <- tibble::tibble(
+      declared_chromosome = as.character(x[[chromosome.column[1L]]]),
+      chromosome_length_bp = suppressWarnings(
+        as.numeric(x[[length.column[1L]]])
+      )
+    )
+  }
+  out$length_source <- source
+  out$declared_length <- TRUE
+  invalid <- is.na(out$declared_chromosome) |
+    !nzchar(out$declared_chromosome) |
+    !is.finite(out$chromosome_length_bp) |
+    out$chromosome_length_bp <= 0
+  if (any(invalid)) {
+    rlang::abort("Chromosome lengths require non-empty names and positive finite values.")
+  }
+  out |>
+    dplyr::distinct(.data$declared_chromosome, .keep_all = TRUE)
+}
+
+.inversion_read_fai <- function(reference.genome) {
+  if (is.null(reference.genome)) return(NULL)
+  if (!is.character(reference.genome) || length(reference.genome) != 1L ||
+      is.na(reference.genome) || !nzchar(reference.genome)) {
+    rlang::abort("`reference.genome` must be NULL or one FASTA or `.fai` filepath.")
+  }
+  fai <- if (grepl("\\.fai$", reference.genome, ignore.case = TRUE)) {
+    reference.genome
+  } else {
+    paste0(reference.genome, ".fai")
+  }
+  if (!file.exists(fai)) {
+    rlang::abort(paste0(
+      "Reference index not found: ", fai,
+      ". Create the FASTA index first or provide `chromosome.lengths`."
+    ))
+  }
+  fields <- readr::read_tsv(
+    fai,
+    col_names = c("CHROM", "LENGTH", "OFFSET", "LINE_BASES", "LINE_WIDTH"),
+    col_types = "cdiii",
+    progress = FALSE
+  )
+  .inversion_read_length_table(
+    fields[, c("CHROM", "LENGTH")],
+    source = paste0("FASTA index: ", basename(fai))
+  )
+}
+
+.inversion_gds_contig_lengths <- function(gds) {
+  id.node <- gdsfmt::index.gdsn(
+    gds, "description/vcf.contig/ID", silent = TRUE
+  )
+  length.node <- gdsfmt::index.gdsn(
+    gds, "description/vcf.contig/length", silent = TRUE
+  )
+  if (is.null(id.node) || is.null(length.node)) return(NULL)
+  ids <- tryCatch(gdsfmt::read.gdsn(id.node), error = function(error) NULL)
+  lengths <- tryCatch(
+    gdsfmt::read.gdsn(length.node), error = function(error) NULL
+  )
+  if (is.null(ids) || is.null(lengths) || length(ids) != length(lengths)) {
+    return(NULL)
+  }
+  .inversion_read_length_table(
+    data.frame(CHROM = ids, LENGTH = lengths),
+    source = "GDS VCF contig dictionary"
+  )
+}
+
+.inversion_chromosome_lengths <- function(
+    gds, marker.table, chromosome.lengths = NULL, reference.genome = NULL,
+    verbose = FALSE
+) {
+  declared <- if (!is.null(chromosome.lengths)) {
+    .inversion_read_length_table(
+      chromosome.lengths, source = "user-supplied chromosome lengths"
+    )
+  } else if (!is.null(reference.genome)) {
+    .inversion_read_fai(reference.genome)
+  } else {
+    .inversion_gds_contig_lengths(gds)
+  }
+
+  observed <- marker.table |>
+    dplyr::group_by(.data$chromosome) |>
+    dplyr::summarise(
+      observed_marker_max_bp = max(.data$position, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(chromosome = as.character(.data$chromosome))
+
+  if (is.null(declared) || !nrow(declared)) {
+    out <- observed |>
+      dplyr::mutate(
+        chromosome_length_bp = .data$observed_marker_max_bp,
+        declared_chromosome = .data$chromosome,
+        length_source = "largest observed marker position (underestimate)",
+        declared_length = FALSE
+      )
+    if (verbose) {
+      message(
+        "Chromosome lengths were unavailable; chromosome percentages use the ",
+        "largest observed marker position and are labelled as estimates."
+      )
+    }
+    return(out)
+  }
+
+  declared$key <- .inversion_chromosome_key(declared$declared_chromosome)
+  observed$key <- .inversion_chromosome_key(observed$chromosome)
+  matched <- match(observed$chromosome, declared$declared_chromosome)
+  missing <- is.na(matched)
+  matched[missing] <- match(observed$key[missing], declared$key)
+  out <- observed
+  out$chromosome_length_bp <- declared$chromosome_length_bp[matched]
+  out$declared_chromosome <- declared$declared_chromosome[matched]
+  out$length_source <- declared$length_source[matched]
+  out$declared_length <- declared$declared_length[matched]
+  unresolved <- is.na(out$chromosome_length_bp)
+  out$chromosome_length_bp[unresolved] <- out$observed_marker_max_bp[unresolved]
+  out$declared_chromosome[unresolved] <- out$chromosome[unresolved]
+  out$length_source[unresolved] <-
+    "largest observed marker position (underestimate)"
+  out$declared_length[unresolved] <- FALSE
+  inconsistent <- out$declared_length &
+    out$chromosome_length_bp < out$observed_marker_max_bp
+  if (any(inconsistent)) {
+    rlang::warn(paste0(
+      "Declared chromosome length was shorter than the largest observed marker ",
+      "position for: ", paste(out$chromosome[inconsistent], collapse = ", "),
+      ". Marker maxima are used for those sequences; verify the reference build."
+    ))
+    out$chromosome_length_bp[inconsistent] <-
+      out$observed_marker_max_bp[inconsistent]
+    out$length_source[inconsistent] <- paste0(
+      "largest observed marker position; declared length was inconsistent"
+    )
+    out$declared_length[inconsistent] <- FALSE
+  }
+  out$key <- NULL
+  if (verbose) {
+    message(
+      "Chromosome lengths: ", sum(out$declared_length), " declared and ",
+      sum(!out$declared_length), " estimated from marker positions."
+    )
+  }
+  out
+}
+
+.inversion_add_chromosome_context <- function(
+    candidate.regions, chromosome.length.info
+) {
+  if (!nrow(candidate.regions)) {
+    candidate.regions$candidate_span_bp <- numeric()
+    candidate.regions$chromosome_length_bp <- numeric()
+    candidate.regions$chromosome_fraction <- numeric()
+    candidate.regions$chromosome_percent <- numeric()
+    candidate.regions$left_flank_bp <- numeric()
+    candidate.regions$right_flank_bp <- numeric()
+    candidate.regions$chromosome_length_source <- character()
+    candidate.regions$chromosome_length_declared <- logical()
+    return(candidate.regions)
+  }
+  context <- chromosome.length.info |>
+    dplyr::select(
+      .data$chromosome, .data$chromosome_length_bp,
+      chromosome_length_source = .data$length_source,
+      chromosome_length_declared = .data$declared_length
+    )
+  out <- dplyr::left_join(candidate.regions, context, by = "chromosome")
+  out$candidate_span_bp <- pmax(0, out$end - out$start + 1)
+  out$chromosome_fraction <- out$candidate_span_bp / out$chromosome_length_bp
+  out$chromosome_percent <- 100 * out$chromosome_fraction
+  out$left_flank_bp <- pmax(0, out$start - 1)
+  out$right_flank_bp <- pmax(0, out$chromosome_length_bp - out$end)
+  out
+}
+
+.inversion_read_sample_metadata <- function(strata, sample.id) {
+  if (is.null(strata)) return(NULL)
+  if (is.character(strata) && length(strata) == 1L) {
+    if (!file.exists(strata)) rlang::abort("The `strata` file does not exist.")
+    strata <- vroom::vroom(
+      strata,
+      show_col_types = FALSE,
+      progress = FALSE
+    )
+  }
+  if (!is.data.frame(strata)) {
+    rlang::abort("`strata` must be NULL, a data frame, or a tabular filepath.")
+  }
+  names(strata) <- stringi::stri_trans_toupper(names(strata))
+  if (!"INDIVIDUALS" %in% names(strata)) {
+    rlang::abort("`strata` requires an `INDIVIDUALS` column.")
+  }
+  strata$INDIVIDUALS <- as.character(strata$INDIVIDUALS)
+  invalid <- is.na(strata$INDIVIDUALS) | !nzchar(strata$INDIVIDUALS)
+  if (any(invalid)) rlang::abort("`strata$INDIVIDUALS` contains missing or empty IDs.")
+  if (anyDuplicated(strata$INDIVIDUALS)) {
+    rlang::abort("`strata$INDIVIDUALS` must contain unique sample IDs.")
+  }
+  unknown <- setdiff(strata$INDIVIDUALS, sample.id)
+  if (length(unknown)) {
+    rlang::warn(paste0(
+      length(unknown), " metadata sample(s) were absent from the active GDS and ignored."
+    ))
+  }
+  strata <- strata[strata$INDIVIDUALS %in% sample.id, , drop = FALSE]
+  # Preserve the GDS order so every downstream matrix and metadata join remains
+  # aligned without relying on a later sort.
+  strata <- strata[match(sample.id[sample.id %in% strata$INDIVIDUALS],
+                         strata$INDIVIDUALS), , drop = FALSE]
+  if (nrow(strata) < 3L) {
+    rlang::abort("Fewer than three GDS samples remain after applying `strata`.")
+  }
+  tibble::as_tibble(strata)
 }
 
 .inversion_validate_known_regions <- function(x) {
@@ -842,10 +1470,30 @@ detect_inversions <- function(
 }
 
 .inversion_chromosome_order <- function(x) {
-  stripped <- sub("^(chr|chromosome)", "", x, ignore.case = TRUE)
-  numeric.part <- suppressWarnings(as.numeric(stripped))
-  ifelse(is.na(numeric.part), Inf, numeric.part) * 1e6 +
-    match(x, unique(x))
+  levels <- .inversion_sequence_layout(x)$levels
+  match(as.character(x), levels)
+}
+
+.inversion_sequence_layout <- function(x) {
+  labels <- unique(as.character(x))
+  labels <- labels[!is.na(labels) & nzchar(labels)]
+  levels <- labels[stringi::stri_order(labels, numeric = TRUE)]
+  lower <- stringi::stri_trans_tolower(labels)
+  explicit.scaffold <- any(grepl("scaffold|contig|unitig", lower))
+  numeric.labels <- all(grepl("^[0-9]+$", labels))
+  chromosome.labels <- all(grepl(
+    "^(chr|chromosome|lg|linkage[_. -]?group)[_. -]?[0-9a-z]+$",
+    lower
+  ))
+  type <- dplyr::case_when(
+    explicit.scaffold ~ "scaffolds / contigs",
+    chromosome.labels ~ "chromosomes / linkage groups",
+    numeric.labels && length(labels) < 200L ~
+      "numeric sequences compatible with chromosomes / linkage groups",
+    length(labels) >= 200L ~ "many sequences, likely scaffolds / contigs",
+    .default = "genomic sequences"
+  )
+  list(levels = levels, type = type, n = length(labels))
 }
 
 # =============================================================================
@@ -957,15 +1605,142 @@ detect_inversions <- function(
   out
 }
 
+.inversion_get_coverage <- function(gds, variant.id, sample.id) {
+  SeqArray::seqFilterPush(gds)
+  on.exit(SeqArray::seqFilterPop(gds), add = TRUE)
+  SeqArray::seqSetFilter(gds, variant.id = variant.id, verbose = FALSE)
+  normalise <- function(x) {
+    if (!is.matrix(x)) return(NULL)
+    if (nrow(x) == length(sample.id)) return(x)
+    if (ncol(x) == length(sample.id)) return(t(x))
+    NULL
+  }
+  depth <- tryCatch(
+    normalise(SeqArray::seqGetData(gds, "annotation/format/DP")),
+    error = function(error) NULL
+  )
+  ad <- tryCatch(
+    SeqArray::seqGetData(gds, "annotation/format/AD"),
+    error = function(error) NULL
+  )
+  allele.balance <- NULL
+  if (is.list(ad) && all(c("length", "data") %in% names(ad)) &&
+      all(ad$length == 2L)) {
+    ad.data <- normalise(ad$data)
+    if (!is.null(ad.data) && ncol(ad.data) == 2L * length(variant.id)) {
+      ref <- ad.data[, seq.int(1L, ncol(ad.data), by = 2L), drop = FALSE]
+      alt <- ad.data[, seq.int(2L, ncol(ad.data), by = 2L), drop = FALSE]
+      total <- ref + alt
+      allele.balance <- alt / total
+      allele.balance[!is.finite(allele.balance)] <- NA_real_
+    }
+  }
+  source <- c(
+    if (!is.null(depth)) "annotation/format/DP",
+    if (!is.null(allele.balance)) "annotation/format/AD"
+  )
+  if (is.null(depth) || is.null(allele.balance)) {
+    embedded <- .inversion_get_embedded_coverage(gds, variant.id, sample.id)
+    if (is.null(depth)) depth <- embedded$depth
+    if (is.null(allele.balance)) allele.balance <- embedded$allele.balance
+    source <- c(source, embedded$source)
+  }
+  list(
+    depth = depth,
+    allele.balance = allele.balance,
+    source = unique(source)
+  )
+}
+
+.inversion_get_embedded_coverage <- function(gds, variant.id, sample.id) {
+  empty <- list(depth = NULL, allele.balance = NULL, source = character())
+  metadata.node <- NULL
+  for (path in c("genometranslator/genotypes.meta", "radiator/genotypes.meta")) {
+    candidate <- gdsfmt::index.gdsn(gds$root, path = path, silent = TRUE)
+    if (!is.null(candidate)) {
+      metadata.node <- candidate
+      break
+    }
+  }
+  if (is.null(metadata.node)) return(empty)
+  available <- gdsfmt::ls.gdsn(metadata.node)
+  want.depth <- "READ_DEPTH" %in% available
+  want.alleles <- all(c("ALLELE_REF_DEPTH", "ALLELE_ALT_DEPTH") %in% available)
+  if (!want.depth && !want.alleles) return(empty)
+
+  full.sample.id <- as.character(gdsfmt::read.gdsn(
+    gdsfmt::index.gdsn(gds$root, "sample.id")
+  ))
+  full.variant.id <- gdsfmt::read.gdsn(
+    gdsfmt::index.gdsn(gds$root, "variant.id")
+  )
+  sample.index <- match(sample.id, full.sample.id)
+  variant.index <- match(variant.id, full.variant.id)
+  if (anyNA(sample.index) || anyNA(variant.index)) return(empty)
+
+  # genometranslator writes long genotype metadata marker by marker. Confirm
+  # that layout before using efficient contiguous reads; never guess a layout.
+  marker.node <- gdsfmt::index.gdsn(metadata.node, "M_SEQ", silent = TRUE)
+  if (is.null(marker.node)) return(empty)
+  first.block <- gdsfmt::read.gdsn(
+    marker.node,
+    start = 1L,
+    count = min(length(full.sample.id), gdsfmt::objdesp.gdsn(marker.node)$dim)
+  )
+  if (length(unique(first.block)) != 1L) return(empty)
+
+  read.matrix <- function(node.name) {
+    node <- gdsfmt::index.gdsn(metadata.node, node.name, silent = TRUE)
+    if (is.null(node)) return(NULL)
+    values <- purrr::map(variant.index, function(index) {
+      block <- gdsfmt::read.gdsn(
+        node,
+        start = as.integer((index - 1L) * length(full.sample.id) + 1L),
+        count = length(full.sample.id)
+      )
+      block[sample.index]
+    })
+    matrix(
+      unlist(values, use.names = FALSE),
+      nrow = length(sample.id), ncol = length(variant.id)
+    )
+  }
+
+  depth <- if (want.depth) read.matrix("READ_DEPTH") else NULL
+  allele.balance <- NULL
+  if (want.alleles) {
+    ref <- read.matrix("ALLELE_REF_DEPTH")
+    alt <- read.matrix("ALLELE_ALT_DEPTH")
+    allele.balance <- alt / (ref + alt)
+    allele.balance[!is.finite(allele.balance)] <- NA_real_
+    if (is.null(depth)) depth <- ref + alt
+  }
+  list(
+    depth = depth,
+    allele.balance = allele.balance,
+    source = c(
+      if (want.depth) "genotypes.meta/READ_DEPTH",
+      if (want.alleles) paste0(
+        "genotypes.meta/", c("ALLELE_REF_DEPTH", "ALLELE_ALT_DEPTH")
+      )
+    )
+  )
+}
+
 .inversion_prepare_dosage <- function(dosage, min.call.rate) {
   # Marker filtering happens before imputation and is repeated independently
   # for every window or candidate region.
+  variant.index <- seq_len(ncol(dosage))
   call.rate <- colMeans(!is.na(dosage))
   keep <- is.finite(call.rate) & call.rate >= min.call.rate
+  variant.index <- variant.index[keep]
   dosage <- dosage[, keep, drop = FALSE]
   call.rate <- call.rate[keep]
   if (ncol(dosage) == 0L) {
-    return(list(dosage = dosage, observed = dosage, call.rate = call.rate))
+    return(list(
+      dosage = dosage, observed = dosage, call.rate = call.rate,
+      variant.index = variant.index
+    ))
   }
 
   observed <- dosage
@@ -978,10 +1753,12 @@ detect_inversions <- function(
   }
   variance <- apply(dosage, 2L, stats::var)
   keep <- is.finite(variance) & variance > sqrt(.Machine$double.eps)
+  variant.index <- variant.index[keep]
   list(
     dosage = dosage[, keep, drop = FALSE],
     observed = observed[, keep, drop = FALSE],
-    call.rate = call.rate[keep]
+    call.rate = call.rate[keep],
+    variant.index = variant.index
   )
 }
 
@@ -995,6 +1772,283 @@ detect_inversions <- function(
 # =============================================================================
 # Local-PCA window representation and candidate selection
 # =============================================================================
+
+.inversion_analyse_window <- function(
+    gds, window, window.id, sample.id, n.pcs, min.call.rate,
+    min.window.snps
+) {
+  dosage <- .inversion_get_dosage(gds, window$variant_id, sample.id)
+  local <- .inversion_local_covariance(
+    dosage = dosage,
+    n.pcs = n.pcs,
+    min.call.rate = min.call.rate,
+    min.window.snps = min.window.snps
+  )
+  local$window_id <- window.id
+  local$chromosome <- window$chromosome
+  local$start <- window$start
+  local$end <- window$end
+  local$n_input_snps <- length(window$variant_id)
+  local$variant_id <- window$variant_id
+  local
+}
+
+.inversion_scan_windows <- function(
+    gds, windows, sample.id, n.pcs, min.call.rate, min.window.snps,
+    parallel.core, verbose
+) {
+  n.windows <- length(windows)
+  workers <- min(as.integer(parallel.core), n.windows)
+  progress.id <- if (verbose) {
+    cli::cli_progress_bar(
+      name = "Local-PCA windows",
+      total = n.windows,
+      format = paste0(
+        "{cli::pb_name} {cli::pb_bar} {cli::pb_current}/{cli::pb_total} ",
+        "| ETA {cli::pb_eta}"
+      ),
+      clear = FALSE
+    )
+  } else {
+    NULL
+  }
+  on.exit({
+    if (!is.null(progress.id)) cli::cli_progress_done(id = progress.id)
+  }, add = TRUE)
+
+  if (workers == 1L) {
+    return(purrr::map(seq_len(n.windows), function(i) {
+      out <- .inversion_analyse_window(
+        gds = gds,
+        window = windows[[i]],
+        window.id = i,
+        sample.id = sample.id,
+        n.pcs = n.pcs,
+        min.call.rate = min.call.rate,
+        min.window.snps = min.window.snps
+      )
+      if (!is.null(progress.id)) cli::cli_progress_update(id = progress.id)
+      out
+    }))
+  }
+
+  if (verbose) {
+    cli::cli_alert_info(
+      "Using {workers} independent GDS workers for the window scan."
+    )
+  }
+  cluster <- parallel::makePSOCKcluster(workers)
+  on.exit(try(parallel::stopCluster(cluster), silent = TRUE), add = TRUE)
+  helper.names <- c(
+    ".inversion_analyse_window", ".inversion_get_dosage",
+    ".inversion_local_covariance", ".inversion_prepare_dosage",
+    ".inversion_mean_ld"
+  )
+  parallel::clusterExport(
+    cluster,
+    varlist = helper.names,
+    envir = environment(.inversion_scan_windows)
+  )
+  gds.path <- gds$filename
+  parallel::clusterCall(
+    cluster,
+    function(path, ids, window.list, axes, call.rate, minimum.snps) {
+      worker.gds <- SeqArray::seqOpen(path)
+      SeqArray::seqSetFilter(worker.gds, sample.id = ids, verbose = FALSE)
+      assign(".radr_inversion_gds", worker.gds, envir = .GlobalEnv)
+      assign(".radr_inversion_windows", window.list, envir = .GlobalEnv)
+      assign(".radr_inversion_sample_id", ids, envir = .GlobalEnv)
+      assign(".radr_inversion_n_pcs", axes, envir = .GlobalEnv)
+      assign(".radr_inversion_min_call_rate", call.rate, envir = .GlobalEnv)
+      assign(".radr_inversion_min_window_snps", minimum.snps, envir = .GlobalEnv)
+      TRUE
+    },
+    path = gds.path,
+    ids = sample.id,
+    window.list = windows,
+    axes = n.pcs,
+    call.rate = min.call.rate,
+    minimum.snps = min.window.snps
+  )
+  on.exit(try(parallel::clusterCall(cluster, function() {
+    if (exists(".radr_inversion_gds", envir = .GlobalEnv)) {
+      try(SeqArray::seqClose(get(".radr_inversion_gds", envir = .GlobalEnv)),
+          silent = TRUE)
+    }
+    TRUE
+  }), silent = TRUE), add = TRUE)
+
+  # Submit several windows per worker between progress updates. This keeps the
+  # progress bar responsive without making scheduler overhead dominate.
+  batch.size <- max(workers, workers * 4L)
+  batches <- split(
+    seq_len(n.windows),
+    ceiling(seq_len(n.windows) / batch.size)
+  )
+  results <- vector("list", n.windows)
+  for (batch in batches) {
+    batch.results <- parallel::parLapplyLB(cluster, batch, function(i) {
+      .inversion_analyse_window(
+        gds = get(".radr_inversion_gds", envir = .GlobalEnv),
+        window = get(".radr_inversion_windows", envir = .GlobalEnv)[[i]],
+        window.id = i,
+        sample.id = get(".radr_inversion_sample_id", envir = .GlobalEnv),
+        n.pcs = get(".radr_inversion_n_pcs", envir = .GlobalEnv),
+        min.call.rate = get(
+          ".radr_inversion_min_call_rate", envir = .GlobalEnv
+        ),
+        min.window.snps = get(
+          ".radr_inversion_min_window_snps", envir = .GlobalEnv
+        )
+      )
+    })
+    results[batch] <- batch.results
+    if (!is.null(progress.id)) {
+      cli::cli_progress_update(id = progress.id, inc = length(batch))
+    }
+  }
+  results
+}
+
+.inversion_chromosome_pca_one <- function(
+    gds, markers, sample.id, max.snps, min.call.rate
+) {
+  markers <- markers[order(markers$position, markers$variant_id), , drop = FALSE]
+  use <- unique(round(seq(
+    1L, nrow(markers), length.out = min(nrow(markers), max.snps)
+  )))
+  dosage <- .inversion_get_dosage(
+    gds, markers$variant_id[use], sample.id
+  )
+  prepared <- .inversion_prepare_dosage(dosage, min.call.rate)
+  if (ncol(prepared$dosage) < 2L) return(NULL)
+  pca <- stats::prcomp(
+    prepared$dosage, center = TRUE, scale. = FALSE, rank. = 2L
+  )
+  axes <- pca$x[, seq_len(min(2L, ncol(pca$x))), drop = FALSE]
+  if (ncol(axes) == 1L) axes <- cbind(axes, PC2 = 0)
+  colnames(axes) <- c("PC1", "PC2")
+  variance <- pca$sdev^2
+  tibble::tibble(
+    chromosome = as.character(markers$chromosome[1L]),
+    individual = sample.id,
+    PC1 = axes[, 1L],
+    PC2 = axes[, 2L],
+    pc1_variance = variance[1L] / sum(variance),
+    pc2_variance = if (length(variance) >= 2L) variance[2L] / sum(variance) else 0,
+    n_input_snps = length(use),
+    n_used_snps = ncol(prepared$dosage)
+  )
+}
+
+.inversion_chromosome_pca <- function(
+    gds, marker.table, sample.id, max.snps, min.call.rate,
+    parallel.core, verbose
+) {
+  chromosome.levels <- .inversion_sequence_layout(marker.table$chromosome)$levels
+  marker.groups <- split(
+    marker.table,
+    factor(marker.table$chromosome, levels = chromosome.levels),
+    drop = TRUE
+  )
+  n.groups <- length(marker.groups)
+  workers <- min(as.integer(parallel.core), n.groups)
+  progress.id <- if (verbose) {
+    cli::cli_progress_bar(
+      name = "Chromosome PCA",
+      total = n.groups,
+      format = paste0(
+        "{cli::pb_name} {cli::pb_bar} {cli::pb_current}/{cli::pb_total} ",
+        "| ETA {cli::pb_eta}"
+      ),
+      clear = FALSE
+    )
+  } else {
+    NULL
+  }
+  on.exit({
+    if (!is.null(progress.id)) cli::cli_progress_done(id = progress.id)
+  }, add = TRUE)
+
+  if (workers == 1L) {
+    scores <- purrr::map_dfr(marker.groups, function(markers) {
+      out <- .inversion_chromosome_pca_one(
+        gds, markers, sample.id, max.snps, min.call.rate
+      )
+      if (!is.null(progress.id)) cli::cli_progress_update(id = progress.id)
+      out
+    })
+  } else {
+    cluster <- parallel::makePSOCKcluster(workers)
+    on.exit(try(parallel::stopCluster(cluster), silent = TRUE), add = TRUE)
+    parallel::clusterExport(
+      cluster,
+      varlist = c(
+        ".inversion_chromosome_pca_one", ".inversion_get_dosage",
+        ".inversion_prepare_dosage"
+      ),
+      envir = environment(.inversion_chromosome_pca)
+    )
+    parallel::clusterCall(
+      cluster,
+      function(path, ids, groups, maximum, call.rate) {
+        worker.gds <- SeqArray::seqOpen(path)
+        SeqArray::seqSetFilter(worker.gds, sample.id = ids, verbose = FALSE)
+        assign(".radr_chromosome_pca_gds", worker.gds, envir = .GlobalEnv)
+        assign(".radr_chromosome_pca_groups", groups, envir = .GlobalEnv)
+        assign(".radr_chromosome_pca_ids", ids, envir = .GlobalEnv)
+        assign(".radr_chromosome_pca_max", maximum, envir = .GlobalEnv)
+        assign(".radr_chromosome_pca_call_rate", call.rate, envir = .GlobalEnv)
+        TRUE
+      },
+      path = gds$filename,
+      ids = sample.id,
+      groups = marker.groups,
+      maximum = max.snps,
+      call.rate = min.call.rate
+    )
+    on.exit(try(parallel::clusterCall(cluster, function() {
+      if (exists(".radr_chromosome_pca_gds", envir = .GlobalEnv)) {
+        try(SeqArray::seqClose(
+          get(".radr_chromosome_pca_gds", envir = .GlobalEnv)
+        ), silent = TRUE)
+      }
+      TRUE
+    }), silent = TRUE), add = TRUE)
+    indices <- seq_len(n.groups)
+    batches <- split(indices, ceiling(indices / max(workers, workers * 2L)))
+    results <- vector("list", n.groups)
+    for (batch in batches) {
+      batch.results <- parallel::parLapplyLB(cluster, batch, function(i) {
+        .inversion_chromosome_pca_one(
+          gds = get(".radr_chromosome_pca_gds", envir = .GlobalEnv),
+          markers = get(".radr_chromosome_pca_groups", envir = .GlobalEnv)[[i]],
+          sample.id = get(".radr_chromosome_pca_ids", envir = .GlobalEnv),
+          max.snps = get(".radr_chromosome_pca_max", envir = .GlobalEnv),
+          min.call.rate = get(
+            ".radr_chromosome_pca_call_rate", envir = .GlobalEnv
+          )
+        )
+      })
+      results[batch] <- batch.results
+      if (!is.null(progress.id)) {
+        cli::cli_progress_update(id = progress.id, inc = length(batch))
+      }
+    }
+    scores <- dplyr::bind_rows(results)
+  }
+  if (!nrow(scores)) {
+    return(list(scores = tibble::tibble(), summary = tibble::tibble()))
+  }
+  scores$chromosome <- factor(scores$chromosome, levels = chromosome.levels)
+  summary <- scores |>
+    dplyr::distinct(
+      .data$chromosome, .data$pc1_variance, .data$pc2_variance,
+      .data$n_input_snps, .data$n_used_snps
+    ) |>
+    dplyr::arrange(.data$chromosome)
+  list(scores = scores, summary = summary)
+}
 
 .inversion_local_covariance <- function(
     dosage, n.pcs, min.call.rate, min.window.snps
@@ -1169,17 +2223,32 @@ detect_inversions <- function(
 }
 
 .inversion_region_diagnostics <- function(
-    dosage, sample.id, cluster.k, min.call.rate, ld.max.snps, return.ld,
-    arrangement.labels
+    dosage, depth = NULL, allele.balance = NULL, sample.id, cluster.k,
+    min.call.rate, ld.max.snps, return.ld,
+    arrangement.labels, sample.metadata = NULL, stability.replicates = 0L,
+    stability.fraction = 0.8, verbose = FALSE
 ) {
   # Candidate-level PCA uses every usable SNP in the joined candidate interval,
   # not only the smaller covariance representation used for window scoring.
+  if (verbose) message("  Preparing genotypes and applying the call-rate check...")
   prepared <- .inversion_prepare_dosage(dosage, min.call.rate)
   dosage <- prepared$dosage
+  if (!is.null(depth)) {
+    depth <- depth[, prepared$variant.index, drop = FALSE]
+  }
+  if (!is.null(allele.balance)) {
+    allele.balance <- allele.balance[, prepared$variant.index, drop = FALSE]
+  }
   if (ncol(dosage) < 2L) {
     rlang::abort("A candidate region contains fewer than two usable SNPs.")
   }
 
+  if (verbose) {
+    message(
+      "  Regional PCA and cluster evaluation with ", ncol(dosage),
+      " usable SNPs..."
+    )
+  }
   centred <- sweep(dosage, 2L, colMeans(dosage), "-")
   pca <- stats::prcomp(centred, center = FALSE, scale. = FALSE, rank. = 2L)
   scores <- as.data.frame(pca$x[, seq_len(min(2L, ncol(pca$x))), drop = FALSE])
@@ -1190,6 +2259,7 @@ detect_inversions <- function(
   pca.variance <- pca$sdev^2
   pc1.variance <- pca.variance[1L] / sum(pca.variance)
   distinct.pc1 <- length(unique(signif(pc1, digits = 12L)))
+  cluster.models <- .inversion_cluster_models(pc1, max.k = 3L)
   if (distinct.pc1 >= cluster.k) {
     kmeans.fit <- stats::kmeans(
       pc1, centers = cluster.k, nstart = 50L
@@ -1208,15 +2278,6 @@ detect_inversions <- function(
   nearest <- apply(distances, 1L, min)
   second <- apply(distances, 1L, function(z) sort(z, partial = 2L)[2L])
   confidence <- second / pmax(nearest + second, sqrt(.Machine$double.eps))
-  if (cluster.k == 3L) {
-    scores$arrangement <- factor(
-      arrangement.labels[cluster.labels], levels = arrangement.labels
-    )
-    scores$arrangement_dosage <- cluster.labels - 1L
-  } else {
-    scores$arrangement <- factor(paste0("cluster_", cluster.labels))
-    scores$arrangement_dosage <- NA_integer_
-  }
   scores$distance_nearest <- nearest
   scores$distance_second <- second
   scores$arrangement_confidence <- confidence
@@ -1253,9 +2314,44 @@ detect_inversions <- function(
     smallest.cluster.frequency >= 0.05 &&
     is.finite(cluster.separation) && cluster.separation >= 1
 
+  # AA, AB, and BB communicate the three-arrangement biological hypothesis,
+  # so reserve them for candidates with quantitative three-cluster support.
+  # Numeric cluster IDs remain available for reproducibility in every case.
+  if (three.cluster.evidence) {
+    display.labels <- arrangement.labels
+    scores$arrangement <- factor(
+      display.labels[cluster.labels], levels = display.labels
+    )
+    scores$arrangement_dosage <- cluster.labels - 1L
+  } else {
+    display.labels <- paste("Group", seq_len(cluster.k))
+    scores$arrangement <- factor(
+      display.labels[cluster.labels], levels = display.labels
+    )
+    scores$arrangement_dosage <- NA_integer_
+  }
+
   observed <- prepared$observed
   heterozygosity <- rowMeans(observed == 1, na.rm = TRUE)
   scores$heterozygosity <- heterozygosity
+  scores$call_rate <- rowMeans(!is.na(observed))
+  scores$mean_depth <- if (!is.null(depth)) {
+    rowMeans(depth, na.rm = TRUE)
+  } else {
+    NA_real_
+  }
+  scores$mean_heterozygote_allele_balance <- if (!is.null(allele.balance)) {
+    heterozygous <- observed == 1
+    values <- allele.balance
+    values[!heterozygous] <- NA_real_
+    rowMeans(values, na.rm = TRUE)
+  } else {
+    NA_real_
+  }
+  scores$mean_depth[!is.finite(scores$mean_depth)] <- NA_real_
+  scores$mean_heterozygote_allele_balance[
+    !is.finite(scores$mean_heterozygote_allele_balance)
+  ] <- NA_real_
   heterozygosity.by.cluster <- tapply(
     heterozygosity, scores$cluster, mean, na.rm = TRUE
   )
@@ -1277,6 +2373,12 @@ detect_inversions <- function(
   ld.index <- unique(round(seq(1, ncol(dosage), length.out = min(
     ncol(dosage), ld.max.snps
   ))))
+  if (verbose) {
+    message(
+      "  LD diagnostics with ", length(ld.index),
+      " evenly distributed SNPs..."
+    )
+  }
   observed.ld <- observed[, ld.index, drop = FALSE]
   ld.all <- .inversion_ld_matrix(observed.ld)
   mean.ld <- .inversion_ld_summary(ld.all)
@@ -1320,6 +2422,54 @@ detect_inversions <- function(
   }
   ld.structure.contrast <- mean.ld - homokaryotype.mean.ld
 
+  if (verbose && stability.replicates > 0L) {
+    message(
+      "  Assignment-stability resampling: ", stability.replicates,
+      " replicates..."
+    )
+  }
+  stability <- .inversion_assignment_stability(
+    dosage = dosage,
+    reference.cluster = cluster.labels,
+    cluster.k = cluster.k,
+    replicates = stability.replicates,
+    fraction = stability.fraction
+  )
+  scores$assignment_stability <- stability$individual
+
+  loadings <- tibble::tibble(
+    variant_id = colnames(dosage),
+    PC1_loading = pca$rotation[, 1L],
+    abs_PC1_loading = abs(pca$rotation[, 1L]),
+    loading_rank = rank(-abs(pca$rotation[, 1L]), ties.method = "first")
+  ) |>
+    dplyr::arrange(.data$loading_rank)
+
+  if (verbose) message("  Marker loadings, technical summaries, and metadata audit...")
+  metadata.audit <- .inversion_metadata_audit(
+    scores = scores,
+    sample.metadata = sample.metadata
+  )
+  arrangement.differentiation <- .inversion_arrangement_differentiation(
+    observed = observed,
+    cluster = cluster.labels,
+    labels = display.labels
+  )
+  technical.summary <- scores |>
+    dplyr::group_by(.data$arrangement) |>
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean_call_rate = mean(.data$call_rate, na.rm = TRUE),
+      mean_depth = mean(.data$mean_depth, na.rm = TRUE),
+      mean_heterozygote_allele_balance = mean(
+        .data$mean_heterozygote_allele_balance, na.rm = TRUE
+      ),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(dplyr::across(
+      tidyselect::where(is.numeric), ~ ifelse(is.nan(.x), NA_real_, .x)
+    ))
+
   list(
     n_snps = ncol(dosage),
     scores = tibble::as_tibble(scores),
@@ -1343,6 +2493,13 @@ detect_inversions <- function(
     cluster_separation = cluster.separation,
     cluster_compactness = cluster.compactness,
     three_cluster_evidence = three.cluster.evidence,
+    cluster_models = cluster.models,
+    assignment_stability = stability$overall,
+    assignment_stability_replicates = stability$replicates,
+    metadata_audit = metadata.audit,
+    pc1_loadings = loadings,
+    arrangement_differentiation = arrangement.differentiation,
+    technical_summary = technical.summary,
     mean_ld_r2 = mean.ld,
     homokaryotype_mean_ld_r2 = homokaryotype.mean.ld,
     heterokaryotype_mean_ld_r2 = heterokaryotype.mean.ld,
@@ -1359,17 +2516,185 @@ detect_inversions <- function(
   )
 }
 
+.inversion_cluster_models <- function(pc1, max.k = 3L) {
+  max.k <- min(max.k, length(unique(signif(pc1, 12L))), length(pc1) - 1L)
+  purrr::map_dfr(seq_len(max.k), function(k) {
+    fit <- if (k == 1L) {
+      list(tot.withinss = sum((pc1 - mean(pc1))^2), cluster = rep(1L, length(pc1)))
+    } else {
+      stats::kmeans(pc1, centers = k, nstart = 50L)
+    }
+    rss <- max(fit$tot.withinss, .Machine$double.eps)
+    # Gaussian equal-variance approximation. It is used only to compare the
+    # number of modes in regional PC1, not as formal inversion evidence.
+    bic <- length(pc1) * log(rss / length(pc1)) + (2L * k) * log(length(pc1))
+    tibble::tibble(k = k, bic = bic, delta_bic = NA_real_)
+  }) |>
+    dplyr::mutate(delta_bic = .data$bic - min(.data$bic))
+}
+
+.inversion_assignment_stability <- function(
+    dosage, reference.cluster, cluster.k, replicates, fraction
+) {
+  empty <- list(
+    individual = rep(NA_real_, nrow(dosage)),
+    overall = NA_real_,
+    replicates = tibble::tibble()
+  )
+  if (replicates < 1L || ncol(dosage) < 2L) return(empty)
+  n.use <- max(2L, round(ncol(dosage) * fraction))
+  replicate.results <- purrr::map_dfr(seq_len(replicates), function(replicate) {
+    columns <- sample.int(ncol(dosage), n.use, replace = TRUE)
+    pca <- stats::prcomp(
+      dosage[, columns, drop = FALSE], center = TRUE, scale. = FALSE, rank. = 1L
+    )
+    pc1 <- pca$x[, 1L]
+    if (length(unique(signif(pc1, 12L))) < cluster.k) return(NULL)
+    fit <- stats::kmeans(pc1, centers = cluster.k, nstart = 20L)
+    ordered <- match(fit$cluster, order(tapply(pc1, fit$cluster, mean)))
+    reversed <- cluster.k + 1L - ordered
+    if (sum(reversed == reference.cluster) > sum(ordered == reference.cluster)) {
+      ordered <- reversed
+    }
+    tibble::tibble(
+      replicate = replicate,
+      individual_index = seq_along(ordered),
+      stable = ordered == reference.cluster
+    )
+  })
+  if (!nrow(replicate.results)) return(empty)
+  individual <- replicate.results |>
+    dplyr::group_by(.data$individual_index) |>
+    dplyr::summarise(stability = mean(.data$stable), .groups = "drop")
+  values <- rep(NA_real_, nrow(dosage))
+  values[individual$individual_index] <- individual$stability
+  list(
+    individual = values,
+    overall = mean(values, na.rm = TRUE),
+    replicates = replicate.results
+  )
+}
+
+.inversion_metadata_audit <- function(scores, sample.metadata) {
+  empty <- tibble::tibble(
+    variable = character(), type = character(), n_levels = integer(),
+    pc1_association = numeric(), pc1_p_value = numeric(),
+    arrangement_association = numeric(), arrangement_p_value = numeric(),
+    interpretation = character()
+  )
+  if (is.null(sample.metadata) || ncol(sample.metadata) < 2L) return(empty)
+  joined <- dplyr::left_join(
+    scores,
+    sample.metadata,
+    by = c("individual" = "INDIVIDUALS")
+  )
+  variables <- setdiff(names(sample.metadata), "INDIVIDUALS")
+  purrr::map_dfr(variables, function(variable) {
+    x <- joined[[variable]]
+    keep <- !is.na(x) & nzchar(as.character(x)) & is.finite(joined$PC1)
+    if (sum(keep) < 3L) return(NULL)
+    numeric.x <- if (is.numeric(x)) as.numeric(x[keep]) else rep(NA_real_, sum(keep))
+    is.numeric.variable <- is.numeric(x) &&
+      length(unique(numeric.x[is.finite(numeric.x)])) > 2L
+    if (is.numeric.variable) {
+      fit <- stats::lm(joined$PC1[keep] ~ numeric.x)
+      arrangement.fit <- stats::anova(
+        stats::lm(numeric.x ~ joined$arrangement[keep])
+      )
+      tibble::tibble(
+        variable = variable,
+        type = "numeric",
+        n_levels = length(unique(numeric.x)),
+        pc1_association = summary(fit)$r.squared,
+        pc1_p_value = stats::coef(summary(fit))[2L, 4L],
+        arrangement_association = arrangement.fit$`Sum Sq`[1L] /
+          sum(arrangement.fit$`Sum Sq`),
+        arrangement_p_value = arrangement.fit$`Pr(>F)`[1L],
+        interpretation = paste(
+          "PC1 R-squared; eta-squared for numeric metadata among arrangements"
+        )
+      )
+    } else {
+      group <- factor(x[keep])
+      if (nlevels(group) < 2L) return(NULL)
+      fit <- stats::anova(stats::lm(joined$PC1[keep] ~ group))
+      eta2 <- fit$`Sum Sq`[1L] / sum(fit$`Sum Sq`)
+      contingency <- table(group, joined$arrangement[keep])
+      chi <- suppressWarnings(stats::chisq.test(contingency))
+      cramers.v <- sqrt(
+        unname(chi$statistic) /
+          (sum(contingency) * max(1L, min(dim(contingency)) - 1L))
+      )
+      tibble::tibble(
+        variable = variable,
+        type = "categorical",
+        n_levels = nlevels(group),
+        pc1_association = eta2,
+        pc1_p_value = fit$`Pr(>F)`[1L],
+        arrangement_association = cramers.v,
+        arrangement_p_value = chi$p.value,
+        interpretation = paste(
+          "PC1 eta-squared; Cramer's V for metadata by arrangement"
+        )
+      )
+    }
+  })
+}
+
+.inversion_arrangement_differentiation <- function(observed, cluster, labels) {
+  pairs <- utils::combn(sort(unique(cluster)), 2L, simplify = FALSE)
+  purrr::map_dfr(pairs, function(pair) {
+    x1 <- observed[cluster == pair[1L], , drop = FALSE]
+    x2 <- observed[cluster == pair[2L], , drop = FALSE]
+    n1 <- 2 * colSums(!is.na(x1))
+    n2 <- 2 * colSums(!is.na(x2))
+    p1 <- colMeans(x1, na.rm = TRUE) / 2
+    p2 <- colMeans(x2, na.rm = TRUE) / 2
+    valid <- n1 > 1 & n2 > 1 & is.finite(p1) & is.finite(p2)
+    numerator <- (p1 - p2)^2 - p1 * (1 - p1) / (n1 - 1) -
+      p2 * (1 - p2) / (n2 - 1)
+    denominator <- p1 * (1 - p2) + p2 * (1 - p1)
+    hudson.fst <- if (any(valid & denominator > 0)) {
+      sum(numerator[valid & denominator > 0]) /
+        sum(denominator[valid & denominator > 0])
+    } else {
+      NA_real_
+    }
+    tibble::tibble(
+      arrangement_1 = labels[pair[1L]],
+      arrangement_2 = labels[pair[2L]],
+      n_1 = nrow(x1),
+      n_2 = nrow(x2),
+      n_snps = sum(valid),
+      mean_absolute_allele_frequency_difference = mean(abs(p1[valid] - p2[valid])),
+      hudson_fst = hudson.fst,
+      dxy = NA_real_,
+      dxy_note = paste(
+        "Not calculated: inferred arrangement genotypes are not treated as",
+        "independently sampled populations."
+      )
+    )
+  })
+}
+
 # =============================================================================
 # Linkage-disequilibrium and sensitivity helpers
 # =============================================================================
 
 .inversion_ld_matrix <- function(dosage) {
-  if (nrow(dosage) < 3L || ncol(dosage) < 2L) {
-    return(matrix(NA_real_, nrow = ncol(dosage), ncol = ncol(dosage)))
-  }
-  suppressWarnings(
-    stats::cor(dosage, use = "pairwise.complete.obs")^2
+  n.markers <- ncol(dosage)
+  empty <- matrix(NA_real_, nrow = n.markers, ncol = n.markers)
+  if (nrow(dosage) < 3L || n.markers < 2L) return(empty)
+  marker.sd <- apply(dosage, 2L, stats::sd, na.rm = TRUE)
+  variable <- is.finite(marker.sd) & marker.sd > sqrt(.Machine$double.eps)
+  if (sum(variable) < 2L) return(empty)
+  empty[variable, variable] <- suppressWarnings(
+    stats::cor(
+      dosage[, variable, drop = FALSE],
+      use = "pairwise.complete.obs"
+    )^2
   )
+  empty
 }
 
 .inversion_ld_summary <- function(ld) {
@@ -1431,7 +2756,9 @@ detect_inversions <- function(
 
 .inversion_write_outputs <- function(
     path.folder, window.table, candidate.regions, diagnostics,
+    candidate.summaries,
     arrangement.genotypes, homokaryotype.all.candidates, sensitivity,
+    chromosome.pca, chromosome.lengths,
     threshold, save.plots, plot.formats, verbose
 ) {
   files <- character()
@@ -1444,12 +2771,31 @@ detect_inversions <- function(
   write_table(window.table, "inversion_windows.tsv")
   write_table(candidate.regions, "candidate_inversion_regions.tsv")
   write_table(arrangement.genotypes, "inversion_arrangement_genotypes.tsv")
+  write_table(chromosome.lengths, "chromosome_length_context.tsv")
   write_table(
     homokaryotype.all.candidates,
     "homokaryotypes_all_candidates_whitelist.tsv"
   )
   if (nrow(sensitivity) > 0L) {
     write_table(sensitivity, "window_size_sensitivity.tsv")
+  }
+  if (nrow(chromosome.pca$scores) > 0L) {
+    chromosome.scores <- chromosome.pca$scores
+    chromosome.scores$chromosome <- as.character(chromosome.scores$chromosome)
+    chromosome.summary <- chromosome.pca$summary
+    chromosome.summary$chromosome <- as.character(
+      chromosome.summary$chromosome
+    )
+    write_table(chromosome.scores, "chromosome_pca_scores.tsv")
+    write_table(chromosome.summary, "chromosome_pca_summary.tsv")
+  }
+  if (length(candidate.summaries)) {
+    summary.path <- file.path(path.folder, "candidate_inversion_summary.txt")
+    writeLines(
+      paste(unname(candidate.summaries), collapse = "\n\n"),
+      con = summary.path
+    )
+    files <- c(files, summary.path)
   }
   purrr::walk(diagnostics, function(diagnostic) {
     prefix <- diagnostic$candidate_id
@@ -1465,11 +2811,38 @@ detect_inversions <- function(
       diagnostic$ld_summary,
       paste0(prefix, "_ld_summary.tsv")
     )
+    write_table(
+      diagnostic$cluster_models,
+      paste0(prefix, "_cluster_number_models.tsv")
+    )
+    write_table(
+      diagnostic$metadata_audit,
+      paste0(prefix, "_sample_metadata_audit.tsv")
+    )
+    write_table(
+      diagnostic$pc1_loadings,
+      paste0(prefix, "_regional_PC1_marker_loadings.tsv")
+    )
+    write_table(
+      diagnostic$arrangement_differentiation,
+      paste0(prefix, "_arrangement_differentiation.tsv")
+    )
+    write_table(
+      diagnostic$technical_summary,
+      paste0(prefix, "_coverage_missingness_allele_balance.tsv")
+    )
+    if (nrow(diagnostic$assignment_stability_replicates)) {
+      write_table(
+        diagnostic$assignment_stability_replicates,
+        paste0(prefix, "_assignment_stability_replicates.tsv")
+      )
+    }
     arrangement.table <- diagnostic$scores |>
       dplyr::select(dplyr::all_of(c(
-        "individual", "arrangement", "arrangement_dosage",
+        "individual", "cluster", "arrangement", "arrangement_dosage",
         "arrangement_confidence", "distance_nearest", "distance_second",
-        "heterozygosity"
+        "heterozygosity", "call_rate", "mean_depth",
+        "mean_heterozygote_allele_balance", "assignment_stability"
       )))
     write_table(
       arrangement.table,
@@ -1495,6 +2868,17 @@ detect_inversions <- function(
 
   plots <- list()
   if (save.plots) {
+    sequence.layout <- .inversion_sequence_layout(window.table$chromosome)
+    window.table$chromosome <- factor(
+      window.table$chromosome,
+      levels = sequence.layout$levels
+    )
+    if (verbose) {
+      message(
+        "Genomic layout: ", sequence.layout$n, " ", sequence.layout$type,
+        "; figures use natural sequence order."
+      )
+    }
     midpoint <- (window.table$start + window.table$end) / 2
     plot.data <- transform(window.table, midpoint_mb = midpoint / 1e6)
     plots$window_scores <- ggplot2::ggplot(
@@ -1567,7 +2951,8 @@ detect_inversions <- function(
       sensitivity.plot <- transform(
         sensitivity,
         midpoint_mb = (start + end) / 2e6,
-        window_snps = factor(window_snps)
+        window_snps = factor(window_snps),
+        chromosome = factor(chromosome, levels = sequence.layout$levels)
       )
       plots$window_sensitivity <- ggplot2::ggplot(
         sensitivity.plot,
@@ -1589,6 +2974,11 @@ detect_inversions <- function(
     # without rereading any output file.
     candidate.plots <- purrr::map(diagnostics, function(d) {
       out <- list()
+      group.title <- if (isTRUE(d$three_cluster_evidence)) {
+        "Putative arrangement genotype"
+      } else {
+        "Algorithmic group"
+      }
       out[[paste0(d$candidate_id, "_pca")]] <- ggplot2::ggplot(
         d$scores,
         ggplot2::aes(x = PC1, y = PC2, colour = arrangement)
@@ -1600,9 +2990,58 @@ detect_inversions <- function(
             format(d$start, big.mark = ","), "-",
             format(d$end, big.mark = ",")
           ),
-          colour = "Putative arrangement genotype"
+          colour = group.title
         ) +
         ggplot2::theme_bw()
+
+      if (nrow(chromosome.pca$scores) > 0L) {
+        chromosome.scores <- chromosome.pca$scores |>
+          dplyr::left_join(
+            d$scores |>
+              dplyr::select(.data$individual, .data$arrangement),
+            by = "individual"
+          )
+        chromosome.scores$arrangement <- as.character(
+          chromosome.scores$arrangement
+        )
+        chromosome.scores$arrangement[
+          is.na(chromosome.scores$arrangement)
+        ] <- "Unassigned"
+        chromosome.levels <- levels(chromosome.pca$scores$chromosome)
+        chromosome.scores$chromosome <- factor(
+          chromosome.scores$chromosome,
+          levels = chromosome.levels
+        )
+        out[[paste0(d$candidate_id, "_chromosome_pca")]] <-
+          ggplot2::ggplot(
+            chromosome.scores,
+            ggplot2::aes(
+              x = .data$PC1, y = .data$PC2,
+              colour = .data$arrangement
+            )
+          ) +
+          ggplot2::geom_point(size = 0.9, alpha = 0.6) +
+          ggplot2::facet_wrap(~ chromosome, scales = "free") +
+          ggplot2::labs(
+            title = paste0(
+              d$candidate_id,
+              " arrangement groups across chromosomes / linkage groups"
+            ),
+            subtitle = paste0(
+              "Colours are inferred only from the candidate interval on ",
+              d$chromosome,
+              "; each panel is an independent chromosome-wide PCA"
+            ),
+            x = "Chromosome-specific PC1",
+            y = "Chromosome-specific PC2",
+            colour = group.title
+          ) +
+          ggplot2::theme_bw() +
+          ggplot2::theme(
+            legend.position = "bottom",
+            panel.grid.minor = ggplot2::element_blank()
+          )
+      }
 
       out[[paste0(d$candidate_id, "_heterozygosity")]] <-
         ggplot2::ggplot(
@@ -1613,12 +3052,43 @@ detect_inversions <- function(
         ) +
         ggplot2::geom_boxplot(outlier.shape = NA) +
         ggplot2::geom_jitter(width = 0.12, alpha = 0.45, size = 1) +
-        ggplot2::labs(
-          x = "Putative arrangement genotype",
+          ggplot2::labs(
+          x = group.title,
           y = "Observed heterozygosity"
         ) +
         ggplot2::theme_bw() +
         ggplot2::theme(legend.position = "none")
+
+      out[[paste0(d$candidate_id, "_marker_loadings")]] <-
+        ggplot2::ggplot(
+          d$pc1_loadings,
+          ggplot2::aes(x = .data$position / 1e6, y = .data$PC1_loading)
+        ) +
+        ggplot2::geom_hline(yintercept = 0, colour = "grey70") +
+        ggplot2::geom_point(size = 1.4, alpha = 0.75) +
+        ggplot2::labs(
+          title = paste0(d$candidate_id, " regional PC1 marker loadings"),
+          x = "Genomic position (Mb)", y = "PC1 loading"
+        ) +
+        ggplot2::theme_bw()
+
+      if (any(is.finite(d$scores$mean_depth))) {
+        out[[paste0(d$candidate_id, "_coverage_call_rate")]] <-
+          ggplot2::ggplot(
+            d$scores,
+            ggplot2::aes(
+              x = .data$mean_depth, y = .data$call_rate,
+              colour = .data$arrangement
+            )
+          ) +
+          ggplot2::geom_point(alpha = 0.65, size = 1.5) +
+          ggplot2::labs(
+            title = paste0(d$candidate_id, " technical diagnostic"),
+            x = "Mean read depth", y = "Regional call rate",
+            colour = group.title
+          ) +
+          ggplot2::theme_bw()
+      }
 
       if (length(d$ld_position) > 1L) {
         ld.all <- d$ld_matrices$all
@@ -1627,28 +3097,48 @@ detect_inversions <- function(
           row = seq_along(d$ld_position),
           column = seq_along(d$ld_position)
         )
-        use.all <- grid$row <= grid$column
+        # With row mapped to the upward y-axis, row >= column is the visually
+        # upper triangle. Keep the displayed triangle consistent with the
+        # subtitle and use the lower triangle for the common homokaryotype.
+        use.all <- grid$row >= grid$column
         grid$r2 <- ifelse(
           use.all,
           ld.all[cbind(grid$row, grid$column)],
           ld.common[cbind(grid$row, grid$column)]
         )
-        grid$position1 <- d$ld_position[grid$row] / 1e6
-        grid$position2 <- d$ld_position[grid$column] / 1e6
         grid$group <- ifelse(use.all, "All individuals", "Common homokaryotype")
+        axis.breaks <- unique(round(seq(
+          1L, length(d$ld_position), length.out = min(6L, length(d$ld_position))
+        )))
+        axis.labels <- format(
+          d$ld_position[axis.breaks] / 1e6,
+          digits = 4L,
+          trim = TRUE
+        )
         out[[paste0(d$candidate_id, "_ld")]] <- ggplot2::ggplot(
           grid,
-          ggplot2::aes(x = position1, y = position2, fill = r2)
+          ggplot2::aes(x = column, y = row, fill = r2)
         ) +
           ggplot2::geom_raster() +
           ggplot2::coord_equal() +
+          ggplot2::scale_x_continuous(
+            breaks = axis.breaks,
+            labels = axis.labels,
+            expand = c(0, 0)
+          ) +
+          ggplot2::scale_y_continuous(
+            breaks = axis.breaks,
+            labels = axis.labels,
+            expand = c(0, 0)
+          ) +
           ggplot2::scale_fill_viridis_c(limits = c(0, 1), na.value = "grey90") +
           ggplot2::labs(
             x = "Genomic position (Mb)", y = "Genomic position (Mb)",
             fill = expression(r^2),
             subtitle = paste0(
               "Upper triangle: all individuals; lower triangle: cluster ",
-              d$common_homokaryotype_cluster
+              d$common_homokaryotype_cluster,
+              ". White cells: undefined r2, often a fixed marker"
             )
           ) +
           ggplot2::theme_bw()
@@ -1660,18 +3150,51 @@ detect_inversions <- function(
     purrr::walk(names(plots), function(name) {
       purrr::walk(plot.formats, function(format) {
         path <- file.path(path.folder, paste0(name, ".", format))
-        ggplot2::ggsave(
-          filename = path,
-          plot = plots[[name]],
-          width = if (grepl("_pca$|_heterozygosity$", name)) 6 else 10,
-          height = if (grepl("_pca$|_heterozygosity$", name)) 5 else 7,
-          dpi = 300
+        saved <- tryCatch(
+          {
+            ggplot2::ggsave(
+              filename = path,
+              plot = plots[[name]],
+              width = if (grepl("_chromosome_pca$", name)) {
+                13
+              } else if (grepl("_pca$|_heterozygosity$", name)) {
+                6
+              } else {
+                10
+              },
+              height = if (grepl("_chromosome_pca$", name)) {
+                10
+              } else if (grepl("_pca$|_heterozygosity$", name)) {
+                5
+              } else {
+                7
+              },
+              dpi = 300
+            )
+            TRUE
+          },
+          error = function(error) {
+            warning(
+              "Could not write plot `", basename(path), "`: ",
+              conditionMessage(error),
+              call. = FALSE
+            )
+            FALSE
+          }
         )
-        files <<- c(files, path)
+        if (saved) files <<- c(files, path)
       })
     })
   }
-  if (verbose) message("Inversion results written to: ", path.folder)
+  if (verbose && length(candidate.summaries)) {
+    message(
+      "\nCandidate interpretation\n",
+      paste(unname(candidate.summaries), collapse = "\n\n")
+    )
+  }
+  if (verbose) {
+    message("\nInversion results written to: ", basename(path.folder))
+  }
   list(files = normalizePath(files, mustWork = FALSE), plots = plots)
 }
 
@@ -1684,7 +3207,14 @@ print.detect_inversions <- function(x, ...) {
   cat("Candidate inversion-associated region scan\n")
   cat("  Windows analysed:", sum(x$windows$valid), "of", nrow(x$windows), "\n")
   cat("  Candidate regions:", nrow(x$candidates), "\n")
-  cat("  Results folder:", x$path.folder, "\n")
-  if (nrow(x$candidates) > 0L) print(x$candidates)
+  cat("  Results folder:", basename(x$path.folder), "\n")
+  if (length(x$candidate.summaries)) {
+    cat(
+      "\n",
+      paste(unname(x$candidate.summaries), collapse = "\n\n"),
+      "\n",
+      sep = ""
+    )
+  }
   invisible(x)
 }

@@ -12,6 +12,37 @@
 #' **Filter target:** Markers.
 #'
 #' \strong{Statistics}: The number of SNPs per locus.
+#'
+#' For reference-based VCFs, this statistic is the number of VCF records sharing
+#' the same stored \code{LOCUS}. If the VCF does not preserve a RAD/read locus
+#' identifier, each record has a unique \code{LOCUS}; the function then reports
+#' one SNP per locus and leaves the data unchanged. The nucleotide length of a
+#' FreeBayes REF allele is not interpreted as a SNP count because complex
+#' substitutions and indels can span several bases without representing several
+#' independently stored SNP records.
+#'
+#' @section STACKS loci and FreeBayes haplotypes:
+#' STACKS reconstructs RAD loci and preserves a locus identifier shared by the
+#' SNPs observed on the same read or locus. In that setting, asking whether a
+#' roughly 70-100-bp sequence contains an unusually large number of SNPs is
+#' meaningful: dense polymorphism can be consistent with paralogy, poor locus
+#' assembly, misalignment, or unexpectedly high local diversity.
+#'
+#' FreeBayes is haplotype-aware in a different sense. During variant calling it
+#' evaluates nearby alleles jointly and may emit a SNP, multi-nucleotide
+#' polymorphism, indel, or complex allele as one VCF record. This does not imply
+#' that the record represents one reconstructed RAD locus, and the number of
+#' bases in its REF or ALT allele is not the number of SNPs on a read. Unless an
+#' upstream shared RAD/read locus identifier was retained, genomic coordinates
+#' cannot unambiguously recover the original read boundaries. Consequently,
+#' \code{filter_snp_number()} does not infer them and skips filtering when every
+#' VCF record has a unique \code{LOCUS}.
+#'
+#' For reference-based FreeBayes data without retained locus identifiers, use
+#' genotype quality, allele balance, depth and coverage, excess
+#' heterozygosity, mapping diagnostics, local variant density, and genomic LD
+#' as complementary diagnostics. Local variant-density windows must be
+#' interpreted as genomic windows, not automatically as individual RAD reads.
 
 
 # Most arguments are inherited from tidy_genome
@@ -83,6 +114,9 @@ filter_snp_number <- function(
   verbose = TRUE,
   ...
 ) {
+
+  # Force piped input before printing this function's startup banner.
+  force(data)
 
   # interactive.filter <- TRUE
   # data <- gds
@@ -338,6 +372,18 @@ filter_snp_number <- function(
       limitsize = FALSE)
     helper.table <- markers.plot <- NULL
     if (verbose) message("Files written: helper tables and plots")
+
+    if (all(wl$SNP_PER_LOCUS == 1L)) {
+      if (verbose) {
+        message(
+          "\nSNP-number filtering skipped: every active LOCUS contains one ",
+          "SNP record.\n",
+          "For a reference-based VCF, short-range RAD/read grouping requires ",
+          "a shared locus identifier preserved during variant calling or import.\n"
+        )
+      }
+      return(data)
+    }
 
     # Step 2. Thresholds selection ---------------------------------------------
     if (interactive.filter) {

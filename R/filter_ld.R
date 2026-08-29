@@ -48,6 +48,13 @@
 #' }
 #' Default: \code{filter.short.ld = "mac"}.
 #'
+#' Short-distance pruning requires multiple VCF records to share the same
+#' \code{LOCUS}. Reference-based VCFs often contain genomic coordinates but no
+#' RAD/read locus identifier; in that situation each variant is its own locus,
+#' short-distance pruning is skipped, and long-distance LD pruning can still be
+#' performed. A REF allele spanning several bases is not by itself evidence that
+#' several SNP records belong to one RAD locus.
+#'
 #' @param filter.long.ld (optional, double) The threshold to prune SNP based on
 #' Long Distance Linkage Disequilibrium. The argument filter.long.ld is
 #' the absolute value of measurement.
@@ -176,6 +183,9 @@ filter_ld <- function(
   verbose = TRUE,
   ...
 ) {
+
+  # Force piped input before printing this function's startup banner.
+  force(data)
 
 
   # testing
@@ -339,7 +349,7 @@ filter_ld <- function(
         x = ., file = file.path(path.folder, "short.ld.locus.stats.tsv"),
         append = FALSE, col_names = TRUE)
 
-    if (nrow(locus.stats) > 1) {
+    if (any(locus.stats$SNP_N > 1L)) {
       range.number.snp.locus <- range(locus.stats$SNP_N, na.rm = TRUE)
       if (verbose) message("    The range in the number of SNP/locus is: ", stringi::stri_join(range.number.snp.locus, collapse = "-"))
 
@@ -630,7 +640,14 @@ filter_ld <- function(
         )
       }
     } else {
-      if (verbose) message("\nThere is no variation in the number of SNP/locus across the data\n")
+      if (verbose) {
+        message(
+          "\nShort-distance LD pruning skipped: every active LOCUS contains ",
+          "one SNP record.\n",
+          "This is expected for reference-based VCFs that do not preserve a ",
+          "shared RAD/read locus identifier. Long-distance LD pruning remains available.\n"
+        )
+      }
     }
 
     # Note to myself:

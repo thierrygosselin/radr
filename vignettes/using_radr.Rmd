@@ -42,8 +42,30 @@ genometranslator::summary_gds(genome)
 
 Keep the original genomic source file untouched. A GDS is stateful: filtering
 changes the active samples or markers and records those changes in the same
-backing file. Assigning the result to another R object does not create an
-independent copy of that GDS.
+backing file. An open GDS object is a connection to that file, not an in-memory
+copy of all its contents. Consequently, assigning the connection to another R
+name does not create an independent dataset:
+
+```{r gds-alias, eval=FALSE}
+genome_copy <- genome
+```
+
+Here, `genome` and `genome_copy` refer to the same physical GDS. Filtering
+through either name updates the marker or individual `FILTERS` metadata and the
+active selection seen through both names. Similarly, assigning the output of a
+filter to a new object does not protect the input GDS from modification.
+
+Before continuing an analysis, inspect both the active dimensions and the
+filters recorded in the metadata:
+
+```{r inspect-gds-filters, eval=FALSE}
+genometranslator::summary_gds(genome, check.sync = TRUE)
+genometranslator::list_filters(genome)
+```
+
+This is particularly important after an interrupted interactive analysis,
+after reopening a previously used GDS, or before assuming that an object is an
+unfiltered starting point.
 
 Each filtering stage creates a dated results folder. Depending on the function,
 it contains the function-call arguments, diagnostic figures and tables,
@@ -106,6 +128,116 @@ and in which order they should run.
 After learning the dataset, call individual functions with recorded thresholds.
 The filtering order should express a hypothesis about how the data became
 problematic. The two examples below deliberately use opposite orders.
+
+### Chain filters with a pipe
+
+Most radr filters take `data` as their first argument, update the active GDS,
+and return its connection. They can therefore be chained directly with the
+native R pipe:
+
+```{r pipe-filters, eval=FALSE}
+filtered <- genome |>
+  radr::filter_genotyping() |>
+  radr::filter_ma()
+```
+
+The result returned by `filter_genotyping()` becomes the first argument of
+`filter_ma()`. No placeholder is required. This works in interactive mode too:
+the first filter completes its questions and updates the GDS before the second
+filter begins.
+
+For a reproducible scripted analysis, provide the thresholds explicitly:
+
+```{r pipe-scripted, eval=FALSE}
+filtered <- genome |>
+  radr::filter_genotyping(
+    interactive.filter = FALSE,
+    filter.genotyping = 0.20
+  ) |>
+  radr::filter_ma(
+    interactive.filter = FALSE,
+    filter.ma = 2
+  )
+```
+
+If an explicit placeholder is useful, the native `|>` pipe uses `_`, not `.`:
+
+```{r pipe-placeholder, eval=FALSE}
+filtered <- radr::filter_genotyping(data = genome) |>
+  radr::filter_ma(data = _)
+```
+
+The `.` placeholder belongs to the magrittr pipe `%>%`:
+
+```{r magrittr-placeholder, eval=FALSE}
+filtered <- radr::filter_genotyping(data = genome) %>%
+  radr::filter_ma(data = .)
+```
+
+Prefer the first form when `data` is the first argument. Remember that piping
+does not create a new physical GDS: each filter updates the same backing file,
+then passes its connection to the next function. In the example above,
+`filtered` and `genome` remain connections to that same modified file; the new
+object name is not a snapshot of the result.
+
+To compare alternative thresholds or filter orders, create separate physical
+GDS files from an unfiltered master *before* running either workflow. Close its
+open connection before copying the file:
+
+```{r independent-gds-workflows, eval=FALSE}
+# Create and preserve this master before applying any radr filter.
+master_path <- "genome_unfiltered.gds"
+
+SeqArray::seqClose(genome)
+
+stopifnot(file.copy(master_path, "genome_workflow_A.gds"))
+stopifnot(file.copy(master_path, "genome_workflow_B.gds"))
+
+genome_A <- genometranslator::read_genome("genome_workflow_A.gds")
+genome_B <- genometranslator::read_genome("genome_workflow_B.gds")
+
+genometranslator::list_filters(genome_A)
+genometranslator::list_filters(genome_B)
+```
+
+Copying a GDS after filters have already been applied also copies their recorded
+state. If no clean master exists, recreate one from the original VCF, DArT, or
+other source file. `genometranslator::reset_filters()` can deliberately
+reactivate selected or all markers and individuals, but it modifies the same
+GDS and is not a substitute for independent files when comparing workflows.
+
+### What "SNPs per locus" means for STACKS and FreeBayes
+
+The interpretation of `filter_snp_number()` depends on whether the input
+preserves a genuine RAD/read locus identifier. STACKS reconstructs RAD loci and
+associates multiple SNPs with the same locus. With that representation, asking
+whether a roughly 70-100-bp sequence contains three or more SNPs can be informative.
+An unusually dense locus may reflect paralogy, poor locus assembly,
+misalignment, unexpectedly high local diversity, or unsuitable assembly
+parameters. The appropriate threshold still depends on read length, organism,
+sequencing design, and expected diversity.
+
+FreeBayes uses the word *haplotype* differently. It is haplotype-aware while
+evaluating nearby alleles and can emit a SNP, multi-nucleotide polymorphism,
+indel, or complex allele as a single VCF record. A FreeBayes record is therefore
+not automatically a reconstructed RAD locus. In particular, the length of its
+REF or ALT allele is not the number of SNPs observed on one read.
+
+For a reference-based VCF, `filter_snp_number()` counts VCF records that share
+the stored `LOCUS`. If the upstream workflow did not retain a common RAD/read
+locus identifier, each VCF record has a unique locus. The original read
+boundaries cannot be recovered unambiguously from genomic coordinates alone,
+so radr reports one SNP per locus and skips this filter. Short-distance pruning
+in `filter_ld()` is skipped for the same reason, while genomic long-distance LD
+pruning remains available.
+
+For FreeBayes data without retained RAD/read grouping, place greater emphasis
+on genotype quality, allele balance, depth and coverage, excess
+heterozygosity, mapping diagnostics, and genomic LD. Variant density can also
+be summarized in windows such as 70, 100, or 150 bp, but such windows are
+genomic diagnostics: they should not be described automatically as reads or
+RAD loci. If SNP-per-read filtering is required, preserve a shared locus or
+fragment identifier upstream and carry it into the GDS metadata.
 
 ### Marker noise is the dominant problem
 

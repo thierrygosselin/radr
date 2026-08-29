@@ -139,6 +139,9 @@ detect_mixed_genomes <- function(
   ...
 ) {
 
+  # Force piped input before printing this function's startup banner.
+  force(data)
+
   ## Test
   # interactive.filter = TRUE
   # detect.mixed.genomes = TRUE
@@ -427,7 +430,7 @@ detect_mixed_genomes <- function(
       ggplot2::aes(x = STRATA, y = HET_PROP, size = as.numeric(MISSING_PROP), colour = STRATA)) +
       ggplot2::geom_jitter(alpha = 0.6) +
       ggplot2::scale_y_continuous(name = "Mean Observed Heterozygosity (proportion)",
-                                  breaks = y.breaks, labels = y.breaks, limits = c(y.breaks.min, y.breaks.max)) + #y.breaks
+                                  breaks = y.breaks, labels = y.breaks) + #y.breaks
       ggplot2::scale_color_discrete(guide = "none") +
       ggplot2::scale_size_continuous(name = "Missing proportion") +
       ggplot2::labs(
@@ -466,7 +469,8 @@ detect_mixed_genomes <- function(
         linewidth = 0.6
       ) + #high
       ggplot2::facet_grid(MISSING_GROUP ~ factor(STRATA), switch = "x", scales = "free",
-                          labeller = ggplot2::labeller(MISSING_GROUP = facet_names))
+                          labeller = ggplot2::labeller(MISSING_GROUP = facet_names)) +
+      ggplot2::coord_cartesian(ylim = c(y.breaks.min, y.breaks.max))
     # het.manhattan
 
     # n.pop <- 20

@@ -66,7 +66,8 @@
 #'   \item \code{genotyping.helper.table.tsv}:
 #'   number of markers kept/removed for thresholds from 0 to 1 by 0.1;
 #'   \item if strata are present, \code{markers.pop.missing.helper.table.tsv}
-#'   summarises missingness per population;
+#'   summarises missingness per population using the samples and variants
+#'   currently active in the GDS;
 #'   \item a PDF/PNG helper plot summarising these patterns.
 #' }
 #'
@@ -131,6 +132,9 @@ filter_genotyping <- function(
     verbose            = TRUE,
     ...
 ) {
+
+  # Force piped input before printing this function's startup banner.
+  force(data)
 
   # Early exit: nothing to do ---------------------------------------------------
   if (is.null(filter.genotyping) && !interactive.filter) {
@@ -249,6 +253,17 @@ filter_genotyping <- function(
 
   stats <- info$m.stats
   info  <- info$m.info
+
+  # generate_stats() retains the complete marker metadata so existing filter
+  # annotations are not lost. Missingness, however, is calculated only for the
+  # variants active in the GDS. Restrict helper tables and thresholding to that
+  # same active set.
+  active.variant.id <- SeqArray::seqGetData(
+    gdsfile = data,
+    var.name = "variant.id"
+  )
+  info <- info %>%
+    dplyr::filter(.data$VARIANT_ID %in% active.variant.id)
 
   # Helper table ----------------------------------------------------------------
   if (verbose) message("Generating missingness/genotyping helper table...")

@@ -130,6 +130,9 @@ filter_individuals <- function(
   ...
 ) {
 
+  # Force piped input before printing this function's startup banner.
+  force(data)
+
   ##TESTS
   # path.folder <- NULL
   # parameters <- NULL

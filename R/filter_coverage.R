@@ -89,6 +89,9 @@ filter_coverage <- function(
     verbose = TRUE,
     ...
 ) {
+  # Force piped input before printing this function's startup banner.
+  force(data)
+
   # interactive.filter = TRUE
   # data = gds
   # filter.coverage = NULL

@@ -91,7 +91,8 @@ to assist in choosing a threshold:
 \item \code{genotyping.helper.table.tsv}:
 number of markers kept/removed for thresholds from 0 to 1 by 0.1;
 \item if strata are present, \code{markers.pop.missing.helper.table.tsv}
-summarises missingness per population;
+summarises missingness per population using the samples and variants
+currently active in the GDS;
 \item a PDF/PNG helper plot summarising these patterns.
 }
 
