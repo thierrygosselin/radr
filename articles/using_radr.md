@@ -56,7 +56,7 @@ the filters recorded in the metadata:
 ``` r
 
 genometranslator::summary_gds(genome, check.sync = TRUE)
-genometranslator::list_filters(genome)
+genometranslator::list_filters(genome, history = TRUE)
 ```
 
 This is particularly important after an interrupted interactive
@@ -65,11 +65,12 @@ an object is an unfiltered starting point.
 
 Each filtering stage creates a dated results folder. Depending on the
 function, it contains the function-call arguments, diagnostic figures
-and tables, blacklists, and summaries. The dated
-`filters_parameters_*.tsv` file records the filters and parameter values
-together with before-and-after dimensions and blacklist information.
-Keep these folders with the original source file and sample metadata so
-that filtering decisions can be reviewed and reproduced.
+and tables, blacklists, and summaries. Filtering history is stored
+inside the GDS and each dated `filters_parameters_*.tsv` is a cumulative
+snapshot through that stage. It records operation order, parameter
+values, before-and-after dimensions, and blacklist information. This
+works identically for piped and sequential calls: the shared backing
+GDS, rather than the R expression, connects the history.
 
 ## Inspect missingness before choosing what to remove
 
@@ -437,12 +438,61 @@ GDS metadata, use:
 ``` r
 
 genometranslator::list_filters(genome)
+
+# Include the chronological history and export a cumulative snapshot
+filters <- genometranslator::list_filters(
+  genome,
+  history = TRUE,
+  filename = "filters_parameters_complete.tsv"
+)
 ```
 
-This current-state summary complements the chronological parameter log.
-Keep both: the active-filter list answers *what is applied now*, whereas
-the dated folders and parameter file document *what was done, in which
-order, and with which thresholds*.
+The active-filter list answers *what is applied now*. `filters$history`
+answers *what was done, in which order, and with which thresholds*,
+including an operation that removed no markers or a filter that was
+later reset.
+
+Older GDS files do not yet contain this embedded history. Their existing
+parameter files can be imported once, in chronological order, using
+either the files themselves or their result folders:
+
+``` r
+
+genometranslator::import_filter_history(
+  genome,
+  paths = c(
+    "06_filter_genotyping",
+    "07_filter_ma"
+  )
+)
+```
+
+### Identifier-level filtering audit
+
+For GDS workflows, every radr operation using the common filtering
+mechanism also writes a complete identifier-level audit in its results
+folder. This is not limited to functions named `filter_*`:
+state-changing branches of
+[`detect_duplicate_genomes()`](https://thierrygosselin.github.io/radr/reference/detect_duplicate_genomes.md)
+and
+[`detect_mixed_genomes()`](https://thierrygosselin.github.io/radr/reference/detect_mixed_genomes.md)
+are audited in the same way.
+
+The `filter_audit_manifest.tsv` file gives, for each operation, the
+number of active markers and individuals before filtering, newly
+removed, and kept. It points to four corresponding tables:
+
+- `audit_*_markers_removed.tsv` and `audit_*_markers_kept.tsv`;
+- `audit_*_individuals_removed.tsv` and `audit_*_individuals_kept.tsv`.
+
+Empty removal tables are intentional: they prove that a completed
+operation did not newly remove that entity type. The compact
+chronological history stays inside the GDS, while these potentially
+large tables remain in the operation folder. Diagnostic functions that
+only *suggest* a blacklist without changing the GDS are not recorded as
+applied filters. Likewise, VCF-to-VCF utilities audit their external
+output files rather than the GDS, and genotype-masking functions alter
+calls rather than the marker or individual filter state.
 
 ## Detection does not necessarily mean filtering
 

@@ -31,8 +31,7 @@ explore_genomes(
 
   A GDS filepath or an open `SeqVarGDSClass` object. Other genomic
   formats must first be imported with an appropriate `genometranslator`
-  reader, such as
-  [`genometranslator::read_vcf()`](https://thierrygosselin.github.io/genometranslator/reference/read_vcf.html),
+  reader, such as `genometranslator::read_vcf()`,
   [`genometranslator::read_dart()`](https://thierrygosselin.github.io/genometranslator/reference/read_dart.html),
   or
   [`genometranslator::read_plink()`](https://thierrygosselin.github.io/genometranslator/reference/read_plink.html).
