@@ -61,7 +61,8 @@ sexy_markers(
   tidy data or GDS data (individuals.meta section). You can easily build
   the strata file by starting with the output of these functions:
   [`extract_dart_target_id`](https://thierrygosselin.github.io/genometranslator/reference/extract_dart_target_id.html)
-  and `extract_individuals_vcf`
+  and
+  [`extract_individuals_vcf`](https://thierrygosselin.github.io/genometranslator/reference/extract_individuals_vcf.html)
 
 - boost.analysis:
 
