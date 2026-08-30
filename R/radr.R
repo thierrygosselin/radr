@@ -178,14 +178,174 @@ radr_question <- function(x, answer.opt = NULL, minmax = NULL) {
 #'
 #' A package-facing wrapper around
 #' [genometranslator::genome_parameters()] that maintains the common genomic
-#' operation history during radr filtering.
+#' operation history during radr filtering. For GDS input, every completed
+#' operation also writes an identifier-level audit beside the usual parameter
+#' file: complete marker and individual tables for records newly removed and
+#' records still active, plus `filter_audit_manifest.tsv`. Consequently this
+#' audit also covers state-changing functions whose names do not start with
+#' `filter_`, including [detect_duplicate_genomes()] and
+#' [detect_mixed_genomes()].
 #'
 #' @param ... Arguments passed to [genometranslator::genome_parameters()].
 #' @rdname filter_parameters
 #' @export
 #' @keywords internal
 filter_parameters <- function(...) {
-  genometranslator::genome_parameters(...)
+  args <- list(...)
+  parameter.obj <- args$parameter.obj
+  before <- if (!is.null(parameter.obj)) parameter.obj$.radr_filter_audit else NULL
+
+  res <- do.call(genometranslator::genome_parameters, args)
+  if (is.null(res)) return(NULL)
+
+  data <- args$data
+  is.gds <- inherits(data, "SeqVarGDSClass")
+  if (is.gds && isTRUE(args$update) && !is.null(before)) {
+    after <- .capture_filter_audit(data)
+    .write_filter_audit(
+      before = before,
+      after = after,
+      path.folder = args$path.folder,
+      filter.name = args$filter.name,
+      param.name = args$param.name,
+      values = args$values,
+      verbose = isTRUE(args$verbose)
+    )
+    res$.radr_filter_audit <- after
+  } else if (is.gds && (isTRUE(args$generate) || isTRUE(args$initiate))) {
+    res$.radr_filter_audit <- .capture_filter_audit(data)
+  } else if (!is.null(before)) {
+    res$.radr_filter_audit <- before
+  }
+  res
+}
+
+# Capture both the complete metadata and the currently active identifiers. This
+# is deliberately kept in the transient parameter object rather than the GDS:
+# the persistent GDS history stores compact operation summaries, while the
+# potentially large identifier-level audit is written beside each operation.
+.capture_filter_audit <- function(data) {
+  markers <- genometranslator::extract_markers_metadata(
+    gds = data,
+    whitelist = FALSE
+  )
+  individuals <- genometranslator::extract_individuals_metadata(
+    gds = data,
+    whitelist = FALSE
+  )
+  marker.fallback <- if ("MARKERS" %in% names(markers)) {
+    as.character(markers$MARKERS)
+  } else {
+    key.fields <- intersect(c("CHROM", "LOCUS", "POS"), names(markers))
+    if (!length(key.fields)) as.character(seq_len(nrow(markers))) else
+      do.call(paste, c(markers[key.fields], sep = ":"))
+  }
+  marker.key <- if (
+    "VARIANT_ID" %in% names(markers) &&
+      any(!is.na(markers$VARIANT_ID) & nzchar(as.character(markers$VARIANT_ID)))
+  ) {
+    variant.id <- as.character(markers$VARIANT_ID)
+    valid <- !is.na(variant.id) & nzchar(variant.id)
+    ifelse(valid, paste0("VARIANT_ID:", variant.id), paste0("MARKER:", marker.fallback))
+  } else {
+    paste0("MARKER:", marker.fallback)
+  }
+  active.markers <- if ("FILTERS" %in% names(markers)) {
+    marker.key[is.na(markers$FILTERS) | markers$FILTERS == "whitelist"]
+  } else marker.key
+  active.individuals <- if ("FILTERS" %in% names(individuals)) {
+    as.character(individuals$INDIVIDUALS[
+      is.na(individuals$FILTERS) | individuals$FILTERS == "whitelist"
+    ])
+  } else as.character(individuals$INDIVIDUALS)
+
+  list(
+    markers = markers,
+    marker.key = marker.key,
+    active.markers = unique(active.markers),
+    individuals = individuals,
+    active.individuals = unique(active.individuals)
+  )
+}
+
+.filter_audit_slug <- function(x) {
+  x <- tolower(if (is.null(x) || !length(x) || is.na(x[[1L]])) "operation" else x[[1L]])
+  x <- gsub("[^a-z0-9]+", "_", x)
+  gsub("^_+|_+$", "", x)
+}
+
+.write_filter_audit <- function(
+    before,
+    after,
+    path.folder = NULL,
+    filter.name = NULL,
+    param.name = NULL,
+    values = NULL,
+    verbose = TRUE
+) {
+  if (is.null(path.folder)) path.folder <- getwd()
+  dir.create(path.folder, recursive = TRUE, showWarnings = FALSE)
+  manifest.path <- file.path(path.folder, "filter_audit_manifest.tsv")
+  audit.index <- if (file.exists(manifest.path)) {
+    nrow(readr::read_tsv(manifest.path, show_col_types = FALSE, progress = FALSE)) + 1L
+  } else 1L
+  stem <- sprintf("audit_%02d_%s", audit.index, .filter_audit_slug(filter.name))
+
+  marker.removed <- setdiff(before$active.markers, after$active.markers)
+  individual.removed <- setdiff(before$active.individuals, after$active.individuals)
+  marker.kept.rows <- after$markers[after$marker.key %in% after$active.markers, , drop = FALSE]
+  marker.removed.rows <- before$markers[before$marker.key %in% marker.removed, , drop = FALSE]
+  individual.kept.rows <- after$individuals[
+    as.character(after$individuals$INDIVIDUALS) %in% after$active.individuals,
+    , drop = FALSE
+  ]
+  individual.removed.rows <- before$individuals[
+    as.character(before$individuals$INDIVIDUALS) %in% individual.removed,
+    , drop = FALSE
+  ]
+
+  files <- c(
+    markers.kept = paste0(stem, "_markers_kept.tsv"),
+    markers.removed = paste0(stem, "_markers_removed.tsv"),
+    individuals.kept = paste0(stem, "_individuals_kept.tsv"),
+    individuals.removed = paste0(stem, "_individuals_removed.tsv")
+  )
+  readr::write_tsv(marker.kept.rows, file.path(path.folder, files[["markers.kept"]]))
+  readr::write_tsv(marker.removed.rows, file.path(path.folder, files[["markers.removed"]]))
+  readr::write_tsv(individual.kept.rows, file.path(path.folder, files[["individuals.kept"]]))
+  readr::write_tsv(individual.removed.rows, file.path(path.folder, files[["individuals.removed"]]))
+
+  manifest <- tibble::tibble(
+    AUDIT_INDEX = audit.index,
+    FILTER = if (is.null(filter.name)) "" else as.character(filter.name),
+    PARAMETER = if (is.null(param.name)) "" else as.character(param.name),
+    VALUE = if (is.null(values)) "" else paste(values, collapse = " / "),
+    MARKERS_BEFORE = length(before$active.markers),
+    MARKERS_REMOVED = length(marker.removed),
+    MARKERS_KEPT = length(after$active.markers),
+    INDIVIDUALS_BEFORE = length(before$active.individuals),
+    INDIVIDUALS_REMOVED = length(individual.removed),
+    INDIVIDUALS_KEPT = length(after$active.individuals),
+    MARKERS_KEPT_FILE = files[["markers.kept"]],
+    MARKERS_REMOVED_FILE = files[["markers.removed"]],
+    INDIVIDUALS_KEPT_FILE = files[["individuals.kept"]],
+    INDIVIDUALS_REMOVED_FILE = files[["individuals.removed"]]
+  )
+  readr::write_tsv(
+    manifest,
+    manifest.path,
+    append = file.exists(manifest.path),
+    col_names = !file.exists(manifest.path)
+  )
+  if (verbose) {
+    message(
+      "Filter audit written: ", length(marker.removed), " marker(s) and ",
+      length(individual.removed), " individual(s) newly removed; ",
+      length(after$active.markers), " marker(s) and ",
+      length(after$active.individuals), " individual(s) kept."
+    )
+  }
+  invisible(manifest)
 }
 
 # radr_results_message ------------------------------------------------------------

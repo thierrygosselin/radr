@@ -874,6 +874,26 @@ detect_inversions <- function(
       assignment_stability = .data$assignment_stability
     )
   })
+  if (!nrow(arrangement.genotypes)) {
+    arrangement.genotypes <- tibble::tibble(
+      candidate_id = character(),
+      chromosome = character(),
+      start = numeric(),
+      end = numeric(),
+      individual = character(),
+      cluster = integer(),
+      arrangement = character(),
+      arrangement_dosage = integer(),
+      arrangement_confidence = numeric(),
+      distance_nearest = numeric(),
+      distance_second = numeric(),
+      heterozygosity = numeric(),
+      call_rate = numeric(),
+      mean_depth = numeric(),
+      mean_heterozygote_allele_balance = numeric(),
+      assignment_stability = numeric()
+    )
+  }
   homokaryotype.whitelist <- arrangement.genotypes |>
     dplyr::filter(.data$arrangement_dosage %in% c(0L, 2L)) |>
     dplyr::distinct(.data$candidate_id, .data$individual, .data$arrangement)
@@ -1323,7 +1343,7 @@ detect_inversions <- function(
   }
   unknown <- setdiff(strata$INDIVIDUALS, sample.id)
   if (length(unknown)) {
-    rlang::warn(paste0(
+    rlang::inform(paste0(
       length(unknown), " metadata sample(s) were absent from the active GDS and ignored."
     ))
   }
@@ -1945,7 +1965,8 @@ detect_inversions <- function(
     gds, marker.table, sample.id, max.snps, min.call.rate,
     parallel.core, verbose
 ) {
-  chromosome.levels <- .inversion_sequence_layout(marker.table$chromosome)$levels
+  sequence.layout <- .inversion_sequence_layout(marker.table$chromosome)
+  chromosome.levels <- sequence.layout$levels
   marker.groups <- split(
     marker.table,
     factor(marker.table$chromosome, levels = chromosome.levels),
@@ -2038,7 +2059,10 @@ detect_inversions <- function(
     scores <- dplyr::bind_rows(results)
   }
   if (!nrow(scores)) {
-    return(list(scores = tibble::tibble(), summary = tibble::tibble()))
+    return(list(
+      scores = tibble::tibble(), summary = tibble::tibble(),
+      sequence_layout = sequence.layout
+    ))
   }
   scores$chromosome <- factor(scores$chromosome, levels = chromosome.levels)
   summary <- scores |>
@@ -2047,7 +2071,10 @@ detect_inversions <- function(
       .data$n_input_snps, .data$n_used_snps
     ) |>
     dplyr::arrange(.data$chromosome)
-  list(scores = scores, summary = summary)
+  list(
+    scores = scores, summary = summary,
+    sequence_layout = sequence.layout
+  )
 }
 
 .inversion_local_covariance <- function(
@@ -2874,10 +2901,26 @@ detect_inversions <- function(
       levels = sequence.layout$levels
     )
     if (verbose) {
-      message(
-        "Genomic layout: ", sequence.layout$n, " ", sequence.layout$type,
-        "; figures use natural sequence order."
-      )
+      full.layout <- chromosome.pca$sequence_layout
+      if (!is.null(full.layout) && full.layout$n != sequence.layout$n) {
+        omitted <- setdiff(full.layout$levels, sequence.layout$levels)
+        omitted.text <- if (length(omitted) <= 10L) {
+          paste0("; labels: ", paste(omitted, collapse = ", "))
+        } else {
+          ""
+        }
+        message(
+          "Genomic layout: ", full.layout$n,
+          " sequences are present in the active data; ", sequence.layout$n,
+          " formed scan windows and ", length(omitted),
+          " did not", omitted.text, ". Figures use natural sequence order."
+        )
+      } else {
+        message(
+          "Genomic layout: ", sequence.layout$n, " ", sequence.layout$type,
+          "; figures use natural sequence order."
+        )
+      }
     }
     midpoint <- (window.table$start + window.table$end) / 2
     plot.data <- transform(window.table, midpoint_mb = midpoint / 1e6)

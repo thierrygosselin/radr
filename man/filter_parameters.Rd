@@ -12,6 +12,12 @@ filter_parameters(...)
 \description{
 A package-facing wrapper around
 \code{\link[genometranslator:genome_parameters]{genometranslator::genome_parameters()}} that maintains the common genomic
-operation history during radr filtering.
+operation history during radr filtering. For GDS input, every completed
+operation also writes an identifier-level audit beside the usual parameter
+file: complete marker and individual tables for records newly removed and
+records still active, plus \code{filter_audit_manifest.tsv}. Consequently this
+audit also covers state-changing functions whose names do not start with
+\code{filter_}, including \code{\link[=detect_duplicate_genomes]{detect_duplicate_genomes()}} and
+\code{\link[=detect_mixed_genomes]{detect_mixed_genomes()}}.
 }
 \keyword{internal}
