@@ -2928,6 +2928,10 @@ detect_inversions <- function(
       plot.data,
       is.finite(.data$midpoint_mb), is.finite(.data$robust_score)
     )
+    score.line.data <- score.plot.data %>%
+      dplyr::group_by(.data$chromosome) %>%
+      dplyr::filter(dplyr::n() >= 2L) %>%
+      dplyr::ungroup()
     plots$window_scores <- ggplot2::ggplot(
       score.plot.data,
       ggplot2::aes(
@@ -2935,7 +2939,11 @@ detect_inversions <- function(
       )
     ) +
       ggplot2::geom_hline(yintercept = threshold, linetype = 2L) +
-      ggplot2::geom_line(ggplot2::aes(group = chromosome), colour = "grey70") +
+      ggplot2::geom_line(
+        data = score.line.data,
+        ggplot2::aes(group = chromosome),
+        colour = "grey70"
+      ) +
       ggplot2::geom_point(size = 1.7) +
       ggplot2::facet_wrap(~ chromosome, scales = "free_x") +
       ggplot2::scale_colour_manual(values = c("FALSE" = "grey35", "TRUE" = "#B2182B")) +
@@ -2970,11 +2978,15 @@ detect_inversions <- function(
       plot.data,
       is.finite(.data$midpoint_mb), is.finite(.data$mean_ld_r2)
     )
+    ld.line.data <- ld.plot.data %>%
+      dplyr::group_by(.data$chromosome) %>%
+      dplyr::filter(dplyr::n() >= 2L) %>%
+      dplyr::ungroup()
     plots$window_ld <- ggplot2::ggplot(
       ld.plot.data,
       ggplot2::aes(x = midpoint_mb, y = mean_ld_r2)
     ) +
-      ggplot2::geom_line(colour = "grey50") +
+      ggplot2::geom_line(data = ld.line.data, colour = "grey50") +
       ggplot2::geom_point(
         ggplot2::aes(colour = candidate_window), size = 1.5
       ) +
@@ -2990,11 +3002,15 @@ detect_inversions <- function(
       plot.data,
       is.finite(.data$midpoint_mb), is.finite(.data$mean_call_rate)
     )
+    call.rate.line.data <- call.rate.plot.data %>%
+      dplyr::group_by(.data$chromosome) %>%
+      dplyr::filter(dplyr::n() >= 2L) %>%
+      dplyr::ungroup()
     plots$window_call_rate <- ggplot2::ggplot(
       call.rate.plot.data,
       ggplot2::aes(x = midpoint_mb, y = mean_call_rate)
     ) +
-      ggplot2::geom_line(colour = "grey50") +
+      ggplot2::geom_line(data = call.rate.line.data, colour = "grey50") +
       ggplot2::geom_point(
         ggplot2::aes(colour = candidate_window), size = 1.5
       ) +
@@ -3013,6 +3029,10 @@ detect_inversions <- function(
         window_snps = factor(window_snps),
         chromosome = factor(chromosome, levels = sequence.layout$levels)
       )
+      sensitivity.line.plot <- sensitivity.plot %>%
+        dplyr::group_by(.data$chromosome, .data$window_snps) %>%
+        dplyr::filter(dplyr::n() >= 2L) %>%
+        dplyr::ungroup()
       plots$window_sensitivity <- ggplot2::ggplot(
         sensitivity.plot,
         ggplot2::aes(
@@ -3020,7 +3040,8 @@ detect_inversions <- function(
           group = window_snps
         )
       ) +
-        ggplot2::geom_line() +
+        ggplot2::geom_line(data = sensitivity.line.plot) +
+        ggplot2::geom_point(size = 1.5) +
         ggplot2::facet_wrap(~ chromosome, scales = "free_x") +
         ggplot2::labs(
           x = "Genomic position (Mb)", y = "PC1 variance proportion",
