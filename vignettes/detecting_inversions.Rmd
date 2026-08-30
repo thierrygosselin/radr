@@ -123,6 +123,56 @@ is an inversion. Selection, centromeres, low-recombination regions, recent
 admixture, family structure, paralogs, assembly errors, marker-density changes,
 and technical batches can generate partially similar patterns.
 
+## Types of chromosomal inversion and how to distinguish them
+
+The classical distinction depends on the relationship between the inverted
+segment and the centromere, not on the size of the candidate or the number of
+genotype clusters.
+
+| Inversion type | Structural definition | Classical meiotic consequence in a heterokaryotype | Evidence needed for classification |
+|---|---|---|---|
+| **Paracentric** | Both breakpoints occur on the same chromosome arm, so the centromere is outside the inverted segment. | A crossover within the inversion loop can produce dicentric and acentric recombinant chromatids. Their reduced recovery contributes to apparent recombination suppression. | Two validated breakpoints on the same annotated chromosome arm. |
+| **Pericentric** | The breakpoints occur on opposite chromosome arms, so the inverted segment includes the centromere. | A crossover within the inversion loop can produce recombinant chromatids carrying duplications and deletions. Reduced recovery can suppress observed recombination. | Validated breakpoints on opposite sides of a reliably annotated centromere. |
+
+These are descriptions of simple inversions. Real chromosomes can instead
+contain nested, overlapping, adjacent, or serial inversions, and an inversion
+may be accompanied by duplications, deletions, translocations, repetitive
+sequence, or assembly differences. A broad population-genomic signal can
+therefore represent one simple inversion, several linked rearrangements, or a
+larger structurally complex haploblock.
+
+### What evidence separates the types?
+
+Classification normally requires all of the following:
+
+1. **A chromosome-level reference framework.** The candidate must be placed on
+   an assembled chromosome with credible chromosome-arm and centromere
+   annotation. The largest observed SNP position is not sufficient.
+2. **Breakpoint evidence.** Split reads, discordant read pairs, long reads,
+   breakpoint-spanning assemblies, optical maps, or breakpoint PCR should
+   identify the two orientation changes. Repetitive breakpoint regions may
+   require long continuous reads or assembly comparison.
+3. **Centromere context.** The validated breakpoints must then be compared with
+   centromere coordinates. Breakpoints on one arm support a paracentric
+   classification; breakpoints on opposite arms support a pericentric one.
+4. **Independent consistency checks.** Linkage maps, pedigrees, cytogenetics,
+   synteny with another assembly, and patterns of dosage or read depth can test
+   the proposed structure and expose more complex alternatives.
+
+Centromere annotations are uncertain in many non-model fish assemblies. Merely
+overlapping a putative centromeric region, showing suppressed recombination, or
+changing chromosome-arm proportions is supportive context rather than decisive
+classification. The reference assembly and coordinate version should always be
+reported.
+
+Local PCA, three arrangement-like clusters, heterozygosity, LD, and windowed
+population differentiation can identify an inversion-associated haploblock,
+but they do not reveal chromosome orientation and cannot by themselves
+distinguish a paracentric inversion from a pericentric inversion. Until both
+breakpoints and the centromere relationship are established, report the result
+as a candidate region or putative inversion rather than assigning an inversion
+type.
+
 ## Evidence expected from SNP data
 
 A convincing candidate normally combines several lines of evidence:
