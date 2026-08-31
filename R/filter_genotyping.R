@@ -233,7 +233,7 @@ filter_genotyping <- function(
   }
 
   # Generate missingness stats --------------------------------------------------
-  info <- generate_stats(
+  info <- genometranslator::generate_stats(
     gds             = data,
     individuals     = FALSE,
     missing         = TRUE,
@@ -290,7 +290,7 @@ filter_genotyping <- function(
   )
 
   # Strata-specific helper table -----------------------------------------------
-  strata.meta <- extract_individuals_metadata(
+  strata.meta <- genometranslator::extract_individuals_metadata(
     gds               = data,
     ind.field.select  = c("INDIVIDUALS", "STRATA"),
     whitelist         = TRUE
@@ -299,7 +299,7 @@ filter_genotyping <- function(
   has.strata <- !is.null(strata.meta$STRATA)
 
   if (has.strata) {
-    m.strata <- missing_per_pop(
+    m.strata <- genometranslator::missing_per_pop(
       gds           = data,
       strata        = strata.meta,
       parallel.core = parallel.core

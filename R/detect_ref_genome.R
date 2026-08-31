@@ -98,7 +98,7 @@ detect_ref_genome <- function(data = NULL, verbose = TRUE) {
   if (identical(data.type, "vcf.file")) {
     ref.genome <- FALSE
 
-    detect.source   <- check_header_source_vcf(vcf = data)
+    detect.source   <- genometranslator::check_header_source_vcf(vcf = data)
     ref.genome.info <- detect.source$check.header$reference
     contig.info     <- detect.source$check.header$contig
     n.contig.info   <- if (is.null(contig.info)) 0L else nrow(contig.info)
@@ -426,7 +426,7 @@ extract_ref_genome <- function(data = NULL, verbose = FALSE) {
   # VCF ------------------------------------------------------------------------
   if (identical(data.type, "vcf.file")) {
 
-    detect.header <- check_header_source_vcf(vcf = data)
+    detect.header <- genometranslator::check_header_source_vcf(vcf = data)
     ref.path <- detect.header$check.header$reference
 
     if (!is.null(ref.path) && length(ref.path) >= 1L) {
@@ -489,5 +489,4 @@ extract_ref_genome <- function(data = NULL, verbose = FALSE) {
   if (verbose) message("No reference genome filename detected in GDS.")
   return(NULL)
 }#END extract_ref_genome
-
 

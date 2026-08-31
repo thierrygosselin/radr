@@ -174,7 +174,7 @@ detect_paralogs <- function(
 
   # check for coverage info...
   coverage <- allele.coverage <- TRUE # default
-  got.coverage <- check_coverage(
+  got.coverage <- genometranslator::check_coverage(
     gds = data,
     stacks.haplo.check = TRUE,
     genotypes.metadata.check = TRUE,
@@ -285,7 +285,7 @@ detect_paralogs <- function(
     if (length(have) > 0) {
       want <- c("DP", "AD")
       parse.format.list <- purrr::keep(.x = have, .p = have %in% want)
-      meta <- parse_gds_metadata(x = parse.format.list, gds = data, strip.rad = TRUE, verbose = FALSE)
+      meta <- genometranslator::parse_gds_metadata(x = parse.format.list, gds = data, strip.rad = TRUE, verbose = FALSE)
       depth.info %<>% dplyr::left_join(meta, by = intersect(colnames(depth.info), colnames(meta)))
       meta <- NULL
     } else {

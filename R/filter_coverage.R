@@ -182,7 +182,7 @@ filter_coverage <- function(
     verbose = verbose)
 
   # Verify that coverage information is present in the data...
-  depth.info <- check_coverage(gds = data, genotypes.metadata.check = TRUE, stacks.haplo.check = TRUE, dart.check = TRUE)
+  depth.info <- genometranslator::check_coverage(gds = data, genotypes.metadata.check = TRUE, stacks.haplo.check = TRUE, dart.check = TRUE)
   if (is.null(depth.info)) {
     message("\n\nCoverate information is not available for this dataset, returning GDS...")
     return(data)
@@ -193,7 +193,7 @@ filter_coverage <- function(
   if (interactive.filter) message("\nStep 1. Coverage visualization and helper table\n")
 
   # Generate coverage stats-----------------------------------------------------
-  info <- generate_stats(
+  info <- genometranslator::generate_stats(
     gds = data,
     individuals = FALSE,
     markers = TRUE,

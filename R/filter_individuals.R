@@ -250,7 +250,7 @@ filter_individuals <- function(
     variant.select <- subsample <- NULL
     subsample.markers.stats <- 1
 
-    id.stats <- generate_stats(
+    id.stats <- genometranslator::generate_stats(
       gds = data,
       individuals = TRUE,
       markers = FALSE,
@@ -267,7 +267,7 @@ filter_individuals <- function(
     # for now it prints and write in the folder
     # nothing more to do
     message("\nGenerating suggestions for identifying bad samples: experimental...")
-    experimental.qc <- id_qc_helper(
+    experimental.qc <- genometranslator::id_qc_helper(
       x = id.stats$i.info,
       x.sum = id.stats$i.stats,
       path.folder = path.folder
@@ -327,7 +327,7 @@ The maximum amount of missingness you tolerate for a sample (e.g. 0.3): ", minma
         dplyr::mutate(FILTER = "filter.individuals.missing")
       n.bl <- nrow(bl)
 
-      individuals <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+      individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
         dplyr::mutate(
           FILTERS = dplyr::if_else(
             INDIVIDUALS %in% bl$INDIVIDUALS,
@@ -443,7 +443,7 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
         dplyr::mutate(FILTER = "filter.individuals.heterozygosity")
       n.bl <- nrow(bl)
 
-      individuals <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+      individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
         dplyr::mutate(
           FILTERS = dplyr::if_else(
             INDIVIDUALS %in% bl$INDIVIDUALS,
@@ -633,7 +633,7 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::mutate(FILTER = "filter.individuals.coverage.total")
         n.bl <- nrow(bl)
 
-        individuals <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(
               INDIVIDUALS %in% bl$INDIVIDUALS,
@@ -719,7 +719,7 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::mutate(FILTER = "filter.individuals.coverage.median")
         n.bl <- nrow(bl)
 
-        individuals <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(
               INDIVIDUALS %in% bl$INDIVIDUALS,
@@ -805,7 +805,7 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::mutate(FILTER = "filter.individuals.coverage.iqr")
         n.bl <- nrow(bl)
 
-        individuals <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(
               INDIVIDUALS %in% bl$INDIVIDUALS,

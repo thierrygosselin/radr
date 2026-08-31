@@ -866,7 +866,7 @@ filter_ld <- function(
         ld.m <- ld.method
       }
 
-      id <- extract_individuals_metadata(
+      id <- genometranslator::extract_individuals_metadata(
         gds = data,
         ind.field.select = "INDIVIDUALS",
         whitelist = TRUE) %$%
@@ -1010,7 +1010,7 @@ ld_boxplot <- function(
   }
   n.snp.sub <- length(variant.sub)
 
-  id <- extract_individuals_metadata(
+  id <- genometranslator::extract_individuals_metadata(
     gds = gds,
     ind.field.select = "INDIVIDUALS",
     whitelist = TRUE

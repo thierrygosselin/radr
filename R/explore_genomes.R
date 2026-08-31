@@ -250,7 +250,7 @@ explore_genomes <- function(
     gds <- data
   }
 
-  source <- extract_data_source(gds) # to know if dart data or not...
+  source <- genometranslator::extract_data_source(gds) # to know if dart data or not...
 
   # Filter reproducibility -----------------------------------------------------
   if ("dart" %in% source) {
@@ -463,12 +463,12 @@ explore_genomes <- function(
     gds = gds,
     whitelist = TRUE)
 
-  strata <- extract_individuals_metadata(
+  strata <- genometranslator::extract_individuals_metadata(
     gds = gds,
     # ind.field.select = c("INDIVIDUALS", "STRATA"),
     whitelist = TRUE)
 
-  sync_gds(
+  genometranslator::sync_gds(
     gds = gds,
     samples = strata$INDIVIDUALS,
     variant.id = markers.meta$VARIANT_ID
@@ -510,7 +510,7 @@ explore_genomes <- function(
 
 
   # writing the blacklist of id
-  blacklist.id <- extract_individuals_metadata(gds = gds, blacklist = TRUE)
+  blacklist.id <- genometranslator::extract_individuals_metadata(gds = gds, blacklist = TRUE)
   if (nrow(blacklist.id) > 0) {
     tgbase::write_tgbase_tsv(
       data = blacklist.id,
@@ -538,7 +538,7 @@ explore_genomes <- function(
   if (verbose) message("\nGenerating statistics after filtering")
 
   # Individuals and markers stats
-  invisible(generate_stats(
+  invisible(genometranslator::generate_stats(
     gds = gds,
     individuals = TRUE,
     markers = TRUE,
@@ -579,7 +579,7 @@ explore_genomes <- function(
     )
     if (is.null(res$output)) res$output <- "written"
   }
-  summary_gds(gds = gds, verbose = TRUE)
+  genometranslator::summary_gds(gds = gds, verbose = TRUE)
   res$gds <- gds
   return(res)
 } # End explore_genomes

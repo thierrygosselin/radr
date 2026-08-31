@@ -156,7 +156,7 @@ filter_common_markers <- function(
       # Filtering common markers -----------------------------------------------
       if (verbose) message("Scanning for common markers...")
       n.markers.before <- filters.parameters$info$n.snp
-      strata <- extract_individuals_metadata(
+      strata <- genometranslator::extract_individuals_metadata(
         gds = data,
         ind.field.select = c("STRATA", "INDIVIDUALS"),
         whitelist = TRUE)
@@ -388,7 +388,7 @@ not_common_markers <- function(
   # PLAN A using seqarray
   # Get the sample from radr node or gds -----------------------------------
   # Note to myself : you could get the info below from the strata
-  sample.bk <- extract_individuals_metadata(
+  sample.bk <- genometranslator::extract_individuals_metadata(
     gds = x,
     ind.field.select = "INDIVIDUALS",
     whitelist = TRUE
@@ -491,7 +491,7 @@ plot_upset <- function(
   # Build plot data -------------------------------------------------------------
   if (data.type == "SeqVarGDSClass") {
 
-    strata <- extract_individuals_metadata(
+    strata <- genometranslator::extract_individuals_metadata(
       gds = x,
       ind.field.select = c("STRATA", "INDIVIDUALS"),
       whitelist = TRUE

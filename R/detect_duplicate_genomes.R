@@ -428,7 +428,7 @@ detect_duplicate_genomes <- function(
 
       # geno.stats
 
-      geno.stats <- generate_stats(
+      geno.stats <- genometranslator::generate_stats(
         gds = data, # change to data...
         markers = FALSE,
         missing = TRUE,
@@ -965,7 +965,7 @@ detect_duplicate_genomes <- function(
         if (data.type == "tbl_df") {
           data  %<>% dplyr::filter(!INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS)
         } else {
-          id.info <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+          id.info <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
             dplyr::mutate(
               FILTERS = dplyr::if_else(
                 INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS,
@@ -1064,7 +1064,7 @@ distance_individuals <- function(
         nbproc = parallel.core)) %>%
       tgbase::distance2tibble(.)# melt the dist matrice into a data frame
   } else {
-    sample.id <- extract_individuals_metadata(
+    sample.id <- genometranslator::extract_individuals_metadata(
       gds = x,
       ind.field.select = "INDIVIDUALS",
       whitelist = TRUE) %$%

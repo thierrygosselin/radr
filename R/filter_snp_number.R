@@ -233,7 +233,7 @@ filter_snp_number <- function(
     # Generate snp per locus stats----------------------------------------------
     if (verbose) message("Generating statistics")
     if (data.type == "SeqVarGDSClass") {
-      wl <- generate_stats(
+      wl <- genometranslator::generate_stats(
         gds = data,
         individuals = FALSE,
         snp.per.locus = TRUE,

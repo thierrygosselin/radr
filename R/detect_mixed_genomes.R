@@ -328,7 +328,7 @@ detect_mixed_genomes <- function(
       # GDS....
       missing.group <- "1"
 
-      id.stats <- generate_stats(
+      id.stats <- genometranslator::generate_stats(
         gds = data,
         markers = FALSE,
         missing = TRUE,
@@ -622,7 +622,7 @@ to notice what we never expected to see.
 
       if (data.type == "SeqVarGDSClass") {
 
-        id.info <- extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+        id.info <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(
               INDIVIDUALS %in% blacklist.ind.het$INDIVIDUALS,

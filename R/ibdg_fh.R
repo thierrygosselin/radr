@@ -170,7 +170,7 @@ ibdg_fh <- function(
       data.type <- "SeqVarGDSClass"
     }
 
-    tidy.data <- extract_genotypes_metadata(
+    tidy.data <- genometranslator::extract_genotypes_metadata(
       gds = data,
       genotypes.meta.select = c("MARKERS", "COL", "INDIVIDUALS", "POP_ID", "ALT_DOSAGE"))
 

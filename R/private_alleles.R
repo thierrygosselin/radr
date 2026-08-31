@@ -58,13 +58,13 @@ private_alleles <- function(data, strata = NULL, verbose = TRUE) {
     if (is.null(strata)) {
       if (rlang::has_name(data, "POP_ID") || rlang::has_name(data, "STRATA")) {
         if (rlang::has_name(data, "POP_ID")) data %<>% dplyr::rename(STRATA = POP_ID)
-        strata <- generate_strata(data = data)
+        strata <- genometranslator::generate_strata(data = data)
       } else {
         rlang::abort("strata required and if not provided a STRATA or POP_ID column in the data...")
       }
     } else {
-      strata <- read_strata(strata = strata) %$% strata
-      data %<>% join_strata(data = ., strata = strata)
+      strata <- genometranslator::read_strata(strata = strata) %$% strata
+      data %<>% genometranslator::join_strata(data = ., strata = strata)
     }
 
     if (rlang::has_name(data, "GT_VCF_NUC")) {
@@ -107,12 +107,12 @@ private_alleles <- function(data, strata = NULL, verbose = TRUE) {
       data <- genometranslator::read_genome(data, verbose = verbose)
       data.type <- "SeqVarGDSClass"
     }
-    strata <- extract_individuals_metadata(
+    strata <- genometranslator::extract_individuals_metadata(
       gds = data,
       ind.field.select = c("INDIVIDUALS", "STRATA"),
       whitelist = TRUE
     )
-    private <- generate_gt_vcf_nuc(data) %>%
+    private <- genometranslator::generate_gt_vcf_nuc(data) %>%
       magrittr::set_rownames(x = ., value = SeqArray::seqGetData(gdsobj = data, "sample.id")) %>%
       magrittr::set_colnames(
         x = .,
@@ -135,7 +135,7 @@ private_alleles <- function(data, strata = NULL, verbose = TRUE) {
       dplyr::select(-ALLELES_GROUP)
 
     private %<>%
-      join_strata(data = ., strata = strata, verbose = FALSE) %>%
+      genometranslator::join_strata(data = ., strata = strata, verbose = FALSE) %>%
       dplyr::distinct(MARKERS, STRATA, ALLELES)
   }
 
