@@ -408,7 +408,7 @@ filter_genotyping <- function(
     dplyr::filter(MISSING_PROP > filter.genotyping) %$%
     VARIANT_ID
 
-  markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE) %>%
+  markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE) %>%
     dplyr::mutate(
       FILTERS = dplyr::if_else(
         VARIANT_ID %in% bl,

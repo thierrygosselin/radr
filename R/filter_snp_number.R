@@ -216,7 +216,7 @@ filter_snp_number <- function(
     # Whitelist and blacklist --------------------------------------------------
     want <- c("MARKERS", "CHROM", "LOCUS", "POS", "COL")
     if (data.type == "SeqVarGDSClass") {
-      wl <- extract_markers_metadata(gds = data, whitelist = TRUE) # not optimal, currently used just to get locus info
+      wl <- genometranslator::extract_markers_metadata(gds = data, whitelist = TRUE) # not optimal, currently used just to get locus info
     } else {
       wl <- bl <- dplyr::select(data, tidyselect::any_of(want))
     }
@@ -442,7 +442,7 @@ filter_snp_number <- function(
 
     if (data.type == "SeqVarGDSClass") {
 
-      markers.meta <- extract_markers_metadata(gds = data) %>%
+      markers.meta <- genometranslator::extract_markers_metadata(gds = data) %>%
         dplyr::mutate(
           FILTERS = dplyr::if_else(
             VARIANT_ID %in% bl$VARIANT_ID, "filter.snp.number", FILTERS

@@ -323,7 +323,7 @@ filter_ld <- function(
       data.type <- "SeqVarGDSClass"
     }
 
-    wl <- bl <- extract_markers_metadata(data, whitelist = TRUE) %>%
+    wl <- bl <- genometranslator::extract_markers_metadata(data, whitelist = TRUE) %>%
       dplyr::arrange(LOCUS, MARKERS)
   }
 
@@ -625,7 +625,7 @@ filter_ld <- function(
       if (data.type == "tbl_df") {
         data <- dplyr::filter(data, MARKERS %in% wl$MARKERS)
       } else {
-        markers.meta <- extract_markers_metadata(gds = data) %>%
+        markers.meta <- genometranslator::extract_markers_metadata(gds = data) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(VARIANT_ID %in% bl$VARIANT_ID, "filter.short.ld", FILTERS
             )
@@ -737,7 +737,7 @@ filter_ld <- function(
       if (verbose) message("To close the connection use SNPRelate::snpgdsClose(filename)")
     } #End tidy data
 
-    wl <- extract_markers_metadata(data, whitelist = TRUE)
+    wl <- genometranslator::extract_markers_metadata(data, whitelist = TRUE)
     n.chrom <- length(unique(wl$CHROM))
 
     if (ref.genome) {
@@ -809,7 +809,7 @@ filter_ld <- function(
       if (data.type == "tbl_df") {
         data <- dplyr::filter(data, MARKERS %in% wl$MARKERS)
       } else {
-        markers.meta <- extract_markers_metadata(gds = data) %>%
+        markers.meta <- genometranslator::extract_markers_metadata(gds = data) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(VARIANT_ID %in% bl$VARIANT_ID, "filter.long.ld", FILTERS
             )
@@ -920,7 +920,7 @@ filter_ld <- function(
       if (data.type == "tbl_df") {
         data <- dplyr::filter(data, MARKERS %in% wl$MARKERS)
       } else {
-        markers.meta <- extract_markers_metadata(gds = data) %>%
+        markers.meta <- genometranslator::extract_markers_metadata(gds = data) %>%
           dplyr::mutate(
             FILTERS = dplyr::if_else(
               VARIANT_ID %in% bl$VARIANT_ID, "filter.long.ld", FILTERS
@@ -986,7 +986,7 @@ ld_boxplot <- function(
 
   if (is.null(path.folder)) path.folder <- getwd()
 
-  variant.id.bk <- extract_markers_metadata(
+  variant.id.bk <- genometranslator::extract_markers_metadata(
     gds = gds,
     markers.meta.select = "VARIANT_ID",
     whitelist = TRUE

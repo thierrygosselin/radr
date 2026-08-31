@@ -830,7 +830,7 @@ filter_hwe <- function(
       if (!is.null(gds.bk)) {
         # convert back or filter the gds....
 
-        markers.meta <- extract_markers_metadata(gds = gds.bk)
+        markers.meta <- genometranslator::extract_markers_metadata(gds = gds.bk)
         bl <- markers.meta %>%
           dplyr::filter(FILTERS == "whitelist") %>%
           dplyr::filter(!MARKERS %in% unique(data$MARKERS))

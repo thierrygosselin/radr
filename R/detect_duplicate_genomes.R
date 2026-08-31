@@ -1075,7 +1075,7 @@ distance_individuals <- function(
       autosome.only = FALSE,
       num.thread = parallel.core,
       remove.monosnp = TRUE,
-      snp.id = extract_markers_metadata(
+      snp.id = genometranslator::extract_markers_metadata(
         gds = x, markers.meta.select = "VARIANT_ID", whitelist = TRUE) %$% VARIANT_ID,
       sample.id = sample.id,
       verbose = FALSE) %$% ibs

@@ -185,7 +185,7 @@ filter_common_markers <- function(
       }
 
       # while SeqArray bug is fixed, PLAN B below uses tidy data
-      markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE)
+      markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE)
       bl <- not_common_markers(
         x = data, strata = strata,
         parallel.core = 1 #parallel.core

@@ -459,7 +459,7 @@ explore_genomes <- function(
 
   # Final Sync GDS -----------------------------------------------------------
   if (verbose) message("\nPreparing output files...")
-  markers.meta <- extract_markers_metadata(
+  markers.meta <- genometranslator::extract_markers_metadata(
     gds = gds,
     whitelist = TRUE)
 
@@ -495,7 +495,7 @@ explore_genomes <- function(
   )
 
   # blacklist
-  bl <- extract_markers_metadata(gds = gds, blacklist = TRUE)
+  bl <- genometranslator::extract_markers_metadata(gds = gds, blacklist = TRUE)
   if (nrow(bl) > 0) {
     tgbase::write_tgbase_tsv(
       data = bl,

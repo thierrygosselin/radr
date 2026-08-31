@@ -185,7 +185,7 @@ filter_monomorphic <- function(
       bl <- count_monomorphic(x = data, parallel.core = parallel.core)
       n.markers.removed <- length(bl)
       want <- c("VARIANT_ID", "MARKERS", "CHROM", "LOCUS", "POS")
-      markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE)
+      markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE)
 
       if (n.markers.removed > 0) {
         n.markers.after <- n.markers.before - n.markers.removed

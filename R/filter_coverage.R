@@ -369,7 +369,7 @@ filter_coverage <- function(
       COVERAGE_MEAN < filter.coverage[1] |
         COVERAGE_MEAN > filter.coverage[2]
     ) %$% VARIANT_ID
-  markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE) %>%
+  markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE) %>%
     dplyr::mutate(
       FILTERS = dplyr::if_else(
         VARIANT_ID %in% bl, "filter.mean.coverage", FILTERS

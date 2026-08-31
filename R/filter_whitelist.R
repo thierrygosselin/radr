@@ -159,7 +159,7 @@ filter_whitelist <- function(
   # GDS
   if (data.type == "SeqVarGDSClass") {
     # extract all the markers
-    markers.meta <- extract_markers_metadata(
+    markers.meta <- genometranslator::extract_markers_metadata(
       gds = data,
       whitelist = FALSE
     )

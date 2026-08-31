@@ -183,7 +183,7 @@ filter_snp_position_read <- function(
     # Whitelist and blacklist --------------------------------------------------
     want <- c("MARKERS", "CHROM", "LOCUS", "POS", "COL")
     if (data.type == "SeqVarGDSClass") {
-      wl <- bl <- extract_markers_metadata(gds = data, whitelist = TRUE)
+      wl <- bl <- genometranslator::extract_markers_metadata(gds = data, whitelist = TRUE)
 
       # check for presence of COL info...
       if (!rlang::has_name(wl, "COL")) {
@@ -390,7 +390,7 @@ filter_snp_position_read <- function(
     if (verbose) message("File written: blacklist.markers.snp.position.read.tsv")
 
     if (data.type == "SeqVarGDSClass") {
-      markers.meta <- extract_markers_metadata(gds = data, whitelist = FALSE) %>%
+      markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE) %>%
         dplyr::mutate(
           FILTERS = dplyr::if_else(
             VARIANT_ID %in% bl$VARIANT_ID, "filter.snp.position.read", FILTERS

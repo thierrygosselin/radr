@@ -164,7 +164,7 @@ filter_dart_reproducibility <- function(
     # Whitelist and blacklist --------------------------------------------------
     want <- c("MARKERS", "CHROM", "LOCUS", "POS", "COL", "REP_AVG")
     if (data.type == "SeqVarGDSClass") {
-      markers.meta <- bl <- extract_markers_metadata(gds = data, whitelist = FALSE)
+      markers.meta <- bl <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE)
     } else {
       markers.meta <- bl <- dplyr::select(data, tidyselect::any_of(want))
     }

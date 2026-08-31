@@ -116,7 +116,7 @@ private_alleles <- function(data, strata = NULL, verbose = TRUE) {
       magrittr::set_rownames(x = ., value = SeqArray::seqGetData(gdsobj = data, "sample.id")) %>%
       magrittr::set_colnames(
         x = .,
-        value = extract_markers_metadata(
+        value = genometranslator::extract_markers_metadata(
           gds = data,
           markers.meta.select = "MARKERS",
           whitelist = TRUE
