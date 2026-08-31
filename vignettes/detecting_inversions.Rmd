@@ -129,6 +129,27 @@ The classical distinction depends on the relationship between the inverted
 segment and the centromere, not on the size of the candidate or the number of
 genotype clusters.
 
+```{r inversion-types, echo=FALSE, results="asis"}
+inversion_types_figure <- knitr::image_uri("figures/inversion-types.png")
+cat(
+  '<img src="', inversion_types_figure,
+  '" alt="Three-panel diagram showing paracentric-compatible, ',
+  'pericentric-compatible, and undetermined candidate inversion ',
+  'classifications relative to the centromere." ',
+  'style="width:100%;height:auto;">',
+  sep = ""
+)
+```
+
+The labels in this schematic deliberately describe **compatibility**, not a
+structurally confirmed inversion type. Classification requires credible
+breakpoints and an independently supported centromere position. A
+threshold-defined candidate core should remain **undetermined** when either is
+uncertain. For a more detailed illustration of inversion-loop pairing and
+meiotic products, see the figure by Bérénice Bougas in Wellenreuther and
+Bernatchez (2018),
+[https://doi.org/10.1016/j.tree.2018.04.002](https://doi.org/10.1016/j.tree.2018.04.002).
+
 | Inversion type | Structural definition | Classical meiotic consequence in a heterokaryotype | Evidence needed for classification |
 |---|---|---|---|
 | **Paracentric** | Both breakpoints occur on the same chromosome arm, so the centromere is outside the inverted segment. | A crossover within the inversion loop can produce dicentric and acentric recombinant chromatids. Their reduced recovery contributes to apparent recombination suppression. | Two validated breakpoints on the same annotated chromosome arm. |
@@ -1089,3 +1110,4 @@ population structure. *Evolution*, 38, 1358-1370.
 
 Wellenreuther M, Bernatchez L (2018) Eco-evolutionary genomics of chromosomal
 inversions. *Trends in Ecology & Evolution*, 33, 427-440.
+[https://doi.org/10.1016/j.tree.2018.04.002](https://doi.org/10.1016/j.tree.2018.04.002)

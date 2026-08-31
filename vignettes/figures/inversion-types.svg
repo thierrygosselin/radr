@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
+  <title id="title">Classifying candidate inversions relative to the centromere</title>
+  <desc id="desc">Three chromosome diagrams show a candidate inversion on one chromosome arm, a candidate spanning the centromere, and a candidate whose type is undetermined because centromere or breakpoint positions are uncertain.</desc>
+  <defs>
+    <style>
+      text { font-family: Helvetica, Arial, sans-serif; }
+      .title { font-size: 30px; font-weight: 600; fill: #202124; }
+      .subtitle { font-size: 17px; font-weight: 400; fill: #5f6368; }
+      .panel-title { font-size: 22px; font-weight: 600; fill: #202124; }
+      .body { font-size: 16px; font-weight: 400; fill: #202124; }
+      .small { font-size: 14px; font-weight: 400; fill: #5f6368; }
+      .label { font-size: 15px; font-weight: 600; fill: #0072B2; }
+      .chromosome { fill: #dceaf4; stroke: #0072B2; stroke-width: 2.5; }
+      .candidate { fill: #f7c66d; stroke: #E69F00; stroke-width: 2.5; }
+      .uncertain { fill: #eeeeee; stroke: #7a7a7a; stroke-width: 2.5; stroke-dasharray: 7 5; }
+      .centromere { fill: #ffffff; stroke: #202124; stroke-width: 2.2; }
+      .breakpoint { stroke: #D55E00; stroke-width: 4; }
+      .panel { fill: #ffffff; stroke: #d8dce0; stroke-width: 1.5; }
+      .callout { fill: #f7f9fb; stroke: #d8dce0; stroke-width: 1.2; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="470" fill="#ffffff"/>
+  <text x="28" y="42" class="title">Candidate inversion type depends on centromere position</text>
+  <text x="28" y="70" class="subtitle">Population-genomic signals identify candidate cores; classification additionally requires structural breakpoints</text>
+  <text x="28" y="93" class="subtitle">and an independently supported centromere position.</text>
+
+  <!-- Paracentric-compatible -->
+  <g transform="translate(28 120)">
+    <rect width="360" height="300" rx="12" class="panel"/>
+    <text x="22" y="38" class="panel-title">Paracentric-compatible</text>
+    <text x="22" y="66" class="small">Both boundaries lie on the same arm</text>
+
+    <rect x="42" y="119" width="276" height="28" rx="14" class="chromosome"/>
+    <rect x="76" y="119" width="112" height="28" class="candidate"/>
+    <ellipse cx="254" cy="133" rx="14" ry="20" class="centromere"/>
+    <line x1="76" y1="111" x2="76" y2="155" class="breakpoint"/>
+    <line x1="188" y1="111" x2="188" y2="155" class="breakpoint"/>
+    <text x="132" y="103" text-anchor="middle" class="label">candidate core</text>
+    <text x="254" y="177" text-anchor="middle" class="small">centromere outside</text>
+
+    <rect x="22" y="207" width="316" height="66" rx="8" class="callout"/>
+    <text x="38" y="232" class="body">Compatible only if both breakpoints</text>
+    <text x="38" y="255" class="body">are validated on this chromosome arm.</text>
+  </g>
+
+  <!-- Pericentric-compatible -->
+  <g transform="translate(420 120)">
+    <rect width="360" height="300" rx="12" class="panel"/>
+    <text x="22" y="38" class="panel-title">Pericentric-compatible</text>
+    <text x="22" y="66" class="small">The candidate spans the centromere</text>
+
+    <rect x="42" y="119" width="276" height="28" rx="14" class="chromosome"/>
+    <rect x="112" y="119" width="154" height="28" class="candidate"/>
+    <ellipse cx="190" cy="133" rx="14" ry="20" class="centromere"/>
+    <line x1="112" y1="111" x2="112" y2="155" class="breakpoint"/>
+    <line x1="266" y1="111" x2="266" y2="155" class="breakpoint"/>
+    <text x="189" y="103" text-anchor="middle" class="label">candidate core</text>
+    <text x="190" y="177" text-anchor="middle" class="small">centromere included</text>
+
+    <rect x="22" y="207" width="316" height="66" rx="8" class="callout"/>
+    <text x="38" y="232" class="body">Compatible only if both breakpoints are</text>
+    <text x="38" y="255" class="body">validated on opposite chromosome arms.</text>
+  </g>
+
+  <!-- Undetermined -->
+  <g transform="translate(812 120)">
+    <rect width="360" height="300" rx="12" class="panel"/>
+    <text x="22" y="38" class="panel-title">Undetermined</text>
+    <text x="22" y="66" class="small">Centromere or boundaries are uncertain</text>
+
+    <rect x="42" y="119" width="276" height="28" rx="14" class="chromosome"/>
+    <rect x="94" y="119" width="144" height="28" class="uncertain"/>
+    <line x1="94" y1="111" x2="94" y2="155" class="breakpoint" opacity="0.45"/>
+    <line x1="238" y1="111" x2="238" y2="155" class="breakpoint" opacity="0.45"/>
+    <text x="166" y="103" text-anchor="middle" class="label">candidate core</text>
+    <text x="278" y="145" text-anchor="middle" style="font-family:Helvetica,Arial,sans-serif;font-size:34px;font-weight:600;fill:#7a7a7a;">?</text>
+    <text x="180" y="177" text-anchor="middle" class="small">no reliable structural classification</text>
+
+    <rect x="22" y="207" width="316" height="66" rx="8" class="callout"/>
+    <text x="38" y="232" class="body">Use this category for threshold-defined</text>
+    <text x="38" y="255" class="body">cores or putative centromere positions.</text>
+  </g>
+
+  <text x="600" y="458" text-anchor="middle" class="small">Orange: candidate interval · Red: proposed boundaries · White constriction: independently supported centromere</text>
+</svg>
