@@ -811,9 +811,20 @@ A regional PCA plot shows individuals, not windows:</p>
 <span><span class="va">candidate1</span><span class="op">$</span><span class="va">cluster_models</span></span>
 <span><span class="va">candidate1</span><span class="op">$</span><span class="va">assignment_stability</span></span>
 <span><span class="va">candidate1</span><span class="op">$</span><span class="va">metadata_audit</span></span>
+<span><span class="va">candidate1</span><span class="op">$</span><span class="va">metadata_contingency</span></span>
 <span><span class="va">candidate1</span><span class="op">$</span><span class="va">scores</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">individual</span>, <span class="va">arrangement</span>, <span class="va">arrangement_dosage</span>,</span>
 <span>                <span class="va">arrangement_confidence</span>, <span class="va">assignment_stability</span><span class="op">)</span></span></code></pre></div>
+<p>When sample metadata are supplied, each candidate also writes a
+<code>*_metadata_by_arrangement.tsv</code> table and one regional-PCA
+figure per usable metadata variable. These outputs show directly whether
+inferred arrangements are concentrated in particular populations,
+projects, plates, libraries, or lanes. A strong association produces a
+console warning. This is a confounder audit, not a correction:
+<code>strata</code> does not residualize or otherwise adjust the local
+PCA. Where biological groups and wet-laboratory batches are confounded,
+repeat the scan in balanced subsets or within independently replicated
+groups before interpreting the candidate as an inversion.</p>
 </div>
 <div class="section level2">
 <h2 id="compare-candidate-groups-across-linkage-groups">Compare candidate groups across linkage groups<a class="anchor" aria-label="anchor" href="#compare-candidate-groups-across-linkage-groups"></a>

@@ -408,6 +408,11 @@ For every candidate, the function then measures the association of each
 metadata variable with regional PC1 and with arrangement assignments. A
 strong association does not automatically reject a candidate, but it
 identifies a biological or technical alternative that must be checked.
+Strong associations are reported prominently in the console. Candidate
+outputs include a metadata-by-arrangement count table and regional PCA
+plots coloured by each usable metadata variable. These are diagnostics
+only: metadata are not used to residualize or otherwise adjust the local
+PCA.
 
 Candidate outputs also compare call rate, mean read depth, and
 heterozygote allele balance among putative arrangements when those
