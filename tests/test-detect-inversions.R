@@ -56,8 +56,14 @@ result.parent <- tempfile("detect-inversions-")
 dir.create(result.parent)
 on.exit(unlink(result.parent, recursive = TRUE), add = TRUE)
 
-result <- detect_inversions(
+sample.metadata <- data.frame(
+  INDIVIDUALS = sample.id,
+  STRATA = rep(c("batch_A", "batch_B", "batch_C"), each = n.samples / 3L)
+)
+
+result <- suppressWarnings(detect_inversions(
   data = gds.file,
+  strata = sample.metadata,
   window.snps = 100L,
   sensitivity.window.snps = c(100L, 200L),
   outlier.quantile = 0.80,
@@ -73,7 +79,7 @@ result <- detect_inversions(
   plot.formats = "png",
   verbose = FALSE,
   path.folder = result.parent
-)
+))
 
 stopifnot(inherits(result, "detect_inversions"))
 stopifnot(nrow(result$windows) == 12L)
@@ -120,6 +126,14 @@ stopifnot(file.exists(file.path(
 )))
 stopifnot(file.exists(file.path(result$path.folder, "window_scores.png")))
 stopifnot(any(grepl("_ld[.]png$", result$output.files$files)))
+stopifnot(any(grepl(
+  "_metadata_by_arrangement[.]tsv$", result$output.files$files
+)))
+stopifnot(any(grepl(
+  "_pca_metadata_STRATA[.]png$", result$output.files$files
+)))
+stopifnot(nrow(result$diagnostics[[1]]$metadata_audit) == 1L)
+stopifnot(nrow(result$diagnostics[[1]]$metadata_contingency) > 0L)
 stopifnot(all(vapply(result$diagnostics, function(x) {
   all(c("scores", "cluster_summary", "mean_ld_r2", "ld_summary",
         "ld_matrices", "cluster_separation", "cluster_compactness",

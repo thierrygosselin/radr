@@ -214,6 +214,30 @@ filter_genotyping <- function(
     data.type <- "SeqVarGDSClass"
   }
 
+  # A SeqVarGDSClass connection can retain a temporary sample or variant
+  # selection created by an earlier exploratory operation. Filtering must use
+  # the persistent radr whitelist recorded in the GDS metadata, otherwise a
+  # small temporary selection can be analysed and then mistaken for the full
+  # active dataset. Synchronise both dimensions before calculating statistics.
+  selection.before <- SeqArray::seqGetFilter(data)
+  n.variant.before <- sum(selection.before$variant.sel)
+  n.sample.before  <- sum(selection.before$sample.sel)
+  genometranslator::sync_gds(gds = data, verbose = FALSE)
+  selection.after <- SeqArray::seqGetFilter(data)
+  n.variant.after <- sum(selection.after$variant.sel)
+  n.sample.after  <- sum(selection.after$sample.sel)
+
+  if (verbose &&
+      (n.variant.before != n.variant.after || n.sample.before != n.sample.after)) {
+    message(
+      "Active GDS selection synchronized with persistent filter metadata: ",
+      n.variant.before, " -> ", n.variant.after, " marker(s); ",
+      n.sample.before, " -> ", n.sample.after, " individual(s)."
+    )
+  }
+  selection.before <- selection.after <- NULL
+  n.variant.before <- n.variant.after <- n.sample.before <- n.sample.after <- NULL
+
   # Filter parameter file: initiate ---------------------------------------------
   filters.parameters <- filter_parameters(
     generate      = TRUE,
@@ -264,6 +288,19 @@ filter_genotyping <- function(
   )
   info <- info %>%
     dplyr::filter(.data$VARIANT_ID %in% active.variant.id)
+
+  if (nrow(info) != length(active.variant.id) ||
+      anyDuplicated(info$VARIANT_ID) ||
+      !setequal(info$VARIANT_ID, active.variant.id)) {
+    rlang::abort(
+      paste0(
+        "Marker missingness was calculated for ", nrow(info),
+        " metadata row(s), but the active GDS contains ",
+        length(active.variant.id),
+        " marker(s). Filtering was stopped without updating the GDS."
+      )
+    )
+  }
 
   # Helper table ----------------------------------------------------------------
   if (verbose) message("Generating missingness/genotyping helper table...")

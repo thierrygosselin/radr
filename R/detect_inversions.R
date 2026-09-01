@@ -116,6 +116,10 @@
 #' regional PC1 and with arrangement assignments. A strong association does not
 #' automatically reject a candidate,
 #' but it identifies a biological or technical alternative that must be checked.
+#' Strong associations are reported prominently in the console. Candidate
+#' outputs include a metadata-by-arrangement count table and regional PCA plots
+#' coloured by each usable metadata variable. These are diagnostics only:
+#' metadata are not used to residualize or otherwise adjust the local PCA.
 #'
 #' Candidate outputs also compare call rate, mean read depth, and heterozygote
 #' allele balance among putative arrangements when those quantities are stored
@@ -789,6 +793,10 @@ detect_inversions <- function(
         stability.replicates = stability.replicates,
         stability.fraction = stability.fraction,
         verbose = verbose
+      )
+      .inversion_warn_metadata_association(
+        diagnostics[[i]]$metadata_audit,
+        candidate.id = candidate.regions$candidate_id[i]
       )
       diagnostics[[i]]$coverage_source <- if (length(coverage$source)) {
         paste(coverage$source, collapse = ";")
@@ -2477,6 +2485,11 @@ detect_inversions <- function(
     scores = scores,
     sample.metadata = sample.metadata
   )
+  metadata.scores <- .inversion_metadata_scores(scores, sample.metadata)
+  metadata.contingency <- .inversion_metadata_contingency(
+    scores = scores,
+    sample.metadata = sample.metadata
+  )
   arrangement.differentiation <- .inversion_arrangement_differentiation(
     observed = observed,
     cluster = cluster.labels,
@@ -2524,6 +2537,8 @@ detect_inversions <- function(
     assignment_stability = stability$overall,
     assignment_stability_replicates = stability$replicates,
     metadata_audit = metadata.audit,
+    metadata_scores = metadata.scores,
+    metadata_contingency = metadata.contingency,
     pc1_loadings = loadings,
     arrangement_differentiation = arrangement.differentiation,
     technical_summary = technical.summary,
@@ -2666,6 +2681,91 @@ detect_inversions <- function(
       )
     }
   })
+}
+
+.inversion_metadata_scores <- function(scores, sample.metadata) {
+  if (is.null(sample.metadata) || ncol(sample.metadata) < 2L) {
+    return(tibble::tibble())
+  }
+  dplyr::left_join(
+    scores,
+    sample.metadata,
+    by = c("individual" = "INDIVIDUALS")
+  )
+}
+
+.inversion_metadata_contingency <- function(scores, sample.metadata) {
+  empty <- tibble::tibble(
+    variable = character(), metadata_level = character(),
+    arrangement = character(), n = integer(),
+    proportion_within_metadata_level = numeric(),
+    proportion_within_arrangement = numeric()
+  )
+  joined <- .inversion_metadata_scores(scores, sample.metadata)
+  if (!nrow(joined)) return(empty)
+  variables <- setdiff(names(sample.metadata), "INDIVIDUALS")
+  purrr::map_dfr(variables, function(variable) {
+    x <- joined[[variable]]
+    keep <- !is.na(x) & nzchar(as.character(x)) &
+      !is.na(joined$arrangement)
+    if (sum(keep) < 3L) return(NULL)
+    # A genuinely continuous covariate is summarised in the association audit,
+    # but a level-by-arrangement table would be uninformative.
+    if (is.numeric(x) && length(unique(x[keep])) > 20L) return(NULL)
+    table <- tibble::tibble(
+      variable = variable,
+      metadata_level = as.character(x[keep]),
+      arrangement = as.character(joined$arrangement[keep])
+    ) |>
+      dplyr::count(
+        .data$variable, .data$metadata_level, .data$arrangement,
+        name = "n"
+      )
+    table |>
+      dplyr::group_by(.data$variable, .data$metadata_level) |>
+      dplyr::mutate(
+        proportion_within_metadata_level = .data$n / sum(.data$n)
+      ) |>
+      dplyr::ungroup() |>
+      dplyr::group_by(.data$variable, .data$arrangement) |>
+      dplyr::mutate(
+        proportion_within_arrangement = .data$n / sum(.data$n)
+      ) |>
+      dplyr::ungroup()
+  })
+}
+
+.inversion_warn_metadata_association <- function(
+    audit, candidate.id, effect.threshold = 0.5, p.threshold = 0.01
+) {
+  if (!nrow(audit)) return(invisible(FALSE))
+  strong <- audit |>
+    dplyr::filter(
+      (is.finite(.data$pc1_association) &
+         .data$pc1_association >= effect.threshold &
+         is.finite(.data$pc1_p_value) &
+         .data$pc1_p_value <= p.threshold) |
+      (is.finite(.data$arrangement_association) &
+         .data$arrangement_association >= effect.threshold &
+         is.finite(.data$arrangement_p_value) &
+         .data$arrangement_p_value <= p.threshold)
+    )
+  if (!nrow(strong)) return(invisible(FALSE))
+  details <- paste0(
+    strong$variable,
+    " (PC1 association=", formatC(strong$pc1_association, digits = 3L, format = "f"),
+    ", arrangement association=",
+    formatC(strong$arrangement_association, digits = 3L, format = "f"), ")"
+  )
+  warning(
+    candidate.id, ": strong sample-metadata association detected: ",
+    paste(details, collapse = "; "),
+    ". The metadata audit does not adjust the regional PCA. Review the ",
+    "metadata-by-arrangement table and metadata-coloured PCA plots before ",
+    "interpreting this candidate as an inversion.",
+    call. = FALSE
+  )
+  invisible(TRUE)
 }
 
 .inversion_arrangement_differentiation <- function(observed, cluster, labels) {
@@ -2845,6 +2945,10 @@ detect_inversions <- function(
     write_table(
       diagnostic$metadata_audit,
       paste0(prefix, "_sample_metadata_audit.tsv")
+    )
+    write_table(
+      diagnostic$metadata_contingency,
+      paste0(prefix, "_metadata_by_arrangement.tsv")
     )
     write_table(
       diagnostic$pc1_loadings,
@@ -3078,6 +3182,46 @@ detect_inversions <- function(
           colour = group.title
         ) +
         ggplot2::theme_bw()
+
+      if (nrow(d$metadata_scores) > 0L) {
+        metadata.variables <- setdiff(
+          names(d$metadata_scores), names(d$scores)
+        )
+        purrr::walk(metadata.variables, function(variable) {
+          values <- d$metadata_scores[[variable]]
+          keep <- is.finite(d$metadata_scores$PC1) &
+            is.finite(d$metadata_scores$PC2) &
+            !is.na(values) & nzchar(as.character(values))
+          if (sum(keep) < 3L || length(unique(values[keep])) < 2L) return(NULL)
+          metadata.plot.data <- d$metadata_scores[keep, , drop = FALSE]
+          metadata.plot.data$.metadata_value <- values[keep]
+          if (!is.numeric(metadata.plot.data$.metadata_value) ||
+              length(unique(metadata.plot.data$.metadata_value)) <= 20L) {
+            metadata.plot.data$.metadata_value <- factor(
+              metadata.plot.data$.metadata_value
+            )
+          }
+          safe.variable <- gsub("[^A-Za-z0-9_-]+", "_", variable)
+          out[[paste0(
+            d$candidate_id, "_pca_metadata_", safe.variable
+          )]] <<- ggplot2::ggplot(
+            metadata.plot.data,
+            ggplot2::aes(
+              x = .data$PC1, y = .data$PC2,
+              colour = .data$.metadata_value
+            )
+          ) +
+            ggplot2::geom_point(size = 2, alpha = 0.85) +
+            ggplot2::labs(
+              title = paste0(d$candidate_id, " regional PCA by ", variable),
+              subtitle = paste0(
+                "Metadata are shown for confounder assessment; PCA is not adjusted"
+              ),
+              colour = variable
+            ) +
+            ggplot2::theme_bw()
+        })
+      }
 
       if (nrow(chromosome.pca$scores) > 0L) {
         chromosome.scores <- chromosome.pca$scores |>

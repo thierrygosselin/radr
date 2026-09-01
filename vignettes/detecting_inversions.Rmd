@@ -718,10 +718,21 @@ candidate1$cluster_summary
 candidate1$cluster_models
 candidate1$assignment_stability
 candidate1$metadata_audit
+candidate1$metadata_contingency
 candidate1$scores |>
   dplyr::select(individual, arrangement, arrangement_dosage,
                 arrangement_confidence, assignment_stability)
 ```
+
+When sample metadata are supplied, each candidate also writes a
+`*_metadata_by_arrangement.tsv` table and one regional-PCA figure per usable
+metadata variable. These outputs show directly whether inferred arrangements
+are concentrated in particular populations, projects, plates, libraries, or
+lanes. A strong association produces a console warning. This is a confounder
+audit, not a correction: `strata` does not residualize or otherwise adjust the
+local PCA. Where biological groups and wet-laboratory batches are confounded,
+repeat the scan in balanced subsets or within independently replicated groups
+before interpreting the candidate as an inversion.
 
 ## Compare candidate groups across linkage groups
 
