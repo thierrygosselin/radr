@@ -134,6 +134,12 @@ stopifnot(any(grepl(
 )))
 stopifnot(nrow(result$diagnostics[[1]]$metadata_audit) == 1L)
 stopifnot(nrow(result$diagnostics[[1]]$metadata_contingency) > 0L)
+wrapped.console.text <- radr:::.inversion_wrap_text(
+  paste(rep(
+    "All detect_inversions console output must wrap predictably.", 8L
+  ), collapse = " ")
+)
+stopifnot(max(nchar(strsplit(wrapped.console.text, "\n", fixed = TRUE)[[1L]])) <= 80L)
 stopifnot(all(vapply(result$diagnostics, function(x) {
   all(c("scores", "cluster_summary", "mean_ld_r2", "ld_summary",
         "ld_matrices", "cluster_separation", "cluster_compactness",

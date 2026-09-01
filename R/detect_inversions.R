@@ -378,9 +378,7 @@ detect_inversions <- function(
     verbose = TRUE,
     ...
 ) {
-  # ---------------------------------------------------------------------------
-  # Standard radr setup and reproducibility records
-  # ---------------------------------------------------------------------------
+  # Standard radr setup and reproducibility records----------------------------
   .start <- tgbase::startup(
     package = "radr",
     f.name = "detect_inversions",
@@ -414,8 +412,14 @@ detect_inversions <- function(
     date = TRUE,
     internal = internal,
     write.message = "Function call and arguments stored in: ",
-    verbose = verbose
+    verbose = FALSE
   )
+  if (verbose) {
+    .inversion_message(
+      "Function call and arguments stored in: ",
+      paste0("radr_detect_inversions_args_", file.date, ".tsv")
+    )
+  }
 
   if (missing(data)) rlang::abort("Argument `data` is required.")
 
@@ -539,9 +543,7 @@ detect_inversions <- function(
     rlang::abort("`verbose` must be TRUE or FALSE.")
   }
 
-  # ---------------------------------------------------------------------------
-  # Open the GDS and construct the ordered marker map
-  # ---------------------------------------------------------------------------
+  # Open the GDS and construct the ordered marker map---------------------------
   opened.here <- FALSE
   if (inherits(data, "SeqVarGDSClass")) {
     gds <- data
@@ -565,7 +567,7 @@ detect_inversions <- function(
     sample.id <- sample.metadata$INDIVIDUALS
     SeqArray::seqSetFilter(gds, sample.id = sample.id, verbose = FALSE)
     if (verbose) {
-      message(
+      .inversion_message(
         "Sample metadata whitelist retained ", length(sample.id),
         " individual(s) and ", ncol(sample.metadata) - 1L,
         " descriptive variable(s)."
@@ -616,7 +618,7 @@ detect_inversions <- function(
     verbose = verbose
   )
   windows <- if (window.method == "ld") {
-    if (verbose) message("Constructing experimental LD-scaled windows...")
+    if (verbose) .inversion_message("Constructing experimental LD-scaled windows...")
     .inversion_make_ld_windows(
       gds = gds,
       marker.table = marker.table,
@@ -641,7 +643,7 @@ detect_inversions <- function(
   }
 
   if (verbose) {
-    message(
+    .inversion_message(
       "Analysing ", length(windows), " windows across ",
       length(unique(purrr::map_chr(windows, "chromosome"))),
       " chromosome(s)..."
@@ -668,7 +670,9 @@ detect_inversions <- function(
     )
   }
   if (verbose && any(!valid)) {
-    message(sum(!valid), " window(s) failed quality checks and were not scored.")
+    .inversion_message(
+      sum(!valid), " window(s) failed quality checks and were not scored."
+    )
   }
 
   valid.results <- window.results[valid]
@@ -711,9 +715,8 @@ detect_inversions <- function(
     window.table[[colnames(mds)[j]]][valid.index] <- mds[, j]
   }
 
-  # ---------------------------------------------------------------------------
-  # Join contiguous outlier windows and diagnose each candidate region
-  # ---------------------------------------------------------------------------
+
+  # Join contiguous outlier windows and diagnose each candidate region----------
   candidate.regions <- .inversion_candidate_regions(
     window.table = window.table,
     min.windows = min.candidate.windows
@@ -738,8 +741,10 @@ detect_inversions <- function(
   diagnostics <- vector("list", nrow(candidate.regions))
   if (nrow(candidate.regions) > 0L) {
     if (verbose) {
-      message(nrow(candidate.regions), " candidate region(s) selected for diagnostics.")
-      message(
+      .inversion_message(
+        nrow(candidate.regions), " candidate region(s) selected for diagnostics."
+      )
+      .inversion_message(
         "Candidate diagnostics may take time for large regions. Progress will ",
         "be reported for genotype extraction, regional PCA and clustering, ",
         "LD, resampling, and metadata summaries."
@@ -767,17 +772,19 @@ detect_inversions <- function(
       )
       candidate.start <- proc.time()[["elapsed"]]
       if (verbose) {
-        message(
+        .inversion_message(
           "\nCandidate ", i, " of ", nrow(candidate.regions), ": ",
           candidate.label
         )
-        message(
+        .inversion_message(
           "  Reading ", length(region.variant.id),
           " regional SNPs for ", length(sample.id), " individuals..."
         )
       }
       dosage <- .inversion_get_dosage(gds, region.variant.id, sample.id)
-      if (verbose) message("  Reading retained depth and allele-count data...")
+      if (verbose) {
+        .inversion_message("  Reading retained depth and allele-count data...")
+      }
       coverage <- .inversion_get_coverage(gds, region.variant.id, sample.id)
       diagnostics[[i]] <- .inversion_region_diagnostics(
         dosage = dosage,
@@ -844,7 +851,7 @@ detect_inversions <- function(
       candidate.regions$middle_heterozygosity_excess[i] <-
         diagnostics[[i]]$middle_heterozygosity_excess
       if (verbose) {
-        message(
+        .inversion_message(
           "  Candidate diagnostics completed in ",
           round(proc.time()[["elapsed"]] - candidate.start, 1L), " sec."
         )
@@ -1095,9 +1102,7 @@ detect_inversions <- function(
   stats::setNames(summaries, candidate.regions$candidate_id)
 }
 
-# =============================================================================
-# Argument and annotation helpers
-# =============================================================================
+# Argument and annotation helpers ==============================================
 
 .inversion_check_probability <- function(x, name, open) {
   valid <- is.numeric(x) && length(x) == 1L && !is.na(x) && is.finite(x)
@@ -1248,7 +1253,7 @@ detect_inversions <- function(
         declared_length = FALSE
       )
     if (verbose) {
-      message(
+      .inversion_message(
         "Chromosome lengths were unavailable; chromosome percentages use the ",
         "largest observed marker position and are labelled as estimates."
       )
@@ -1275,11 +1280,11 @@ detect_inversions <- function(
   inconsistent <- out$declared_length &
     out$chromosome_length_bp < out$observed_marker_max_bp
   if (any(inconsistent)) {
-    rlang::warn(paste0(
+    .inversion_warning(
       "Declared chromosome length was shorter than the largest observed marker ",
       "position for: ", paste(out$chromosome[inconsistent], collapse = ", "),
       ". Marker maxima are used for those sequences; verify the reference build."
-    ))
+    )
     out$chromosome_length_bp[inconsistent] <-
       out$observed_marker_max_bp[inconsistent]
     out$length_source[inconsistent] <- paste0(
@@ -1289,7 +1294,7 @@ detect_inversions <- function(
   }
   out$key <- NULL
   if (verbose) {
-    message(
+    .inversion_message(
       "Chromosome lengths: ", sum(out$declared_length), " declared and ",
       sum(!out$declared_length), " estimated from marker positions."
     )
@@ -1524,9 +1529,7 @@ detect_inversions <- function(
   list(levels = levels, type = type, n = length(labels))
 }
 
-# =============================================================================
-# Window construction and GDS dosage handling
-# =============================================================================
+# Window construction and GDS dosage handling =================================
 
 .inversion_make_windows <- function(
     marker.table, window.snps, step.snps, window.bp = NULL, step.bp = window.bp
@@ -1797,9 +1800,7 @@ detect_inversions <- function(
   if (all(is.na(values))) NA_real_ else mean(values, na.rm = TRUE)
 }
 
-# =============================================================================
-# Local-PCA window representation and candidate selection
-# =============================================================================
+# Local-PCA window representation and candidate selection ======================
 
 .inversion_analyse_window <- function(
     gds, window, window.id, sample.id, n.pcs, min.call.rate,
@@ -2265,7 +2266,9 @@ detect_inversions <- function(
 ) {
   # Candidate-level PCA uses every usable SNP in the joined candidate interval,
   # not only the smaller covariance representation used for window scoring.
-  if (verbose) message("  Preparing genotypes and applying the call-rate check...")
+  if (verbose) {
+    .inversion_message("  Preparing genotypes and applying the call-rate check...")
+  }
   prepared <- .inversion_prepare_dosage(dosage, min.call.rate)
   dosage <- prepared$dosage
   if (!is.null(depth)) {
@@ -2279,7 +2282,7 @@ detect_inversions <- function(
   }
 
   if (verbose) {
-    message(
+    .inversion_message(
       "  Regional PCA and cluster evaluation with ", ncol(dosage),
       " usable SNPs..."
     )
@@ -2409,7 +2412,7 @@ detect_inversions <- function(
     ncol(dosage), ld.max.snps
   ))))
   if (verbose) {
-    message(
+    .inversion_message(
       "  LD diagnostics with ", length(ld.index),
       " evenly distributed SNPs..."
     )
@@ -2458,7 +2461,7 @@ detect_inversions <- function(
   ld.structure.contrast <- mean.ld - homokaryotype.mean.ld
 
   if (verbose && stability.replicates > 0L) {
-    message(
+    .inversion_message(
       "  Assignment-stability resampling: ", stability.replicates,
       " replicates..."
     )
@@ -2480,7 +2483,11 @@ detect_inversions <- function(
   ) |>
     dplyr::arrange(.data$loading_rank)
 
-  if (verbose) message("  Marker loadings, technical summaries, and metadata audit...")
+  if (verbose) {
+    .inversion_message(
+      "  Marker loadings, technical summaries, and metadata audit..."
+    )
+  }
   metadata.audit <- .inversion_metadata_audit(
     scores = scores,
     sample.metadata = sample.metadata
@@ -2757,7 +2764,7 @@ detect_inversions <- function(
     ", arrangement association=",
     formatC(strong$arrangement_association, digits = 3L, format = "f"), ")"
   )
-  warning(
+  .inversion_warning(
     candidate.id, ": strong sample-metadata association detected: ",
     paste(details, collapse = "; "),
     ". The metadata audit does not adjust the regional PCA. Review the ",
@@ -2804,9 +2811,7 @@ detect_inversions <- function(
   })
 }
 
-# =============================================================================
-# Linkage-disequilibrium and sensitivity helpers
-# =============================================================================
+# Linkage-disequilibrium and sensitivity helpers ===============================
 
 .inversion_ld_matrix <- function(dosage) {
   n.markers <- ncol(dosage)
@@ -3013,14 +3018,14 @@ detect_inversions <- function(
         } else {
           ""
         }
-        message(
+        .inversion_message(
           "Genomic layout: ", full.layout$n,
           " sequences are present in the active data; ", sequence.layout$n,
           " formed scan windows and ", length(omitted),
           " did not", omitted.text, ". Figures use natural sequence order."
         )
       } else {
-        message(
+        .inversion_message(
           "Genomic layout: ", sequence.layout$n, " ", sequence.layout$type,
           "; figures use natural sequence order."
         )
@@ -3421,7 +3426,7 @@ detect_inversions <- function(
             TRUE
           },
           error = function(error) {
-            warning(
+            .inversion_warning(
               "Could not write plot `", basename(path), "`: ",
               conditionMessage(error),
               call. = FALSE
@@ -3434,34 +3439,65 @@ detect_inversions <- function(
     })
   }
   if (verbose && length(candidate.summaries)) {
-    message(
+    .inversion_message(
       "\nCandidate interpretation\n",
       paste(unname(candidate.summaries), collapse = "\n\n")
     )
   }
   if (verbose) {
-    message("\nInversion results written to: ", basename(path.folder))
+    .inversion_message(
+      "\nInversion results written to: ", basename(path.folder)
+    )
   }
   list(files = normalizePath(files, mustWork = FALSE), plots = plots)
 }
 
-# =============================================================================
-# User-facing print method
-# =============================================================================
+# User-facing print method =====================================================
 
 #' @export
 print.detect_inversions <- function(x, ...) {
-  cat("Candidate inversion-associated region scan\n")
-  cat("  Windows analysed:", sum(x$windows$valid), "of", nrow(x$windows), "\n")
-  cat("  Candidate regions:", nrow(x$candidates), "\n")
-  cat("  Results folder:", basename(x$path.folder), "\n")
+  .inversion_cat("Candidate inversion-associated region scan")
+  .inversion_cat(
+    "  Windows analysed: ", sum(x$windows$valid), " of ", nrow(x$windows)
+  )
+  .inversion_cat("  Candidate regions: ", nrow(x$candidates))
+  .inversion_cat("  Results folder: ", basename(x$path.folder))
   if (length(x$candidate.summaries)) {
-    cat(
-      "\n",
-      paste(unname(x$candidate.summaries), collapse = "\n\n"),
-      "\n",
-      sep = ""
+    .inversion_cat(
+      "\n", paste(unname(x$candidate.summaries), collapse = "\n\n")
     )
   }
   invisible(x)
+}
+
+# Keep console output readable in notebooks, RStudio, and narrow terminals.
+# `message()` and `warning()` do not honour `options(width)` consistently, so
+# all user-facing text from this function passes through one explicit wrapper.
+.inversion_wrap_text <- function(..., width = 80L) {
+  text <- paste0(...)
+  lines <- strsplit(text, "\n", fixed = TRUE)[[1L]]
+  wrapped <- unlist(lapply(lines, function(line) {
+    if (!nzchar(line)) return("")
+    indent <- nchar(sub("^(\\s*).*", "\\1", line))
+    continuation <- indent + if (grepl("^\\s*- ", line)) 2L else 0L
+    strwrap(
+      trimws(line),
+      width = width,
+      indent = indent,
+      exdent = continuation
+    )
+  }), use.names = FALSE)
+  paste(wrapped, collapse = "\n")
+}
+
+.inversion_message <- function(..., width = 80L) {
+  message(.inversion_wrap_text(..., width = width))
+}
+
+.inversion_warning <- function(..., width = 80L, call. = FALSE) {
+  warning(.inversion_wrap_text(..., width = width), call. = call.)
+}
+
+.inversion_cat <- function(..., width = 80L) {
+  cat(.inversion_wrap_text(..., width = width), "\n", sep = "")
 }
