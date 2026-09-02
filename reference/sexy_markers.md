@@ -1,9 +1,12 @@
 # Screen a GDS for candidate sex-linked markers
 
 `sexy_markers()` compares marker presence, heterozygosity, and, when
-available, normalized read depth between known females and males. It is
-a read-only screen: active GDS sample and variant selections are
-respected and restored, and no filter is applied or written to the GDS.
+available, normalized read depth between known females and males.
+Dominant SilicoDArT markers stored with `MARKER_TYPE = SILICODART`
+contribute presence/absence evidence but are not interpreted as diploid
+heterozygosity. It is a read-only screen: active GDS sample and variant
+selections are respected and restored, and no filter is applied or
+written to the GDS.
 
 ## Usage
 
@@ -135,6 +138,13 @@ depth across active markers. This reduces sample-wide sequencing-depth
 differences but cannot remove marker-by-batch interactions or
 confounding between sex and plate, lane, library, population, or
 sampling group.
+
+## See also
+
+Run
+[`vignette("detecting_sex_linked_markers", package = "radr")`](https://thierrygosselin.github.io/radr/articles/detecting_sex_linked_markers.md)
+for the biological background, guidance on discovery data, SilicoDArT
+and VCF workflows, interpretation, alternative methods, and validation.
 
 ## Examples
 
