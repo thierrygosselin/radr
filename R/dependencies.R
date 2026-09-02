@@ -30,7 +30,6 @@ radr_dependencies <- function(verbose = TRUE) {
     "adegenet", "CRAN", "selected population-genetic objects and methods",
     "amap", "CRAN", "distance calculations on tidy data",
     "fst", "CRAN", "FST-backed data workflows",
-    "quantreg", "CRAN", "sexy_markers()",
     "ragg", "CRAN", "fast PNG output from detect_ibm()",
     "SNPRelate", "Bioconductor", "LD pruning, LD statistics, and GDS IBS",
     "stringdist", "CRAN", "sequence and identifier distance utilities"

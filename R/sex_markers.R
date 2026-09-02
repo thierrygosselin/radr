@@ -1,2110 +1,707 @@
-
-#' @name sexy_markers
-#' @title Identify sex-linked markers and reassign genetic sex
+#' Screen a GDS for candidate sex-linked markers
 #'
-#' @description Identifies markers putatively located on heterogametic or
-#' homogametic sex chromosomes and can reassign genetic sex using candidate
-#' Y- or W-linked markers. The function works best in: DArT silico (counts) >
-#' DArT counts or RADseq with allele read depth > DArT silico (genotypes) >
-#' RADseq (genotypes) and DArT (1-row, 2-rows genotypes).
-
-#' @param data A genomic input supported by
-#'   \code{\link[genometranslator]{read_genome}} that resolves to a GDS object.
-#'   An open GDS object is preferred for repeated analyses. VCF, DArT, PLINK,
-#'   and other supported inputs can be translated automatically. For
-#'   format-specific import control, call the corresponding
-#'   \code{genometranslator::read_*()} function first.
-
-#' @param silicodata (optional, file) A silico (dominant marker) DArT file \code{.csv or .tsv}.\cr
-#' This can be count or genotyped data. Note that both \code{data} and
-#' \code{silicodata} can be used at the same time.\cr
-#' Default: \code{silicodata = NULL}.
-
-#' @param strata (file) A tab delimited file with a minimum of
-#' 2 columns (\code{INDIVIDUALS, STRATA}) for VCF files and 3 columns for DArT files
-#' (\code{TARGET_ID, INDIVIDUALS, STRATA}).
-#' \itemize{
-#' \item \code{TARGET_ID:} it's the column header of the DArT file.
-#' \item \code{STRATA:} is the grouping column, here the sex info.
-#' 3 values: \code{M} for male, \code{F} for female and \code{U} for unknown.
-#' Anything else is converted to \code{U}.
-#' \item \code{INDIVIDUALS:} Is how you want your samples to be named.
-#' }
-#' Default: \code{strata = NULL}, the function will look for sex info in the
-#' tidy data or GDS data (individuals.meta section).
-#' You can easily build the strata file by starting with the output of these
-#' functions: \code{\link[genometranslator]{extract_dart_target_id}} and
-#' \code{\link[genometranslator]{extract_individuals_vcf}}
-
-
-#' @param boost.analysis (optional, logical) This method uses machine learning
-#' approaches to find sex markers and re-assign samples in sex group.\cr
-#' The approach is currently under construction.
-#' Default: \code{boost.analysis = FALSE}.
-
-#' @param coverage.thresholds (optional, integer) The minimum coverage required
-#' to call a marker absent. For silico genotype data this must be < 1.\cr
-#' Default: \code{coverage.thresholds = 1}.
+#' `sexy_markers()` compares marker presence, heterozygosity, and, when
+#' available, normalized read depth between known females and males. It is a
+#' read-only screen: active GDS sample and variant selections are respected and
+#' restored, and no filter is applied or written to the GDS.
 #'
+#' Y-like markers are present mainly in males, W-like markers mainly in females,
+#' X-like markers have greater heterozygosity or normalized depth in females,
+#' and Z-like markers show the reverse. These labels are candidates, not proof
+#' of chromosomal location. Sex-specific dropout, population structure, plate
+#' or library effects, paralogy, and mapping bias can produce similar patterns.
 #'
-#' @param filters (optional, logical) When \code{filters = TRUE}, the data will
-#' be filtered for monomorphic loci, missingness of individuals and heterozygosity of individuals.\cr
-#' CAUTION: we advice to use these filter, since not filtering or filtering too
-#' stringently will results in false positive or false negative detections.\cr
-#' Default: \code{filters = TRUE}.
+#' @section Statistical tests:
+#' Presence and heterozygosity use two-sample score tests for proportions.
+#' Normalized depth uses Welch tests on `log2(1 + depth)`. P-values are adjusted
+#' separately by method with Benjamini-Hochberg FDR. Candidate selection always
+#' uses explicit effect-size thresholds; `require.significance = TRUE` also
+#' requires the method-specific FDR to pass `fdr.threshold`.
 #'
-#' @param interactive.filter (optional, logical) When \code{interactive.filter = TRUE}
-#' the function will ask for your input to define thresholds. If \code{interactive.filter = FALSE}
-#' the function expects additional arguments (see Advance mode).\cr
-#' Default: \code{interactive.filter = TRUE}.
+#' @section Read-depth normalization:
+#' When depth is available, each sample is divided by its mean positive depth
+#' across active markers. This reduces sample-wide sequencing-depth differences
+#' but cannot remove marker-by-batch interactions or confounding between sex and
+#' plate, lane, library, population, or sampling group.
 #'
-#' @param folder.name (optional,character) Name of the folder to store the results.
-#' Default: \code{folder.name = NULL}. The name sexy_markers_datetime will be generated.
+#' @param data A GDS filepath or an open `SeqVarGDSClass` object.
+#' @param strata A data frame or tab-delimited file containing `INDIVIDUALS`
+#'   and `sex.column`. If `NULL`, individual metadata are read from the GDS.
+#' @param sex.column Metadata column containing sex. `F`, `female`, `M`, and
+#'   `male` are recognized without regard to case; other values are unknown.
+#' @param presence.threshold Minimum presence in the expected sex for Y/W.
+#' @param absence.threshold Maximum presence in the other sex for Y/W.
+#' @param min.heterozygosity.difference Minimum absolute female-minus-male
+#'   heterozygosity difference for X/Z candidates.
+#' @param coverage.ratio.threshold Minimum larger-to-smaller normalized depth
+#'   ratio for X/Z coverage candidates.
+#' @param coverage.threshold Minimum read depth considered present. Without
+#'   depth data, a non-missing genotype is considered present.
+#' @param min.samples.per.sex Minimum number of known females and males.
+#' @param fdr.threshold Maximum FDR when significance is required.
+#' @param require.significance Require effect size and method-specific FDR.
+#' @param chunk.size Number of variants read from the GDS at a time.
+#' @param save.plots Save diagnostic plots in the result folder.
+#' @param plot.formats One or both of `"png"` and `"pdf"`.
+#' @param folder.name Optional result-folder stem. Default: `sexy_markers`.
+#' @param verbose Display progress and summary messages.
+#' @param ... Common arguments: `path.folder` and `internal`.
 #'
-#' @param verbose Logical. Display progress messages.
-#' Default: \code{verbose = TRUE}.
-#'
-#' @inheritParams radr_common_arguments
-#'
-#'
-#' @details
-#' This function takes DArT and RAD-type data to find markers that have a specific
-#' pattern that is linked to sex.\cr
-#' The function hypothesizes the presence of sex-chromosomes in your
-#' species/population. The tests are designed to identify markers that are
-#' located on putative heterogametic (Y or W) or homogametic (X or Z) chromosomes.\cr
-#' \emph{Note:} Violating Assumptions or Prerequisites (see below) can lead to
-#' false positive or the absence of detection of sex-linked markers.
-
-
-
-#' @section Assumptions:
-#' \enumerate{
-#' \item \strong{Genetic Sex Determination System} over a e.g. environmental-sex-determination system.
-#' \item \strong{Genome coverage:} restriction sites randomly spread throughout the whole genome.
-#' \item \strong{Mutations:} Processes such as sex-specific mutations
-#' in the restriction sites could lead to false positive results.
-#' \item \strong{Deletions/duplications:} Processes such as
-#' sex-specific deletions or duplications could lead to false positive results.
-#' \item \strong{Homology:} The existence of homologous sequences between the
-#' homogametic and heterogametic chromosomes could lead to false negative
-#' results.
-#' \item \strong{Absence of population signal}
-#' }
-
-#' @section Prerequisites:
-#' \enumerate{
-#' \item \strong{Sample size:} Ideally, the data must have enough individuals (n > 100).
-#' \item \strong{Batch effect:} Sex should be randomized on lanes/chips during sequencing.
-#' \item \strong{Sex ratio:} Dataset with equal ratio work best.
-#' \item \strong{Genotyping rate}: for DArT data, if the minimum call rate is
-#' greater than 0.5, ask DArT to lower its filtering threshold.
-#' RADseq data, lower markers missingness thresholds during filtering
-#' (e.g. stacks \code{r} and \code{p}).
-#' \item \strong{Identity-by-Missingness:} Absence of artifactual pattern
-#' of missingness (\href{https://github.com/thierrygosselin/grur}{see missing visualization})
-#' \item \strong{Low genotyping error rate:} see \code{\link{detect_het_outliers}}
-#' and \href{https://github.com/eriqande/whoa}{whoa}.
-#' \item \strong{Low heterozygosity miscall rate:} see \code{\link{detect_het_outliers}} and
-#' \href{https://github.com/eriqande/whoa}{whoa}.
-#' \item \strong{Absence of pattern of heterozygosity driven by missingness:}
-#' see \code{\link[radr]{detect_mixed_genomes}}.
-#' \item \strong{Absence of paralogous sequences in the data}.
-#' }
-
-
-#' @section Sex methods:
-#' \strong{Heterogametic sex-markers:}
-#' \itemize{
-#' \item \strong{Presence/Absence method}: To identify markers on Y or W chromosomes,
-#' we look at the presence or
-#' absence of a marker between females and males. More specifically, if a marker
-#' is always present in males but never in females, they are putatively located
-#' in the Y-chromosome; and vice versa for the W-linked markers.
-#' }
-#' \strong{Homogametic sex-markers:}
-#' We have two different methods to identify markers on X or Z chromosomes:
-#' \itemize{
-#' \item \strong{Heterozygosity method:} By looking at the heterozygosity of a
-#' marker between sexes, we can
-#' identify markers that are always homozygous in one sex (e.g. males for an
-#' XY system), while exhibiting an intermediate range of heterozygosity in the
-#' other sex (0.1 - 0.5).
-#' \item \strong{Coverage method:} If the data includes count information, this
-#' function will look for
-#' markers that have double the number of counts for either of the sexes.
-#' For example if an XY/XX system is present, females are expected to have
-#' double the number of counts for markers on the X chromosome.
-#' }
-
-#' @section Advance mode:
-#'
-#' \emph{dots-dots-dots ...} allows to pass several arguments for fine-tuning the function:
-#' \itemize{
-#' \item \code{species}: To give your figures some meanings.
-#' Default \code{species = NULL}.
-#' \item \code{population}: To give your figures some meanings.
-#' Default \code{species = NULL}.
-#' \item \code{tau}: The quantile used in regression to distinguish homogametic markers
-#' with the \strong{heterozygosity method}. See \code{\link[quantreg]{rq}}.\cr
-#' Default \code{tau = 0.03}.
-
-#' \item \code{mis.threshold.data}: Threshold to filter the SNP data on missingness.
-#' Only if \code{interactive.filter = FALSE}.
-#' \item \code{mis.threshold.silicodata}: Threshold to filter the silico data on
-#' missingness. No default. Only if \code{interactive.filter = FALSE}.
-#' \item \code{threshold.y.markers}: Threshold to select heterogametic sex-linked
-#' markers from the SNP data with the \strong{presence/absence method}.No default.
-#' Only if \code{interactive.filter = FALSE}.
-#' \item \code{threshold.x.markers.qr}: Threshold to select homogametic sex-linked
-#' markers from the SNP data with the \strong{heterozygosity method}. No default.
-#' Only if \code{interactive.filter = FALSE}.
-#' \item \code{zoom.data}: Threshold to subset the F/M ratio of mean SNP coverage.
-#' Used to improve the histogram resolution to select a better \code{threshold.x.markers.RD}
-#' threshold. No default. Only if \code{interactive.filter = FALSE}.
-#' \item \code{threshold.x.markers.RD}: Threshold to select homogametic sex-linked
-#' markers from the SNP data with the \strong{coverage method}.No default.
-#' Only if \code{interactive.filter = FALSE}.
-#' \item \code{zoom.silicodata}: Threshold to subset the F/M ratio of mean silico coverage.
-#' Used to improve the histogram resolution to select a better \code{threshold.x.markers.RD.silico}
-#' threshold. No default. Only if \code{interactive.filter = FALSE}.
-#' \item \code{threshold.x.markers.RD.silico}: Threshold to select homogametic sex-linked
-#' markers from the silico data with the \strong{coverage method}. No default.
-#' Only if \code{interactive.filter = FALSE}.
-#' \item \code{sex.id.input}: (integer) \code{sex.id.input = c(1, 2 or 3)}
-#' to recalculate the sex based on (1) 'visual', (2) 'genetic SNP' or (3) 'genetic SILICO' sexID.
-#' No default. Only if \code{interactive.filter = FALSE}.
-#' \item \code{het.qr.input}: (integer) \code{het.qr.input = c(1 or 2)}
-#' to plot the heterozygosity residual plot for (1) X-linked markers (heterozygous for females),
-#' or (2) Z-linked markers (heterozygous for males). No default.
-#' Only if \code{interactive.filter = FALSE}.
-#' }
-#'
-#'
-#' @section Life cycle:
-#'
-#' Machine Learning approaches (Random Forest and Extreme Gradient Boosting Trees)
-#' are currently been tested. They usually show a lower discovery rate but tend to
-#' perform better with new samples.
-#'
-#'
-
-#' @seealso Eric Anderson's \href{https://github.com/eriqande/whoa}{whoa} package.
-
+#' @return A `sexy_markers` object containing marker statistics, candidates,
+#'   sample summaries, a metadata audit, plots, and the result-folder path.
 #' @export
-#' @rdname sexy_markers
-
-#' @return The created object contains:
-#' \enumerate{
-#' \item A list with (1) the summarised SNP data per sex and
-#' (2) the summarised silico data per sex. This should allow you to re-create the various plots.
-#' \item A vector with the names of the sex-linked marker. One vector for each sex method.
-#' \item A dataframe with a summary of the sex-linked markers and their sequence (if available).
-#' }
-
 #' @examples
 #' \dontrun{
-
-#' # The minimum
-#' sex.markers <- radr::sexy_markers(
-#'     data = "shark.dart.data.csv",
-#'     strata = "shark.strata.tsv")
-
-#' # This will use the default: interactive version and a list is created and to view the sex markers
+#' result <- radr::sexy_markers(
+#'   data = "study.gds",
+#'   strata = "sample_metadata.tsv",
+#'   sex.column = "SEX"
+#' )
+#' result$candidates
 #' }
-
-
-#' @author Floriaan Devloo-Delva \email{Floriaan.Devloo-Delva@@csiro.au} and with help from
-#' Thierry Gosselin \email{thierrygosselin@@icloud.com}
-
-sexy_markers <- function(data,
-                         silicodata = NULL,
-                         strata = NULL,
-                         boost.analysis = FALSE,
-                         coverage.thresholds = 1,
-                         filters = TRUE,
-                         interactive.filter = TRUE,
-                         folder.name = NULL,
-                         parallel.core = parallel::detectCores() - 1,
-                         verbose = TRUE,
-                         ...
+sexy_markers <- function(
+    data,
+    strata = NULL,
+    sex.column = "STRATA",
+    presence.threshold = 0.9,
+    absence.threshold = 0.1,
+    min.heterozygosity.difference = 0.2,
+    coverage.ratio.threshold = 1.5,
+    coverage.threshold = 1,
+    min.samples.per.sex = 5L,
+    fdr.threshold = 0.05,
+    require.significance = FALSE,
+    chunk.size = 2000L,
+    save.plots = TRUE,
+    plot.formats = c("png", "pdf"),
+    folder.name = NULL,
+    verbose = TRUE,
+    ...
 ) {
-
-  # Test
-  # silicodata <- "../1.Data/G.galeus/SchoolShark_silico_counts.csv"
-  # boost.analysis = FALSE
-  # coverage.thresholds = 1 ##NEEDS TO BE SET TO 1 if genotype data
-  # filters = TRUE
-  # interactive.filter = TRUE
-  # parallel.core = 1
-  # species = "shark"
-  # population = "Australia"
-  # tau = 0.03
-  # threshold.y.markers = NULL
-  # threshold.y.silico.markers = NULL
-  # sex.id.input = 2
-  # het.qr.input = 1
-  # threshold.x.markers.qr = NULL
-  # data = "../1.Data/G.galeus/SchoolShark_SNP_counts.csv"
-  # strata = "../1.Data/G.galeus/SchoolShark_strata.tsv"
-
-  # parallel.core = parallel::detectCores() - 1
-
-  # Common startup -------------------------------------------------------------
+  force(data)
   .start <- tgbase::startup(
-    package = "radr",
-    f.name = "sexy_markers",
-    verbose = verbose
+    package = "radr", f.name = "sexy_markers", verbose = verbose
   )
   file.date <- .start$file.date
   on.exit(tgbase::teardown(.start), add = TRUE)
-  res <- list()
 
-  # Validate formal arguments --------------------------------------------------
-  if (missing(data)) rlang::abort("Argument `data` is required.")
-  logical.args <- c("boost.analysis", "filters", "interactive.filter", "verbose")
-  invalid.logical <- logical.args[!vapply(
-    logical.args,
-    function(x) is.logical(get(x, inherits = FALSE)) &&
-      length(get(x, inherits = FALSE)) == 1L &&
-      !is.na(get(x, inherits = FALSE)),
-    logical(1)
-  )]
-  if (length(invalid.logical) > 0L) {
+  dots <- rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE)
+  unknown.dots <- setdiff(names(dots), c("path.folder", "internal"))
+  if (length(unknown.dots)) {
     rlang::abort(paste0(
-      "Arguments must be single TRUE/FALSE values: ",
-      paste(invalid.logical, collapse = ", ")
+      "Unknown argument(s): ", paste(unknown.dots, collapse = ", "), "."
     ))
   }
-  if (!is.numeric(coverage.thresholds) || length(coverage.thresholds) != 1L ||
-      is.na(coverage.thresholds) || coverage.thresholds < 0) {
-    rlang::abort("`coverage.thresholds` must be one non-negative number.")
+  parent.folder <- dots$path.folder %||% getwd()
+  internal <- isTRUE(dots$internal)
+
+  .sex_check_probability(presence.threshold, "presence.threshold")
+  .sex_check_probability(absence.threshold, "absence.threshold")
+  .sex_check_probability(fdr.threshold, "fdr.threshold")
+  .sex_check_probability(
+    min.heterozygosity.difference,
+    "min.heterozygosity.difference"
+  )
+  if (absence.threshold >= presence.threshold) {
+    rlang::abort("`absence.threshold` must be below `presence.threshold`.")
+  }
+  if (!is.numeric(coverage.ratio.threshold) ||
+      length(coverage.ratio.threshold) != 1L ||
+      !is.finite(coverage.ratio.threshold) ||
+      coverage.ratio.threshold <= 1) {
+    rlang::abort("`coverage.ratio.threshold` must be greater than one.")
+  }
+  .sex_check_nonnegative(coverage.threshold, "coverage.threshold")
+  min.samples.per.sex <- .sex_check_count(
+    min.samples.per.sex, "min.samples.per.sex", 2L
+  )
+  chunk.size <- .sex_check_count(chunk.size, "chunk.size", 1L)
+  .sex_check_flag(require.significance, "require.significance")
+  .sex_check_flag(save.plots, "save.plots")
+  .sex_check_flag(verbose, "verbose")
+  if (!is.character(sex.column) || length(sex.column) != 1L ||
+      is.na(sex.column) || !nzchar(sex.column)) {
+    rlang::abort("`sex.column` must be one non-empty column name.")
+  }
+  plot.formats <- unique(tolower(as.character(plot.formats)))
+  if (!length(plot.formats) || any(!plot.formats %in% c("png", "pdf"))) {
+    rlang::abort("`plot.formats` must contain `png`, `pdf`, or both.")
   }
 
-  if (boost.analysis) {
-    rlang::warn("`boost.analysis` is under development and is not run yet.")
+  folder.stem <- folder.name %||% "sexy_markers"
+  if (!is.character(folder.stem) || length(folder.stem) != 1L ||
+      is.na(folder.stem) || !nzchar(folder.stem)) {
+    rlang::abort("`folder.name` must be NULL or one non-empty name.")
   }
-
-  # required packages ----------------------------------------------------------
-  tgbase::check_package(package = "quantreg")
-
-  # Function call and dotslist -------------------------------------------------
-  rad.dots <- radr_dots(
-    func.name = as.list(sys.call())[[1]],
-    fd = rlang::fn_fmls_names(),
-    args.list = as.list(environment()),
-    dotslist = rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE),
-    keepers = c(
-      "species",
-      "population",
-      "tau",
-      "threshold.y.markers",
-      "threshold.y.silico.markers",
-      "sex.id.input",
-      "threshold.x.markers.qr",
-      "threshold.x.markers.RD",
-      "threshold.x.markers.RD.silico",
-      "mis.threshold.data",
-      "mis.threshold.silicodata",
-      "zoom.data",
-      "zoom.silicodata",
-      "sex.id.input",
-      "het.qr.input"
+  dir.create(parent.folder, recursive = TRUE, showWarnings = FALSE)
+  parent.folder <- normalizePath(parent.folder, mustWork = TRUE)
+  path.folder <- if (internal) {
+    parent.folder
+  } else {
+    radr_folder(
+      rad.folder = paste0(folder.stem, "_", file.date),
+      path.folder = parent.folder,
+      prefix.int = TRUE
+    )
+  }
+  dir.create(path.folder, recursive = TRUE, showWarnings = FALSE)
+  if (verbose && !internal) {
+    .sex_message("Folder created: ", basename(path.folder))
+  }
+  arguments <- tibble::tibble(
+    argument = c(
+      "sex.column", "presence.threshold", "absence.threshold",
+      "min.heterozygosity.difference", "coverage.ratio.threshold",
+      "coverage.threshold", "min.samples.per.sex", "fdr.threshold",
+      "require.significance", "chunk.size", "save.plots", "plot.formats"
     ),
-    verbose = FALSE
-  )
-
-  if (is.null(tau)) tau <- 0.03
-
-  # Folders---------------------------------------------------------------------
-  if (is.null(folder.name)) folder.name <- "sexy_markers"
-  wd <- path.folder <- tgbase::generate_folder(
-    folder = folder.name,
-    path.folder = NULL,
-    internal = FALSE,
-    prefix.int = FALSE,
-    file.date = file.date,
-    verbose = verbose
-  )
-
-  # write the dots file
-  tgbase::write_tgbase_tsv(
-    data = rad.dots,
-    path.folder = path.folder,
-    filename = "radr_sexy_markers_args",
-    date = TRUE,
-    internal = FALSE,
-    write.message = "Function call and arguments stored in: ",
-    verbose = verbose
-  )
-
-
-  # Import primary genomic data ------------------------------------------------
-  count.data <- FALSE
-  input.type <- genometranslator::detect_genomic_format(data)
-  if (!identical(input.type, "SeqVarGDSClass")) {
-    data <- genometranslator::read_genome(
-      data = data,
-      strata = strata,
-      parallel.core = parallel.core,
-      verbose = FALSE
+    value = c(
+      sex.column, presence.threshold, absence.threshold,
+      min.heterozygosity.difference, coverage.ratio.threshold,
+      coverage.threshold, min.samples.per.sex, fdr.threshold,
+      require.significance, chunk.size, save.plots,
+      paste(plot.formats, collapse = ",")
     )
-  }
-
-  data.type <- genometranslator::detect_genomic_format(data)
-  if (!identical(data.type, "SeqVarGDSClass")) {
-    rlang::abort(paste0(
-      "`data` must resolve to an open GDS object; `read_genome()` returned format `",
-      data.type, "`. Use a format-specific genometranslator reader to create GDS input."
-    ))
-  }
-
-  # Detect source --------------------------------------------------------------
-  data.source <- genometranslator::extract_data_source(gds = data)
-  if ("counts" %in% data.source) count.data <- TRUE
-
-  # Filters----------------------------------------------------------------------
-  if (filters) {
-    data <- radr::filter_monomorphic(
-      data = data,
-      parallel.core = parallel.core,
-      verbose = FALSE,
-      internal = FALSE,
-      path.folder = path.folder
-    ) |>
-      radr::filter_individuals(
-        interactive.filter = interactive.filter,
-        filter.individuals.missing = "outliers",
-        filter.individuals.heterozygosity = "outliers",
-        filter.individuals.coverage.total = "outliers",
-        dp = count.data,
-        internal = FALSE,
-        path.folder = path.folder,
-        parallel.core = parallel.core,
-        verbose = FALSE
-      ) |>
-      radr::filter_ld(
-        interactive.filter = interactive.filter,
-        filter.short.ld = "mac",
-        long.ld.missing = FALSE,
-        parallel.core = parallel.core,
-        verbose = FALSE,
-        internal = FALSE,
-        path.folder = path.folder
-      )
-  }
-
-
-  # clean the strata -----------------------------------------------------------
-  strata <- genometranslator::extract_individuals_metadata(
-    gds = data,
-    ind.field.select = c("TARGET_ID", "INDIVIDUALS", "STRATA"),
-    whitelist = TRUE
   )
-
-  # clean strata----------------------------------------------------------------
-  strata %<>%
-    dplyr::mutate(
-      STRATA = stringi::stri_trans_toupper(str = STRATA),
-      STRATA = stringi::stri_sub(str = STRATA, from = 1, to = 1),
-      STRATA = replace(x = STRATA, !STRATA %in% c("F", "M"), "U")
-    )
-
-  #checks
-  strata.groups <- unique(sort(strata$STRATA))
-  if (length(strata.groups) > 3 || length(strata.groups) < 2) {
-    rlang::abort("The strata requires a minimum of 2 groups: F and M")
-  }
-  if (length(strata.groups) == 2 &&
-      all(c("F", "M") %in% strata.groups) == FALSE) {
-    rlang::abort("The strata requires a minimum of 2 groups: F and M")
-  }
-
-  # Generate new strata and write to disk
-  readr::write_tsv(
-    x = strata,
-    file = file.path(path.folder, "sexy_markers_strata-original_cleaned.tsv")
+  args.file <- file.path(
+    path.folder, paste0("radr_sexy_markers_args_", file.date, ".tsv")
   )
+  readr::write_tsv(arguments, args.file)
+  if (verbose) {
+    .sex_message("Function call and arguments stored in: ", basename(args.file))
+  }
 
-
-  # check Sex Ratio ------------------------------------------------------------
-  sex.ratio <- dplyr::filter(strata, STRATA != "U") %>%
-    dplyr::count(STRATA, name = "SEX_RATIO")
-
-  message("\n\nSex-ratio (F/M): ", round((sex.ratio$SEX_RATIO[sex.ratio$STRATA == "F"] / sex.ratio$SEX_RATIO[sex.ratio$STRATA == "M"]), 2))
-
-
-  gds.bk <- data
-  data <- genometranslator::extract_genotypes_metadata(
-    gds = data,
-    genotypes.meta.select = c(
-      "MARKERS", "INDIVIDUALS", "ALT_DOSAGE", "READ_DEPTH"
-    ),
-    whitelist = TRUE
-  ) |>
-    genometranslator::join_strata(
-      strata = strata,
-      verbose = FALSE
-    )
-
-  if (!rlang::has_name(data, "ALT_DOSAGE")) {
+  opened.here <- FALSE
+  if (inherits(data, "SeqVarGDSClass")) {
+    gds <- data
+  } else if (is.character(data) && length(data) == 1L && !is.na(data) &&
+             file.exists(data) && grepl("\\.gds$", data, ignore.case = TRUE)) {
+    gds <- SeqArray::seqOpen(data)
+    opened.here <- TRUE
+  } else {
     rlang::abort(
-      "ALT_DOSAGE is unavailable in the GDS genotype metadata; recreate the GDS with current genometranslator readers."
+      "`data` must be a GDS filepath or an open SeqVarGDSClass object."
+    )
+  }
+  on.exit({
+    if (opened.here) try(SeqArray::seqClose(gds), silent = TRUE)
+  }, add = TRUE)
+
+  selection.before <- SeqArray::seqGetFilter(gds)
+  SeqArray::seqFilterPush(gds)
+  filter.pushed <- TRUE
+  on.exit({
+    if (filter.pushed) try(SeqArray::seqFilterPop(gds), silent = TRUE)
+  }, add = TRUE)
+
+  sample.id <- as.character(SeqArray::seqGetData(gds, "sample.id"))
+  variant.id <- SeqArray::seqGetData(gds, "variant.id")
+  if (!length(sample.id) || !length(variant.id)) {
+    rlang::abort("The active GDS selection contains no samples or markers.")
+  }
+  metadata <- .sex_read_metadata(strata, gds, sample.id, sex.column)
+  sample.id <- sample.id[sample.id %in% metadata$INDIVIDUALS]
+  metadata <- metadata[match(sample.id, metadata$INDIVIDUALS), , drop = FALSE]
+  SeqArray::seqSetFilter(gds, sample.id = sample.id, verbose = FALSE)
+  sex <- .sex_normalise(metadata[[sex.column]])
+  metadata$SEX_RADR <- sex
+  female <- sex == "F"
+  male <- sex == "M"
+  n.female <- sum(female)
+  n.male <- sum(male)
+  if (n.female < min.samples.per.sex || n.male < min.samples.per.sex) {
+    rlang::abort(paste0(
+      "At least ", min.samples.per.sex,
+      " known females and males are required. Found ", n.female,
+      " females and ", n.male, " males."
+    ))
+  }
+  if (verbose) {
+    .sex_message(
+      "Active GDS selection: ", length(variant.id), " marker(s), ",
+      length(sample.id), " sample(s)."
+    )
+    .sex_message(
+      "Known sex: ", n.female, " female(s), ", n.male,
+      " male(s), ", sum(sex == "U"), " unknown."
+    )
+  }
+  if (max(n.female, n.male) / min(n.female, n.male) >= 2) {
+    warning(
+      "Known-sex sample sizes differ by at least two-fold; review effects.",
+      call. = FALSE
     )
   }
 
-
-
-  # SILICO files ----------------------------------------------------------------
-
-  if (!is.null(silicodata)) {
-    if (is.character(silicodata)) {
-      data.type <- genometranslator::detect_genomic_format(silicodata)
-      silicodata <- genometranslator::read_dart(
-        data = silicodata,
-        strata = strata,
-        tidy.dart = FALSE,
-        parallel.core = parallel.core,
-        path.folder = path.folder,
-        internal = TRUE,
-        verbose = verbose
-      ) %>%
-        dplyr::rename(., MARKERS = CLONE_ID)
-      if (max(silicodata$VALUE, na.rm = TRUE) > 1) {
-        data.source <- c("counts", data.type, data.source)
-      } else{
-        data.source <- c("genotype", data.type, data.source)
-      }
-    } else if (is.data.frame(silicodata)) {
-      data.type <- "silico.dart"
-      if (max(silicodata$VALUE, na.rm = TRUE) > 1) {
-        data.source <- c("counts", data.type, data.source)
-      } else{
-        data.source <- c("genotype", data.type, data.source)
-      }
-    } else {
-      rlang::abort(paste0(
-        "`silicodata` must be a DArT filepath or a tidy data frame returned ",
-        "by `genometranslator::read_dart()`."
-      ))
-    }
-  }
-
-  ### add warning about not using count data
-  if (!(rlang::has_name(data, "READ_DEPTH"))) {
-    if (verbose) {
-      message(
-        "Read depth is unavailable; coverage-based sex-marker methods will be skipped."
-      )
-    }
-  }
-
-  # Validate non-interactive inputs -------------------------------------------
-  if (!interactive.filter) {
-    required <- c("mis.threshold.data", "sex.id.input", "het.qr.input")
-    if (!is.null(silicodata)) required <- c(required, "mis.threshold.silicodata")
-    if (rlang::has_name(data, "READ_DEPTH")) required <- c(required, "zoom.data")
-    if (all(c("silico.dart", "counts") %in% data.source)) {
-      required <- c(required, "zoom.silicodata")
-    }
-
-    missing.required <- required[vapply(
-      required,
-      function(x) !exists(x, inherits = FALSE) || is.null(get(x, inherits = FALSE)),
-      logical(1)
-    )]
-    if (length(missing.required) > 0L) {
-      rlang::abort(paste0(
-        "With `interactive.filter = FALSE`, supply these arguments in `...`: ",
-        paste(missing.required, collapse = ", "), "."
-      ))
-    }
-
-    missing.thresholds <- c(mis.threshold.data, mis.threshold.silicodata)
-    missing.thresholds <- missing.thresholds[!vapply(
-      missing.thresholds,
-      is.null,
-      logical(1)
-    )]
-    if (length(missing.thresholds) > 0L &&
-        any(!is.finite(missing.thresholds) |
-            missing.thresholds < 0 | missing.thresholds > 1)) {
-      rlang::abort("Missingness thresholds must be between 0 and 1.")
-    }
-    if (!sex.id.input %in% 1:3) {
-      rlang::abort("`sex.id.input` must be 1, 2, or 3.")
-    }
-    if (!het.qr.input %in% 1:2) {
-      rlang::abort("`het.qr.input` must be 1 or 2.")
-    }
-  }
-
-
-  # START Sex markers-----------------------------------------------------------------
-  # 1. presence/absence per strata and markers: yw
-  # 2. heterozygosity per strata and markers: xz
-  # 3. read depth per strata and markers markers: xz
-
-  {
-    cat("\n\n################################################################################\n")
-    cat("######################## Start finding sex-linked markers ######################\n")
-    cat("################################################################################\n")
-  }
-
-
-  # Summarise DArT and VCFs---------------------------------------
-  if (is.null(tau)) tau <- 0.03
-
-  res$sum <- summarize_sex(
-    data = data,
-    silicodata = silicodata,
-    coverage.thresholds = coverage.thresholds,
-    data.source = data.source,
-    tau = tau
+  marker.metadata <- .sex_marker_metadata(gds, variant.id)
+  chunks <- split(
+    seq_along(variant.id), ceiling(seq_along(variant.id) / chunk.size)
   )
-  data.sum <- res$sum$data.sum
-  silico.sum <- res$sum$silico.sum
+  if (verbose) {
+    .sex_message("Reading marker statistics in ", length(chunks), " chunk(s)...")
+  }
 
-  # FIGURES -------------------------------------------------------------------
-
-  # Here we start to generate the figures for each sex determination mechanism
-  # The function for figures was moved outside the function below
-  # you need to load the function first so that it's accessible
-
-  SexID <- "visually"
-
-  #### P/A #####
-
-  # TODO perhaps for count data, set coverage threshold, based on plot?
-
-  ###* For data.sum ####
-  ### SCATTER ----
-  plot.filename <- stringi::stri_join("1A.sexy_markers_PA_scatter_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-    stringi::stri_join(".pdf")
-
-  scat.fig <- sex_markers_plot(
-    data = data.sum,
-    x = "PRESENCE_ABSENCE_F",
-    y = "PRESENCE_ABSENCE_M",
-    scat = TRUE,
-    qreg = FALSE,
-    tuckey = FALSE,
-    x.title = "Proportion of females",
-    y.title = "Proportion of males",
-    subtitle = if (is.null(population)) {
-      paste0("Sex is ", SexID, " assigned")
+  depth.sum <- numeric(length(sample.id))
+  depth.n <- integer(length(sample.id))
+  depth.available <- FALSE
+  for (idx in chunks) {
+    depth <- .sex_get_depth(gds, variant.id[idx], sample.id)
+    if (!is.null(depth)) {
+      depth.available <- TRUE
+      positive <- is.finite(depth) & depth > 0
+      depth.sum <- depth.sum + rowSums(replace(depth, !positive, 0))
+      depth.n <- depth.n + rowSums(positive)
+    }
+  }
+  depth.scale <- depth.sum / depth.n
+  depth.scale[!is.finite(depth.scale) | depth.scale <= 0] <- 1
+  if (verbose) {
+    .sex_message(if (depth.available) {
+      "Read depth found; coverage will be normalized within each sample."
     } else {
-      paste0(population, ": Sex is ", SexID, " assigned")
-    },
-    title = "Absence of each SNP marker between females and males",
-    plot.filename = plot.filename,
-    path = path.folder
+      "Read depth not found; the coverage method will be skipped."
+    })
+  }
+
+  pieces <- vector("list", length(chunks))
+  for (i in seq_along(chunks)) {
+    idx <- chunks[[i]]
+    dosage <- .sex_get_dosage(gds, variant.id[idx], sample.id)
+    depth <- if (depth.available) {
+      .sex_get_depth(gds, variant.id[idx], sample.id)
+    } else NULL
+    pieces[[i]] <- .sex_chunk_statistics(
+      dosage, depth, depth.scale, female, male, coverage.threshold
+    )
+    if (verbose && (i == length(chunks) || i %% 10L == 0L)) {
+      .sex_message("Processed ", i, " of ", length(chunks), " chunk(s).")
+    }
+  }
+  statistics <- dplyr::bind_cols(
+    marker.metadata, dplyr::bind_rows(pieces)
   )
-  print(scat.fig)
-
-  message("Figure written: ", plot.filename)
-
-  ### TUCKEY ----
-  plot.filename <- stringi::stri_join("1B.sexy_markers_PA_tuckey_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-    stringi::stri_join(".pdf")
-
-  scat.fig <- sex_markers_plot(
-    data = data.sum,
-    x = "MEAN",
-    y = "DIFF",
-    scat = TRUE,
-    qreg = FALSE,
-    tuckey = TRUE,
-    x.title = "Mean of males and females",
-    y.title = "Difference between males and females (<- W/Y ->)",
-    subtitle = if (is.null(population)) {
-      paste0("Sex is ", SexID, " assigned")
-    } else {
-      paste0(population, ": Sex is ", SexID, " assigned")
-    },
-    title = "Tukey mean-difference plot of each SNP marker between females \nand males",
-    plot.filename = plot.filename,
-    path = path.folder
+  statistics$presence_fdr <- stats::p.adjust(statistics$presence_p, "BH")
+  statistics$heterozygosity_fdr <- stats::p.adjust(
+    statistics$heterozygosity_p, "BH"
   )
-  print(scat.fig)
-  message("Figure written: ", plot.filename)
+  statistics$coverage_fdr <- stats::p.adjust(statistics$coverage_p, "BH")
 
-
-
-  # Interacive selection of threshold
-  if (interactive.filter) {
-    filter.y.markers <- tgbase::question(x = "P/A method of SNPs: \nLook at the figures: Do you want to select Y/W-linked markers (y/n): ", answer.opt = c("y", "n"))
-
-    if (filter.y.markers == "y") {
-      threshold.y.markers <-
-        tgbase::question(x = "Choose the threshold for Y/W-linked markers, note that the Y-axis is inverted (-1 to 1): ",
-                                    minmax = c(-1.5, 1.5))
-    } else {
-      threshold.y.markers <- NULL
-    }
+  significant <- function(x) {
+    !require.significance | (!is.na(x) & x <= fdr.threshold)
   }
+  y.like <- statistics$male_presence >= presence.threshold &
+    statistics$female_presence <= absence.threshold &
+    significant(statistics$presence_fdr)
+  w.like <- statistics$female_presence >= presence.threshold &
+    statistics$male_presence <= absence.threshold &
+    significant(statistics$presence_fdr)
+  x.het <- statistics$heterozygosity_difference >=
+    min.heterozygosity.difference &
+    significant(statistics$heterozygosity_fdr)
+  z.het <- statistics$heterozygosity_difference <=
+    -min.heterozygosity.difference &
+    significant(statistics$heterozygosity_fdr)
+  x.cov <- statistics$coverage_ratio_female_male >=
+    coverage.ratio.threshold & significant(statistics$coverage_fdr)
+  z.cov <- statistics$coverage_ratio_female_male <=
+    1 / coverage.ratio.threshold & significant(statistics$coverage_fdr)
 
-  # Select and print sex markers
-  if (!is.null(threshold.y.markers)) {
-    if (threshold.y.markers < 0) {
-      y.markers <- dplyr::filter(data.sum, DIFF < threshold.y.markers)$MARKERS
-    } else if (threshold.y.markers > 0) {
-      y.markers <- dplyr::filter(data.sum, DIFF > threshold.y.markers)$MARKERS
-    }
-    res$heterogametic.markers <- y.markers
-  } else{
-    y.markers <- NULL
-    res$heterogametic.markers <- NULL
-  }
+  statistics$candidate_y_like <- y.like
+  statistics$candidate_w_like <- w.like
+  statistics$candidate_x_heterozygosity <- x.het
+  statistics$candidate_z_heterozygosity <- z.het
+  statistics$candidate_x_coverage <- x.cov
+  statistics$candidate_z_coverage <- z.cov
+  statistics$candidate_classes <- vapply(seq_len(nrow(statistics)), function(i) {
+    paste(c(
+      if (isTRUE(y.like[i])) "Y-like",
+      if (isTRUE(w.like[i])) "W-like",
+      if (isTRUE(x.het[i])) "X-like:heterozygosity",
+      if (isTRUE(z.het[i])) "Z-like:heterozygosity",
+      if (isTRUE(x.cov[i])) "X-like:coverage",
+      if (isTRUE(z.cov[i])) "Z-like:coverage"
+    ), collapse = ";")
+  }, character(1))
+  candidates <- statistics[nzchar(statistics$candidate_classes), , drop = FALSE]
 
-  if (length(y.markers) == 0) {
-    res$heterogametic.markers <- NULL
-  }
-
-
-  ###* For silico.sum ####
-  if ("silico.dart" %in% data.source) {
-    ### SCATTER
-
-    plot.filename <- stringi::stri_join("2A.sexy_markers_SILICO_PA_scatter_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    scat.fig <- sex_markers_plot(
-      data = silico.sum,
-      x = "PRESENCE_ABSENCE_F",
-      y = "PRESENCE_ABSENCE_M",
-      scat = TRUE,
-      qreg = FALSE,
-      tuckey = FALSE,
-      x.title = "Proportion of females",
-      y.title = "Proportion of males",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Absence of each SILICO marker between females and males",
-      plot.filename = plot.filename,
-      path = path.folder
+  sample.summary <- tibble::tibble(
+    sex = c("F", "M", "U"),
+    n = c(n.female, n.male, sum(sex == "U")),
+    mean_positive_depth = c(
+      mean(depth.scale[female]), mean(depth.scale[male]),
+      if (any(sex == "U")) mean(depth.scale[sex == "U"]) else NA_real_
     )
-    print(scat.fig)
-    message("Figure written: ", plot.filename)
-
-    ### TUCKEY
-    plot.filename <- stringi::stri_join("2B.sexy_markers_SILICO_PA_tuckey_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-    stringi::stri_join(".pdf")
-
-    scat.fig <- sex_markers_plot(
-      data = silico.sum,
-      x = "MEAN",
-      y = "DIFF",
-      scat = TRUE,
-      qreg = FALSE,
-      tuckey = TRUE,
-      x.title = "Mean of males and females",
-      y.title = "Difference between males and females (<- W/Y ->)",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Tukey mean-difference plot of each SILICO marker between females \nand males",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(scat.fig)
-
-    message("Figure written: ", plot.filename)
-
-
-    # Interacive selection of threshold
-    if (interactive.filter) {
-      filter.y.markers <- tgbase::question(x = "P/A method of SILICOs:\nLook at the figures: Do you want to select Y/W-linked markers (y/n): ", answer.opt = c("y", "n"))
-
-      if (filter.y.markers == "y") {
-        threshold.y.silico.markers <-
-          tgbase::question(x = "Choose the threshold for Y/W-linked SILICO markers, note that the Y-axis is inverted (-1 to 1): ",
-                                      minmax = c(-1.5, 1.5))
-      } else {
-        threshold.y.silico.markers <- NULL
-        y.silico.markers <- NULL
-      }
-    }
-
-    # Select and print sex markers
-    if (!is.null(threshold.y.silico.markers)) {
-      if (threshold.y.silico.markers < 0) {
-        y.silico.markers <- dplyr::filter(silico.sum, DIFF < threshold.y.silico.markers)$MARKERS
-      } else if (threshold.y.silico.markers > 0) {
-        y.silico.markers <- dplyr::filter(silico.sum, DIFF > threshold.y.silico.markers)$MARKERS
-      }
-      res$heterogametic.silico.markers <- y.silico.markers
-    } else{
-      y.silico.markers <- NULL
-      res$heterogametic.silico.markers <- NULL
-    }
-    # if (length(y.silico.markers) == 0){
-    #   res$heterogametic.silico.markers <- NULL
-  } else{
-    y.silico.markers <- NULL
-    res$heterogametic.silico.markers <- NULL
-  }
-
-
-
-  ####* SET GENETIC SEX STRATA ####
-  if (exists("y.markers") &&
-      !rlang::is_empty(y.markers)) {
-    ####** Y markers ####
-    if (threshold.y.markers < 0) {
-      if (rlang::has_name(data, "READ_DEPTH")) {
-        y.data <-
-          dplyr::filter(data, MARKERS %in% y.markers) %>%
-          dplyr::group_by(INDIVIDUALS) %>%
-          dplyr::summarise(MEAN_RD = mean(READ_DEPTH, na.rm = TRUE)) %>%
-          dplyr::ungroup(.) %>%
-          dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-          dplyr::mutate(VISUAL_SEX = STRATA) %>%
-          dplyr::mutate(GENETIC_SEX =
-                          dplyr::case_when(
-                            is.na(MEAN_RD) |
-                              MEAN_RD <= coverage.thresholds ~ "F",
-                            !(is.na(MEAN_RD) |
-                                MEAN_RD <= coverage.thresholds) ~ "M"
-                          )) %>%
-          dplyr::mutate(STRATA = GENETIC_SEX) %>%
-          dplyr::select(-TARGET_ID)
-      }
-      else if (rlang::has_name(data, "ALT_DOSAGE")) {
-        if (length(y.markers) > 1) {
-          y.data <- dplyr::filter(data, MARKERS %in% y.markers) %>%
-            dplyr::group_by(INDIVIDUALS) %>%
-            dplyr::summarise(MEAN_GT = mean(ALT_DOSAGE),
-                             NA_COUNT = sum(is.na(ALT_DOSAGE))) %>%
-            dplyr::ungroup(.) %>%
-            dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(GENETIC_SEX =
-                            dplyr::case_when(
-                              # is.na(MEAN_GT) &
-                              NA_COUNT >= length(y.markers)/2 ~ "F", #majority rule
-                              !(
-                                # is.na(MEAN_GT) &
-                                NA_COUNT >= length(y.markers)/2) ~ "M"
-                              # VISUAL_SEX == "M" & (
-                              #   # is.na(MEAN_GT) &
-                              #   NA_COUNT >= length(y.markers)/2) ~ "U"
-                            )) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(-TARGET_ID)
-        } else {
-          message("You have only 1 Y-linked marker: 'M' for which this marker is absent are reassigned as 'U' since this marker could be absent due to an error.")
-          y.data <- dplyr::filter(data, MARKERS %in% y.markers) %>%
-            dplyr::mutate(MEAN_GT = ALT_DOSAGE) %>%
-            # dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(GENETIC_SEX =
-                            dplyr::case_when(
-                              is.na(MEAN_GT) ~ "F",
-                              !(is.na(MEAN_GT)) ~ "M",
-                              VISUAL_SEX == "M" &
-                                is.na(MEAN_GT) ~ "U"
-                            )) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(INDIVIDUALS, MEAN_GT, STRATA, VISUAL_SEX, GENETIC_SEX)
-        }
-      } else {
-        message("READ_DEPTH and ALT_DOSAGE not availabe in the data.")
-      }
-      ####** W markers ####
-    } else if (threshold.y.markers > 0) {
-      if (rlang::has_name(data, "READ_DEPTH")) {
-        y.data <-
-          dplyr::filter(data, MARKERS %in% y.markers) %>%
-          dplyr::group_by(INDIVIDUALS) %>%
-          dplyr::summarise(MEAN_RD = mean(READ_DEPTH, na.rm = TRUE)) %>%
-          dplyr::ungroup(.) %>%
-          dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-          dplyr::mutate(VISUAL_SEX = STRATA) %>%
-          dplyr::mutate(GENETIC_SEX =
-                          dplyr::case_when(
-                            is.na(MEAN_RD) |
-                              MEAN_RD <= coverage.thresholds ~ "M",
-                            !(is.na(MEAN_RD) |
-                                MEAN_RD < coverage.thresholds) ~ "F"
-                          )) %>%
-          dplyr::mutate(STRATA = GENETIC_SEX) %>%
-          dplyr::select(-TARGET_ID)
-
-      } else if (rlang::has_name(data, "ALT_DOSAGE")) {
-        if (length(y.markers) > 1) {
-          y.data <- dplyr::filter(data, MARKERS %in% y.markers) %>%
-            dplyr::group_by(INDIVIDUALS) %>%
-            dplyr::summarise(MEAN_GT = mean(ALT_DOSAGE),
-                             NA_COUNT = sum(is.na(ALT_DOSAGE))) %>%
-            dplyr::ungroup(.) %>%
-            dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(GENETIC_SEX =
-                            dplyr::case_when(
-                              # is.na(MEAN_GT) &
-                              NA_COUNT >= length(y.markers)/2  ~ "M", #majority rule
-                              !(
-                                # is.na(MEAN_GT) &
-                                NA_COUNT >= length(y.markers)/2) ~ "F"
-                              # VISUAL_SEX == "F" & (
-                              #   # is.na(MEAN_GT) &
-                              #   NA_COUNT >= length(y.markers)/2) ~ "U"
-                            )) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(-TARGET_ID)
-        } else {
-          message("You have only 1 W-linked marker: 'F' for which this marker is absent are reassigned as 'U'.
-This marker could be absent due to an error.")
-          y.data <- dplyr::filter(data, MARKERS %in% y.markers) %>%
-            dplyr::mutate(MEAN_GT = ALT_DOSAGE) %>%
-            # dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(GENETIC_SEX =
-                            dplyr::case_when(
-                              is.na(MEAN_GT) ~ "M",
-                              !(is.na(MEAN_GT)) ~ "F",
-                              VISUAL_SEX == "F" &
-                                is.na(MEAN_GT) ~ "U"
-                            )) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(INDIVIDUALS, MEAN_GT, STRATA, VISUAL_SEX, GENETIC_SEX)
-        }
-      } else {
-        rlang::abort("READ_DEPTH and ALT_DOSAGE not availabe in the data.")
-      }
-    }
-    # print visual and gentic sex table
-    SumTable <-
-      y.data %>%
-      dplyr::count(VISUAL_SEX, GENETIC_SEX) %>%
-      dplyr::rename(Visual_Sex = VISUAL_SEX, Genetic_Sex_SNP = GENETIC_SEX)
-    print(SumTable)
-    readr::write_tsv(
-      x = SumTable,
-      file = file.path(
-        path.folder,
-        "sexy_markers_summary_table_visual.VS.geneticSNP_sex.tsv"
-      )
-    )
-  }
-
-  if (exists("y.silico.markers") &&
-      !rlang::is_empty(y.silico.markers)) {
-    ###* Y SILICO markers ####
-    if (threshold.y.silico.markers < 0) {
-      if (max(silicodata$VALUE, na.rm = TRUE) > 1) {
-        y.silico.data <-
-          dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-          dplyr::group_by(INDIVIDUALS) %>%
-          dplyr::summarise(MEAN_RD = mean(VALUE, na.rm = TRUE)) %>%
-          dplyr::ungroup(.) %>%
-          dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-          dplyr::mutate(VISUAL_SEX = STRATA) %>%
-          dplyr::mutate(
-            GENETIC_SEX =
-              dplyr::case_when(
-                MEAN_RD <= coverage.thresholds ~ "F",
-                is.na(MEAN_RD) ~ "U",
-                MEAN_RD > coverage.thresholds &
-                  !is.na(MEAN_RD) ~ "M"
-              )
-          ) %>%
-          dplyr::mutate(STRATA = GENETIC_SEX) %>%
-          dplyr::select(-TARGET_ID)
-      } else { #GT
-        message("If all Y-linked markers are assigned NA (i.e. uncertain genotype), this individuals' sex is assigned 'U'.")
-        if (length(y.silico.markers) > 1) {
-          y.silico.data <-
-            dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-            dplyr::group_by(INDIVIDUALS) %>%
-            dplyr::summarise(MEAN_GT = mean(VALUE, na.rm = TRUE)) %>%
-            dplyr::ungroup(.) %>%
-            dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(
-              GENETIC_SEX =
-                dplyr::case_when(
-                  MEAN_GT < coverage.thresholds / length(y.silico.markers) ~ "F",
-                  is.na(MEAN_GT) ~ "U",
-                  MEAN_GT >= coverage.thresholds / length(y.silico.markers) &
-                    !is.na(MEAN_GT) ~ "M"
-                )
-            ) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(-TARGET_ID)
-        } else {
-          y.silico.data <-
-            dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-            dplyr::mutate(MEAN_GT = VALUE) %>%
-            # dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(
-              GENETIC_SEX =
-                dplyr::case_when(
-                  MEAN_GT < coverage.thresholds ~ "F",
-                  is.na(MEAN_GT) ~ "U",
-                  MEAN_GT >= coverage.thresholds &
-                    !is.na(MEAN_GT) ~ "M"
-                )
-            ) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(INDIVIDUALS, MEAN_GT, STRATA, VISUAL_SEX, GENETIC_SEX)
-        }
-      }
-    }
-    ####** W SILICO markers ####
-    else if (threshold.y.silico.markers > 0) {
-      if (max(silicodata$VALUE, na.rm = TRUE) > 1) {
-        y.silico.data <-
-          dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-          dplyr::group_by(INDIVIDUALS) %>%
-          dplyr::summarise(MEAN_RD = mean(VALUE, na.rm = TRUE)) %>%
-          dplyr::ungroup(.) %>%
-          dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-          dplyr::mutate(VISUAL_SEX = STRATA) %>%
-          dplyr::mutate(
-            GENETIC_SEX =
-              dplyr::case_when(
-                MEAN_RD <= coverage.thresholds ~ "M",
-                is.na(MEAN_RD) ~ "U",
-                MEAN_RD > coverage.thresholds &
-                  !is.na(MEAN_RD) ~ "F"
-              )
-          ) %>%
-          dplyr::mutate(STRATA = GENETIC_SEX) %>%
-          dplyr::select(-TARGET_ID)
-      } else { #GT
-        message("If all W-linked markers are assigned NA (i.e. uncertain genotype), this individuals' sex is assigned 'U'.")
-        if (length(y.silico.markers) > 1) {
-          y.silico.data <-
-            dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-            dplyr::group_by(INDIVIDUALS) %>%
-            dplyr::summarise(MEAN_GT = mean(VALUE, na.rm = TRUE)) %>%
-            dplyr::ungroup(.) %>%
-            dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(
-              GENETIC_SEX =
-                dplyr::case_when(
-                  MEAN_GT < coverage.thresholds / length(y.silico.markers) ~ "M",
-                  is.na(MEAN_GT) ~ "U",
-                  MEAN_GT >= coverage.thresholds / length(y.silico.markers) &
-                    !is.na(MEAN_GT) ~ "F"
-                )
-            ) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(-TARGET_ID)
-        } else {
-          y.silico.data <-
-            dplyr::filter(silicodata, MARKERS %in% y.silico.markers) %>%
-            dplyr::mutate(MEAN_GT = VALUE) %>%
-            # dplyr::left_join(strata, by = "INDIVIDUALS") %>%
-            dplyr::mutate(VISUAL_SEX = STRATA) %>%
-            dplyr::mutate(
-              GENETIC_SEX =
-                dplyr::case_when(
-                  MEAN_GT < coverage.thresholds ~ "M",
-                  is.na(MEAN_GT) ~ "U",
-                  MEAN_GT >= coverage.thresholds &
-                    !is.na(MEAN_GT) ~ "F"
-                )
-            ) %>%
-            dplyr::mutate(STRATA = GENETIC_SEX) %>%
-            dplyr::select(INDIVIDUALS, MEAN_GT, STRATA, VISUAL_SEX, GENETIC_SEX)
-        }
-      }
-    }
-    # print visual and gentic sex table
-    SumTable <-
-      y.silico.data %>%
-      dplyr::count(VISUAL_SEX, GENETIC_SEX) %>%
-      dplyr::rename(Visual_Sex = VISUAL_SEX, Genetic_Sex_SILICO = GENETIC_SEX)
-    print(SumTable)
-    readr::write_tsv(
-      x = SumTable,
-      file = file.path(
-        path.folder,
-        "sexy_markers_summary_table_visual.VS.geneticSILICO_sex.tsv"
-      )
-    )
-  }
-
-  if (exists("y.markers") && !rlang::is_empty(y.markers) &&
-      exists("y.silico.markers") && !rlang::is_empty(y.silico.markers)) {
-    # print genetic SNP and gentic SILICO sex table
-    SumTable <- dplyr::left_join(y.data, y.silico.data, by = "INDIVIDUALS") %>%
-      dplyr::count(GENETIC_SEX.x, GENETIC_SEX.y) %>%
-      dplyr::rename(Genetic_Sex_SNP = GENETIC_SEX.x, Genetic_Sex_SILICO = GENETIC_SEX.y)
-    print(SumTable)
-    readr::write_tsv(
-      x = SumTable,
-      file = file.path(
-        path.folder,
-        "sexy_markers_summary_table_geneticSNP.VS.geneticSILICO_sex.tsv"
-      )
-    )
-  }
-
-  if (exists("y.markers") && !rlang::is_empty(y.markers) ||
-      exists("y.silico.markers") && !rlang::is_empty(y.silico.markers)) {
-    # Interacive selection which sex info
-    if (is.null(sex.id.input)) sex.id.input <- "1"
-    if (!rlang::is_empty(y.markers) &&
-        !rlang::is_empty(y.silico.markers)) {
-      if (interactive.filter) {
-        sex.id.input <-
-          tgbase::question(
-            x = "For further analysis, do you want to continue based on (1) visual, (2) genetic SNP or (3) genetic SILICO sex?\nWe advise (3) for better results",
-            answer.opt = c("1", "2", "3"))
-        sex.id.input <- as.integer(sex.id.input)
-      } else{
-        # sex.id.input <- as.integer(3)
-        sex.id.input <- as.integer(sex.id.input)
-      }
-    } else if (!rlang::is_empty(y.markers)) {
-      # Interacive selection which sex info
-      if (is.null(sex.id.input)) sex.id.input <- "1"
-      if (interactive.filter) {
-        sex.id.input <-
-          tgbase::question(
-            x = "For further analysis, do you want to continue based on (1) visual or (2) genetic SNP sex?\nWe advise (2) for better results",
-            answer.opt = c("1", "2"))
-        sex.id.input <- as.integer(sex.id.input)
-      } else {
-        # sex.id.input <- as.integer(2)
-        sex.id.input <- as.integer(sex.id.input)
-      }
-    } else if (!rlang::is_empty(y.silico.markers)) {
-      # Interacive selection which sex info
-      if (is.null(sex.id.input)) sex.id.input <- "1"
-      if (interactive.filter) {
-        sex.id.input <-
-          tgbase::question(x = "For further analysis, do you want to continue based on (1) visual or (3) genetic SILICO sex?\nWe advise (3) for better results",
-                                      answer.opt = c("1", "3"))
-        sex.id.input <- as.integer(sex.id.input)
-      } else {
-        # sex.id.input <- as.integer(3)
-        sex.id.input <- as.integer(sex.id.input)
-      }
-    }
-
-    #set new sexID for Het analysis
-    if (sex.id.input == 2) {
-      readr::write_tsv(
-        x = y.data,
-        file = file.path(
-          path.folder,
-          "sexy_markers_strata_new_with_genetic_sex_according_to_SNPdata.tsv"
-        )
-      )
-      message("New strata file with genetic sex is written.")
-      ### recalculate data based on new sexID
-      data <-
-        dplyr::select(data,-STRATA) %>%
-        # dplyr::rename(data, VISUAL_STRATA = STRATA) %>%
-        dplyr::left_join(y.data, by = "INDIVIDUALS")
-      # dplyr::rename(MARKERS = MARKERS.x, ALT_DOSAGE = ALT_DOSAGE.x, TARGET_ID = TARGET_ID.x) %>%
-      # dplyr::rename(TARGET_ID = TARGET_ID.x) %>%
-      # dplyr::select(-c(TARGET_ID.y))
-      # dplyr::mutate(GENETIC_STRATA = STRATA)
-      genometranslator::write_genome(
-        data = data,
-        filename = file.path(wd, "sexy_markers_genetic_SNP_sex_ID.arrow.parquet")
-      )
-
-      if ("silico.dart" %in% data.source) {
-        silicodata <-
-          dplyr::select(silicodata,-c(STRATA)) %>%
-          # dplyr::rename(silicodata, VISUAL_STRATA = STRATA) %>%
-          dplyr::left_join(y.data, by = "INDIVIDUALS")
-        # dplyr::rename(TARGET_ID = TARGET_ID.x) %>%
-        # dplyr::select(-c(TARGET_ID.y))
-        # dplyr::mutate(GENETIC_STRATA = STRATA)
-        genometranslator::write_genome(
-          data = silicodata,
-          filename = file.path(wd, "sexy_markers_silicodata_genetic_SNP_sex_ID.arrow.parquet")
-          )
-      } else{
-        silicodata <- NULL
-      }
-
-    } else if (sex.id.input == 3) {
-      readr::write_tsv(
-        x = y.silico.data,
-        file = file.path(
-          path.folder,
-          "sexy_markers_strata_new_with_genetic_sex_according_to_SILICOdata.tsv"
-        )
-      )
-      message("New strata file with genetic sex is written.")
-      SexID <- "genetically (SILICO)"
-      ### recalculate data based on new sexID
-      data <-
-        dplyr::select(data,-c(STRATA)) %>%
-        # dplyr::rename(data, VISUAL_STRATA = STRATA) %>%
-        dplyr::left_join(y.silico.data, by = "INDIVIDUALS")
-      # dplyr::rename(TARGET_ID = TARGET_ID.x) %>%
-      # dplyr::select(-c(TARGET_ID.y))
-      # dplyr::mutate(GENETIC_STRATA = STRATA)
-      genometranslator::write_genome(
-        data = data,
-        filename = file.path(wd, "sexy_markers_data_genetic_SILCIO_sex_ID.arrow.parquet")
-        )
-
-      if ("silico.dart" %in% data.source) {
-        silicodata <-
-          dplyr::select(silicodata,-c(STRATA)) %>%
-          # dplyr::rename(silicodata, VISUAL_STRATA = STRATA) %>%
-          dplyr::left_join(y.silico.data, by = "INDIVIDUALS")
-        # dplyr::rename(TARGET_ID = TARGET_ID.x) %>%
-        # dplyr::select(-c(TARGET_ID.y))
-        # dplyr::mutate(GENETIC_STRATA = STRATA)
-        genometranslator::write_genome(
-          data = silicodata,
-          filename = file.path(wd, "sexy_markers_silicodata_genetic_SILICO_sex_ID.arrow.parquet")
-          )
-      } else{
-        silicodata <- NULL
-      }
-    }
-
-
-    if (sex.id.input != 1) {
-      message("Sex and summary statistics will be calculated according to: ",
-              sex.id.input)
-      res$sum <- summarize_sex(
-        data = data,
-        silicodata = silicodata,
-        coverage.thresholds = coverage.thresholds,
-        data.source = data.source,
-        tau = tau
-      )
-      data.sum <- res$sum$data.sum
-      silico.sum <- res$sum$silico.sum
-
-      # Add new summary for number F and M and ratio, because Unknown are now included
-      sex.ratio <-
-        dplyr::distinct(data, INDIVIDUALS, .keep_all = TRUE) %>%
-        dplyr::count(GENETIC_SEX, name = "N")
-      message(
-        "\n\nIndividuals with unknown sex ID are now included in the analysis.
-        The new sex-ratio (F/M) is: ",
-        round(sex.ratio$N[sex.ratio$GENETIC_SEX == "F"] / sex.ratio$N[sex.ratio$GENETIC_SEX == "M"], 2)
-      )
-      print(sex.ratio)
-    } else {message("Sex ID has not changed. Sex and summary statistics are not recalculated.")}
-  }
-
-
-  # Remove markers that are already extracted and have high missingness
-  print(ggplot2::qplot(data.sum$MISSINGNESS, xlab = "Missingness per SNP marker"))
-  if (interactive.filter) {
-    mis.threshold.data <- tgbase::question(
-      x = "Have a look at the plot: Choose the upper threshold for missingness per SNP marker (e.g. 0.2):",
-      minmax = c(0, 1)
-      )
-
-    message(
-      "For detecting heterogametic markers, the SILICO data is filtered on a missingness >: ",
-      mis.threshold.data
-    )
-    data.sum <-
-      dplyr::filter(data.sum,
-                    !(MARKERS %in% y.markers | MISSINGNESS > mis.threshold.data))
-  } else {
-    message(
-      "For detecting heterogametic markers, the SNP data is filtered on a missingness >: ",
-      mis.threshold.data)
-    data.sum <-
-      dplyr::filter(data.sum, !(MARKERS %in% y.markers | MISSINGNESS > mis.threshold.data))
-  }
-
-  if (!is.null(silicodata)) {
-    print(ggplot2::qplot(silico.sum$MISSINGNESS, xlab = "Missingness per SILICO marker"))
-    if (interactive.filter) {
-      print(ggplot2::qplot(silico.sum$MISSINGNESS, xlab = "Missingness per SILICO marker"))
-      mis.threshold.silicodata <-
-        tgbase::question(x = "Have a look at the plot: Choose the upper threshold for missingness per SILICO marker (e.g. 0.2):", minmax = c(0, 1))
-      message(
-        "For detecting homogametic markers, the SILICO data is filtered on a missingness > ",
-        mis.threshold.silicodata
-      )
-      silico.sum <-
-        dplyr::filter(silico.sum, !(MARKERS %in% y.silico.markers |
-                                      MISSINGNESS > mis.threshold.silicodata
-        ))
-    } else {
-      message(
-        "For detecting homogametic markers, the SILICO data is filtered on a missingness > ",
-        mis.threshold.silicodata)
-      silico.sum <-
-        dplyr::filter(silico.sum, !(MARKERS %in% y.silico.markers | MISSINGNESS > mis.threshold.silicodata))
-    }
-  }
-
-
-
-  #### HET ####
-
-  ### SCATTER
-  message("Start finding X- or Z-linked markers. CAUTION: this step is largely affected by structure in your data (e.g. families, populations or species).")
-
-  plot.filename <- stringi::stri_join("3A.sexy_markers_HET_scat_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-    stringi::stri_join(".pdf")
-
-
-
-  scat.fig <- sex_markers_plot(
-    data = data.sum,
-    x = "MEAN_HET_F",
-    y = "MEAN_HET_M",
-    scat = TRUE,
-    qreg = FALSE,
-    x.title = "Proportion of females",
-    y.title = "Proportion of males",
-    subtitle = if (is.null(population)) {
-      paste0("Sex is ", SexID, " assigned")
-    } else {
-      paste0(population, ": Sex is ", SexID, " assigned")
-    },
-    title = "Heterozygosity of each SNP marker between females and males",
-    plot.filename = plot.filename,
-    path = path.folder
   )
-  print(scat.fig)
-
-  if (interactive.filter) {
-    het.qr.input <-
-      tgbase::question(
-        x = "\nHeterozygosity method of SNPs:\nDo you want to plot the residuals for \n(1) X-linked markers: i.e. heterozygous for females\n(2) Z-linked markers: i.e. heterozygous for males",
-        answer.opt = c("1", "2"))
-    het.qr.input <- as.integer(het.qr.input)
-  } else{
-    het.qr.input <- as.integer(het.qr.input)
-  }
-
-  # Quantilte regression
-  if (het.qr.input == 1) {
-    plot.filename <- stringi::stri_join("3B.sexy_markers_HET_qr_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    qr.fig <- sex_markers_plot(
-      data = data.sum,
-      x = "QR_RESIDUALS",
-      y = "MEAN_HET_M",
-      qreg = TRUE,
-      tuckey = FALSE,
-      x.title = "Quantile residuals for M~F (<- X/Z ->)",
-      y.title = "Proportion of heterozygosity in males",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned; tau = ", tau)
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned; tau = ", tau)
-      },
-      title = "Quantile residual plot of each SNP marker between females and males",
-      plot.filename = plot.filename,
-      path = path.folder
+  metadata.audit <- .sex_metadata_audit(metadata, sex.column)
+  confounded <- metadata.audit$variable[
+    nzchar(metadata.audit$warning)
+  ]
+  if (length(confounded)) {
+    .sex_warning(
+      "Recorded sex is strongly associated with metadata: ",
+      paste(confounded, collapse = ", "),
+      ". Treat marker associations cautiously."
     )
-    print(qr.fig)
-
-  } else if (het.qr.input == 2) {
-    plot.filename <- stringi::stri_join("3B.sexy_markers_HET_qr_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    qr.fig <- sex_markers_plot(
-      data = data.sum,
-      x = "QR_RESIDUALS",
-      y = "MEAN_HET_F",
-      qreg = TRUE,
-      tuckey = FALSE,
-      x.title = "Quantile residuals for M~F (<- X/Z ->)",
-      y.title = "Proportion of heterozygosity in females",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned; tau = ", tau)
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned; tau = ", tau)
-      },
-      title = "Quantile residual plot of each SNP marker between females and males",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(qr.fig)
-  } else {
-    message("het.qr.input must be '1' or '2'.")
   }
-
-
-  message(
-    "Files written: '3A.sexy_markers_HET_scat_plot.pdf' & '3B.sexy_markers_HET_qr_plot.pdf'"
+  readr::write_tsv(
+    statistics, file.path(path.folder, "sex_marker_statistics.tsv")
   )
-
-  # Interacive selection of threshold
-  if (interactive.filter) {
-    filter.x.markers <- tgbase::question(x = "Look at the figures: Do you want to select X/Z-linked markers (y/n): ", answer.opt = c("y", "n"))
-
-    if (filter.x.markers == "y") {
-      threshold.x.markers.qr <-
-        tgbase::question(x = "Choose the threshold for X/Z-linked markers (-1 to 1): ",
-                                    minmax = c(-1, 1))
-    } else {
-      threshold.x.markers.qr <- NULL
-    }
-  }
-
-  if (!is.null(threshold.x.markers.qr)) {
-    if (threshold.x.markers.qr < 0) {
-      x.markers <- dplyr::filter(data.sum, QR_RESIDUALS < threshold.x.markers.qr)$MARKERS
-    } else{
-      x.markers <- dplyr::filter(data.sum, QR_RESIDUALS > threshold.x.markers.qr)$MARKERS
-    }
-    res$homogametic.het.markers <- x.markers
-  } else {
-    x.markers <- NULL
-    res$homogametic.het.markers <- NULL
-  }
-  if (length(x.markers) == 0) {
-    res$homogametic.het.markers <- NULL
-  }
-
-
-
-  #### READ DEPTH ####
-  ####* For data.sum ####
-  if (rlang::has_name(data, "READ_DEPTH")) {
-    ### SCATTER
-    plot.filename <- stringi::stri_join("4A.sexy_markers_RD_scat_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-
-    scat.fig <- sex_markers_plot(
-      data = data.sum,
-      x = "MEAN_READ_DEPTH_F",
-      y = "MEAN_READ_DEPTH_M",
-      scat = TRUE,
-      qreg = FALSE,
-      tuckey = FALSE,
-      RD = TRUE,
-      x.title = "Mean coverage for females",
-      y.title = "Mean coverage for males",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Average coverage of each marker between females and males",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(scat.fig)
-
-
-    ##HIST
-    plot.filename <- stringi::stri_join("4B.sexy_markers_RD_hist_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    hist1.fig <- sex_markers_plot(
-      data = data.sum,
-      x = "RATIO",
-      qreg = FALSE,
-      tuckey = FALSE,
-      hist = TRUE,
-      x.title = "Female - male coverage ratio",
-      y.title = "",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Histogram of females over males coverage for each marker",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(hist1.fig)
-
-    ## INTERACTIVE ZOOM
-    if (interactive.filter) {
-      zoom.data <-
-        tgbase::question(x = "Choose the lower OR upper threshold to subset the histogram (e.g. scaling the plot to a ratio < 0.8 or ratio > 1.2)",minmax = c(-2,2))
-    } else {
-      zoom.data <- zoom.data
-    }
-    ##HIST2
-    plot.filename <- stringi::stri_join("4C.sexy_markers_RD_hist_subsetted_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    hist2.fig <- sex_markers_plot(
-      data =
-        if (zoom.data > 1) {
-          dplyr::filter(data.sum, RATIO > zoom.data)
-        } else if (zoom.data < 1) {
-          dplyr::filter(data.sum, RATIO < zoom.data)
-        },
-      x = "RATIO",
-      qreg = FALSE,
-      tuckey = FALSE,
-      hist = TRUE,
-      x.title = "Female - male count ratio",
-      y.title = "",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Histogram of females counts over males counts for each marker",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(hist2.fig)
-
-    message(
-      "Files written: '4A.sexy_markers_RD_scat_plot.pdf' & '4B.sexy_markers_RD_hist_plot.pdf' & '4C.sexy_markers_RD_hist_subsetted_plot.pdf'"
-    )
-
-
-    # Interacive selection of threshold
-    if (interactive.filter) {
-      filter.x.markers <- tgbase::question(x = "Coverage method of SNPs:\nLook at the figures: Do you want to select X/Z-linked markers (y/n): ", answer.opt = c("y", "n"))
-
-      if (filter.x.markers == "y") {
-        threshold.x.markers.RD <-
-          tgbase::question(x = "Choose the RATIO threshold for X/Z-linked markers: ", minmax = c(-Inf,Inf) )
-      } else {
-        threshold.x.markers.RD <- NULL
-      }
-    }
-
-    if (!is.null(threshold.x.markers.RD)) {
-      if (threshold.x.markers.RD > 1) {
-        x.markers <- dplyr::filter(data.sum, RATIO > threshold.x.markers.RD)$MARKERS
-      } else{
-        x.markers <- dplyr::filter(data.sum, RATIO < threshold.x.markers.RD)$MARKERS
-      }
-      res$homogametic.RD.markers <- x.markers
-    } else {
-      x.markers <- NULL
-      res$homogametic.RD.markers <- NULL
-    }
-    if (length(x.markers) == 0) {
-      res$homogametic.RD.markers <- NULL
-    }
-  }
-
-
-
-
-
-  ####* For silico.sum ####
-  if (all(c("silico.dart", "counts") %in% data.source)) {
-    ### SCATTER
-    plot.filename <- stringi::stri_join("5A.sexy_markers_SILICO_RD_scat_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    scat.fig <- sex_markers_plot(
-      data = silico.sum,
-      x = "MEAN_READ_DEPTH_F",
-      y = "MEAN_READ_DEPTH_M",
-      scat = TRUE,
-      qreg = FALSE,
-      tuckey = FALSE,
-      RD = TRUE,
-      x.title = "Mean coverage for females",
-      y.title = "Mean coverage for males",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Average coverage of each silico marker between females and males",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(scat.fig)
-
-
-    ##HIST
-    plot.filename <- stringi::stri_join("5B.sexy_markers_SILICO_RD_hist_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    hist1.fig <- sex_markers_plot(
-      data = silico.sum,
-      x = "RATIO",
-      qreg = FALSE,
-      tuckey = FALSE,
-      hist = TRUE,
-      x.title = "Female - male coverage ratio",
-      y.title = "",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Histogram of females coverage over males coverage for each SILICO",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(hist1.fig)
-
-
-    ## INTERACTIVE ZOOM
-    if (interactive.filter) {
-      zoom.silicodata <-
-        tgbase::question(x = "Choose the lower OR upper threshold to subset the histogram (e.g. scaling the plot to a ratio < 0.8 or ratio > 1.2)",minmax = c(-2,2))
-    } else {
-      zoom.silicodata <- zoom.silicodata
-    }
-    ##HIST2
-    plot.filename <- stringi::stri_join("5C.sexy_markers_SILICO_RD_hist_subsetted_plot", species, population, file.date, sep = "_", ignore_null = TRUE) %>%
-      stringi::stri_join(".pdf")
-
-    hist2.fig <- sex_markers_plot(
-      data =
-        if (zoom.silicodata > 1) {
-          dplyr::filter(silico.sum, RATIO > zoom.silicodata)
-        } else if (zoom.silicodata < 1) {
-          dplyr::filter(silico.sum, RATIO < zoom.silicodata)
-        },
-      x = "RATIO",
-      qreg = FALSE,
-      tuckey = FALSE,
-      hist = TRUE,
-      x.title = "Female - male coverage ratio",
-      y.title = "",
-      subtitle = if (is.null(population)) {
-        paste0("Sex is ", SexID, " assigned")
-      } else {
-        paste0(population, ": Sex is ", SexID, " assigned")
-      },
-      title = "Histogram of females coverage over males coverage for each SILICO",
-      plot.filename = plot.filename,
-      path = path.folder
-    )
-    print(hist2.fig)
-
-    message(
-      "Files written: '5A.sexy_markers_SILICO_RD_scat_plot.pdf' & '5B.sexy_markers_SILICO_RD_hist_plot.pdf' & '5C.sexy_markers_SILICO_RD_hist_subsetted_plot.pdf'"
-    )
-
-    # Interacive selection of threshold
-    if (interactive.filter) {
-      filter.x.markers <-
-        tgbase::question(x = "Coverage method of SILICOs:\nLook at the figures: Do you want to select X/Z-linked markers (y/n): ", answer.opt = c("y", "n"))
-
-      if (filter.x.markers == "y") {
-        threshold.x.markers.RD.silico <-
-          tgbase::question(x = "Choose the RATIO threshold for X/Z-linked SILICO markers: ", minmax = c(-Inf, Inf))
-      } else {
-        threshold.x.markers.RD.silico <- NULL
-      }
-    }
-
-    if (!is.null(threshold.x.markers.RD.silico)) {
-      if (threshold.x.markers.RD.silico > 1) {
-        x.markers <-
-          dplyr::filter(silico.sum, RATIO > threshold.x.markers.RD.silico)$MARKERS
-      } else{
-        x.markers <-
-          dplyr::filter(silico.sum, RATIO < threshold.x.markers.RD.silico)$MARKERS
-      }
-      res$homogametic.RD.silico.markers <- x.markers
-    } else {
-      x.markers <- NULL
-      res$homogametic.RD.silico.markers <- NULL
-    }
-    if (length(x.markers) == 0) {
-      res$homogametic.RD.silico.markers <- NULL
-    }
-  }
-
-
-  # Export -------------------------------------------------------------------
-
-  ## SEX MARKER SUMMARY ##
-
-  ### Get the sequence metadata from the gds object
-  if (class(gds.bk)[1] == "SeqVarGDSClass") {
-    # Set sex-marker to whitelist and allign the sex-marker method with the markers
-    meta <- genometranslator::extract_markers_metadata(
-      gds = gds.bk,
-      markers.meta.select = c("MARKERS","SEQUENCE", "LOCUS"), #LOCUS is CLONE_ID
-      metadata.node = TRUE,
-      whitelist = FALSE,
-      blacklist = FALSE,
-      verbose = FALSE
-    ) %>%
-      dplyr::distinct(MARKERS, .keep_all = TRUE)
-  }
-  if (!is.null(silicodata)) {
-    silico <- dplyr::select(silicodata, MARKERS, SEQUENCE) %>%
-      dplyr::distinct(MARKERS, .keep_all = TRUE)
-  } else{
-    silico <- NULL
-  }
-
-  if (!is.null(
-    c(
-      res$heterogametic.markers,
-      res$heterogametic.silico.markers,
-      res$homogametic.het.markers,
-      res$homogametic.RD.markers,
-      res$homogametic.RD.silico.markers
-    )
-  )) {
-    res$sexy.summary <-
-      tibble::tibble(
-        SEX_MARKERS =
-          c(
-            res$heterogametic.markers,
-            res$heterogametic.silico.markers,
-            res$homogametic.het.markers,
-            res$homogametic.RD.markers,
-            res$homogametic.RD.silico.markers
-          ),
-        CLONE_ID =
-          c(
-            meta$LOCUS[meta$MARKERS %in% res$heterogametic.markers],
-            res$heterogametic.silico.markers,
-            meta$LOCUS[meta$MARKERS %in% res$homogametic.het.markers],
-            meta$LOCUS[meta$MARKERS %in% res$homogametic.RD.markers],
-            res$homogametic.RD.silico.markers
-          ),
-        METHOD =
-          c(
-            rep(
-              "presence/absence_method-SNP",
-              length(res$heterogametic.markers)
-            ),
-            rep(
-              "presence/absence_method-SILICO",
-              length(res$heterogametic.silico.markers)
-            ),
-            rep(
-              "heterozygosity_method-SNP",
-              length(res$homogametic.het.markers)
-            ),
-            rep("Coverage_method-SNP", length(res$homogametic.RD.markers)),
-            rep(
-              "Coverage_method-SILICO",
-              length(res$homogametic.RD.silico.markers)
-            )
-          ),
-        MARKER_TYPE =
-          c(
-            rep("Heterogametic_sex-marker", length(
-              c(
-                res$heterogametic.markers,
-                res$heterogametic.silico.markers
-              )
-            )),
-            rep("Homogametic_sex-marker", length(
-              c(
-                res$homogametic.het.markers,
-                res$homogametic.RD.markers,
-                res$homogametic.RD.silico.markers
-              )
-            ))
-          )
-      )
-    # TODO add check for when SEQUENCE data is not available
-    if (rlang::has_name(meta, "SEQUENCE")) {
-      res$sexy.summary %<>% dplyr::mutate(
-        SEQUENCE =
-          c(
-            meta$SEQUENCE[meta$MARKERS %in% SEX_MARKERS[METHOD == "presence/absence_method-SNP"]],
-            silico$SEQUENCE[silico$MARKERS %in% SEX_MARKERS[METHOD ==
-                                                              "presence/absence_method-SILICO"]],
-            meta$SEQUENCE[meta$MARKERS %in% SEX_MARKERS[METHOD ==
-                                                          "heterozygosity_method-SNP"]],
-            meta$SEQUENCE[meta$MARKERS %in% SEX_MARKERS[METHOD ==
-                                                          "Coverage_method-SNP"]],
-            silico$SEQUENCE[silico$MARKERS %in% SEX_MARKERS[METHOD ==
-                                                              "Coverage_method-SILICO"]]
-          )
-      )
-    }
-    message("Summary table of sex-linked markers by method of discovery:")
-    print(summary(as.factor(res$sexy.summary$METHOD)))
-  } else {
-    res$sexy.summary <- NULL
-  }
-
-
-  ## Method-overlap plot
-  if (sum(
-    !is.null(res$heterogametic.markers),
-    !is.null(res$heterogametic.silico.markers),
-    !is.null(res$homogametic.het.markers),
-    !is.null(res$homogametic.RD.markers),
-    !is.null(res$homogametic.RD.silico.markers)) > 1) {
-    # Common markers plot
-    plot.data <- res$sexy.summary %>%
-      dplyr::distinct(SEX_MARKERS, METHOD) %>%
-      dplyr::mutate(
-        n = rep(1, n()),
-        METHOD = stringi::stri_join("METHOD_", METHOD)
-        ) %>%
-      data.table::as.data.table(.) %>%
-      data.table::dcast.data.table(
-        data = .,
-        formula = SEX_MARKERS ~ METHOD,
-        value.var = "n",
-        fill = 0
-      ) %>%
-      tibble::as_tibble(.)
-
-    method.cols <- grep("^METHOD_", names(plot.data), value = TRUE)
-    plot.data <- dplyr::mutate(
-      plot.data,
-      dplyr::across(tidyselect::all_of(method.cols), as.logical)
-    )
-
-    overlap.plot <- ComplexUpset::upset(
-      data = plot.data,
-      intersect = method.cols,
-      name = "Detection method"
-    )
-    print(overlap.plot)
-
-    plot.filename <- stringi::stri_join(
-      "6.sexy_markers_method_overlap_", file.date, ".pdf"
-    )
-    plot.filename <- file.path(path.folder, plot.filename)
-
-    ggplot2::ggsave(
-      filename = plot.filename,
-      plot = overlap.plot,
-      width = 10,
-      height = 7,
-      units = "in"
-    )
-    if (verbose) message("File written: ", basename(plot.filename))
-  } else{
-    if (verbose) {
-      message("At least two sex-marker methods are required for an overlap plot.")
-    }
-  }
-
-  ## FASTA file with sex markers for all methods ##
-  # TODO add check for when SEQUENCE data is not available
-
-  if (!is.null(
-    c(res$heterogametic.markers,
-      res$heterogametic.silico.markers,
-      res$homogametic.het.markers,
-      res$homogametic.RD.markers,
-      res$homogametic.RD.silico.markers
-    )) & (rlang::has_name(meta, "SEQUENCE"))) {
-    afile <-
-      file(file.path(path.folder, "7.sexy_markers_sequences.fasta"),
-           open = 'w')
-    for (i in 1:length(res$sexy.summary$SEX_MARKERS)) {
-      cat(
-        paste(
-          '>',
-          res$sexy.summary$MARKER_TYPE[i],
-          "|",
-          res$sexy.summary$METHOD[i],
-          "|",
-          res$sexy.summary$SEX_MARKERS[i],
-          '\n',
-          res$sexy.summary$SEQUENCE[i],
-          '\n',
-          sep = ''
-        ),
-        sep = '',
-        file = afile
-      )
-    }
-    close(afile)
-    message("File written:'7.sexy_markers_sequences.fasta'")
-  }
-
-  return(res)
-}#End sexy_markers
-
-
-# INTERNAL NESTED FUNCTION------------------------------------------------------
-#' @title sex_markers_plot
-#' @description Function to generate the different figures required for 'sexy_markers'.
-#' @keywords internal
-#' @export
-
-sex_markers_plot <- function(
-  data, x, y, x.title = "x title", y.title = "y title", subtitle = "subtitle", title = "Big title",
-  width = 15, height = 15, scat = FALSE, tuckey = FALSE, qreg = FALSE, hist = FALSE, RD = FALSE, plot.filename = NULL, path = NULL) {
-
-  x <- dplyr::sym(x)
-
-  element.text <- ggplot2::element_text(size = 10, face = "bold")
-
-  if (qreg) data %<>% dplyr::filter(!is.na(QR_RESIDUALS))
-  if (hist) {
-    sex.plot <- ggplot2::ggplot(
-      data = data,
-      ggplot2::aes(x = !!x)
-    ) +
-      ggplot2::geom_histogram(
-        col = "black",
-        fill = "grey",
-        alpha = .2,
-        binwidth = 0.1)
-  } else{
-    y <- dplyr::sym(y)
-    sex.plot <- ggplot2::ggplot(
-      data = data,
-      ggplot2::aes(x = !!x, y = !!y)) +
-      ggplot2::geom_point(size = 2, alpha = 0.3)
-
-    if (tuckey) {
-      sex.plot <- sex.plot + ggplot2::scale_y_reverse()
-    } else if (qreg) {
-      sex.plot <- sex.plot
-    } else if (RD) {
-      sex.plot <- sex.plot + ggplot2::geom_abline(slope = c(2,1,1/2))
-    } else if (scat) {
-      sex.plot <- sex.plot + ggplot2::scale_x_continuous(limits = c(0, 1)) +
-        ggplot2::scale_y_continuous(limits = c(0, 1))
-    } else {
-      sex.plot <- sex.plot + ggplot2::geom_abline()
-    }
-  }
-
-  sex.plot <- sex.plot +
-    ggplot2::labs(x = x.title, y = y.title, subtitle = subtitle, title = title) +
-    ggplot2::theme(
-      legend.position = "none",
-      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
-      plot.subtitle = ggplot2::element_text(size = 10, hjust = 0.5),
-      axis.title.y = element.text,
-      axis.title.x = element.text,
-      axis.text.x = element.text)
-  # print(sex.plot)
-
-  ggplot2::ggsave(
-    filename = plot.filename,
-    path = path,
-    plot = sex.plot,
-    width = width,
-    height = height,
-    dpi = 300,
-    units = "cm",
-    useDingbats = FALSE
+  readr::write_tsv(
+    candidates, file.path(path.folder, "candidate_sex_markers.tsv")
   )
-  return(sex.plot)
+  readr::write_tsv(
+    sample.summary, file.path(path.folder, "sex_sample_summary.tsv")
+  )
+  readr::write_tsv(
+    metadata.audit, file.path(path.folder, "sex_metadata_audit.tsv")
+  )
+  .sex_write_fasta(candidates, path.folder)
+  plots <- .sex_make_plots(statistics, depth.available)
+  if (save.plots) .sex_save_plots(plots, path.folder, plot.formats)
+
+  SeqArray::seqFilterPop(gds)
+  filter.pushed <- FALSE
+  selection.after <- SeqArray::seqGetFilter(gds)
+  restored <- identical(selection.before$sample.sel, selection.after$sample.sel) &&
+    identical(selection.before$variant.sel, selection.after$variant.sel)
+  if (!restored) {
+    rlang::abort("The active GDS selection could not be restored safely.")
+  }
+  if (opened.here) {
+    SeqArray::seqClose(gds)
+    opened.here <- FALSE
+  }
+  if (verbose) {
+    .sex_message("Candidate sex-linked markers: ", nrow(candidates), ".")
+    .sex_message("Complete marker statistics: sex_marker_statistics.tsv")
+    .sex_message("Candidate table: candidate_sex_markers.tsv")
+    .sex_message("Results written to: ", path.folder)
+  }
+  result <- list(
+    statistics = statistics,
+    candidates = candidates,
+    sample_summary = sample.summary,
+    metadata_audit = metadata.audit,
+    plots = plots,
+    depth_available = depth.available,
+    active_selection_restored = restored,
+    path.folder = path.folder
+  )
+  class(result) <- "sexy_markers"
+  result
 }
 
-#' @title summarize_sex
-#' @description Function to summarize the presence-absence, heterozygosity and read depth per sex.
-#' @keywords internal
 #' @export
-
-summarize_sex <- function(data, silicodata, data.source, coverage.thresholds = NULL, tau = 0.3) {
-  if (rlang::has_name(data, "READ_DEPTH")) {
-    # With DArT count data and VCFs
-
-    mis <-
-      dplyr::select(data, MARKERS, INDIVIDUALS, STRATA, READ_DEPTH, ALT_DOSAGE) %>%
-      dplyr::group_by(MARKERS) %>%
-      dplyr::summarise(MISSINGNESS = length(INDIVIDUALS[is.na(ALT_DOSAGE)]) / length(INDIVIDUALS)) %>%
-      dplyr::ungroup(.)
-
-    data.sum <-
-      dplyr::select(data, MARKERS, INDIVIDUALS, STRATA, READ_DEPTH, ALT_DOSAGE) %>%
-      dplyr::group_by(STRATA, MARKERS) %>%
-      dplyr::summarise(
-        PRESENCE_ABSENCE = length(INDIVIDUALS[READ_DEPTH < coverage.thresholds | is.na(READ_DEPTH)]) / length(INDIVIDUALS), #added | is.na(READ_DEPTH)
-        MEAN_HET = length(INDIVIDUALS[ALT_DOSAGE == 1]) / length(INDIVIDUALS),
-        MEAN_READ_DEPTH = mean(READ_DEPTH, na.rm = TRUE)
-      ) %>%
-      dplyr::ungroup(.) %>%
-      data.table::as.data.table(.) %>%
-      data.table::dcast.data.table(
-        data = .,
-        formula = MARKERS ~ STRATA,
-        value.var = c("PRESENCE_ABSENCE", "MEAN_READ_DEPTH", "MEAN_HET")
-      ) %>%
-      tibble::as_tibble(.) %>%
-      dplyr::mutate(
-        MEAN = (PRESENCE_ABSENCE_M + PRESENCE_ABSENCE_F) / 2,
-        DIFF = PRESENCE_ABSENCE_M - PRESENCE_ABSENCE_F,
-        RATIO = MEAN_READ_DEPTH_F / MEAN_READ_DEPTH_M
-      ) %>%
-      dplyr::filter(RATIO != 0) %>%
-      dplyr::ungroup(.) %>%
-      dplyr::left_join(mis, by = "MARKERS")
-
-
-    data.sum[is.na(data.sum)] <- NA
-    mis <- NULL
-
-    if (is.null(tau)) tau <- 0.03
-    #Quantile regression plot
-    data.sum <- dplyr::bind_rows(
-      dplyr::filter(data.sum, is.na(MEAN_HET_M) | is.na(MEAN_HET_F)),
-      dplyr::filter(data.sum, !is.na(MEAN_HET_M) &
-                      !is.na(MEAN_HET_F)) %>%
-        dplyr::mutate(
-          QR_RESIDUALS = quantreg::rq(MEAN_HET_M ~ MEAN_HET_F,
-                                      tau = tau,
-                                      data = .) %$%
-            residuals
-        )
-    )
-  } else if (rlang::has_name(data, "ALT_DOSAGE") ) {  #genotype data
-    mis <-
-      dplyr::select(data, MARKERS, INDIVIDUALS, STRATA, ALT_DOSAGE) %>%
-      dplyr::group_by(MARKERS) %>%
-      dplyr::summarise(MISSINGNESS = length(INDIVIDUALS[is.na(ALT_DOSAGE)]) / length(INDIVIDUALS)) %>%
-      dplyr::ungroup(.)
-
-    data.sum <-
-      dplyr::select(data, MARKERS, INDIVIDUALS, STRATA, ALT_DOSAGE) %>%
-      dplyr::group_by(STRATA, MARKERS) %>%
-      dplyr::summarise(
-        PRESENCE_ABSENCE = length(INDIVIDUALS[is.na(ALT_DOSAGE)]) / length(INDIVIDUALS),
-        MEAN_HET = length(INDIVIDUALS[ALT_DOSAGE == 1]) / length(INDIVIDUALS)
-      ) %>%
-      dplyr::ungroup(.) %>%
-      data.table::as.data.table(.) %>%
-      data.table::dcast.data.table(
-        data = .,
-        formula = MARKERS ~ STRATA,
-        value.var = c("PRESENCE_ABSENCE", "MEAN_HET")
-      ) %>%
-      tibble::as_tibble(.) %>%
-      dplyr::mutate(
-        MEAN = (PRESENCE_ABSENCE_M + PRESENCE_ABSENCE_F) / 2,
-        DIFF = PRESENCE_ABSENCE_M - PRESENCE_ABSENCE_F
-      ) %>%
-      dplyr::ungroup(.) %>%
-      dplyr::left_join(mis, by = "MARKERS")
-
-
-    data.sum[is.na(data.sum)] <- NA
-    mis <- NULL
-
-    #Quantile regression plot
-    data.sum <- dplyr::bind_rows(
-      dplyr::filter(data.sum, is.na(MEAN_HET_M) | is.na(MEAN_HET_F)),
-      dplyr::filter(data.sum, !is.na(MEAN_HET_M) &
-                      !is.na(MEAN_HET_F)) %>%
-        dplyr::mutate(
-          QR_RESIDUALS = quantreg::rq(MEAN_HET_M ~ MEAN_HET_F,
-                                      tau = tau,
-                                      data = .) %$%
-            residuals
-        )
-    )
-  } else {
-    data.sum <- NULL
-  }
-
-
-  if ("silico.dart" %in% data.source) {
-    mis <-
-      dplyr::select(silicodata, MARKERS, INDIVIDUALS, STRATA, VALUE) %>%
-      dplyr::group_by(MARKERS) %>%
-      dplyr::summarise(MISSINGNESS = length(INDIVIDUALS[VALUE < coverage.thresholds])
-                       / length(INDIVIDUALS)) %>%
-      dplyr::ungroup(.)
-
-    ### silico counts
-    if ("counts" %in% data.source) {
-      silico.sum <- silicodata %>%
-        dplyr::group_by(STRATA, MARKERS) %>%
-        dplyr::summarise(
-          PRESENCE_ABSENCE = length(INDIVIDUALS[VALUE < coverage.thresholds])
-          / length(INDIVIDUALS[!is.na(VALUE)]),
-          MEAN_READ_DEPTH = mean(VALUE, na.rm = TRUE)
-        ) %>%
-        dplyr::ungroup(.) %>%
-        data.table::as.data.table(.) %>%
-        data.table::dcast.data.table(
-          data = .,
-          formula = MARKERS ~ STRATA ,
-          value.var = c("PRESENCE_ABSENCE", "MEAN_READ_DEPTH"),
-          fill = NA
-        ) %>%
-        tibble::as_tibble(.) %>%
-        dplyr::mutate(
-          RATIO = MEAN_READ_DEPTH_F / MEAN_READ_DEPTH_M,
-          MEAN = (PRESENCE_ABSENCE_M + PRESENCE_ABSENCE_F) / 2,
-          DIFF = PRESENCE_ABSENCE_M - PRESENCE_ABSENCE_F
-        ) %>%
-        dplyr::left_join(mis, by = "MARKERS")
-    } else {
-      silico.sum <- silicodata %>%
-        dplyr::group_by(STRATA, MARKERS) %>%
-        # dplyr::summarise(PRESENCE_ABSENCE = length(INDIVIDUALS[VALUE < coverage.thresholds])
-        #                  / length(INDIVIDUALS[!is.na(VALUE)])) %>%
-        dplyr::summarise(PRESENCE_ABSENCE = length(INDIVIDUALS[VALUE[!is.na(VALUE)] < coverage.thresholds])
-                         / length(INDIVIDUALS[!is.na(VALUE)])) %>% #na.rm = TRUE
-        dplyr::ungroup(.) %>%
-        data.table::as.data.table(.) %>%
-        data.table::dcast.data.table(
-          data = .,
-          formula = MARKERS ~ STRATA,
-          value.var = "PRESENCE_ABSENCE",
-          fill = NA
-        ) %>%
-        tibble::as_tibble(.) %>%
-        dplyr::rename(
-          PRESENCE_ABSENCE_M = M,
-          PRESENCE_ABSENCE_F = F
-        ) %>%
-        dplyr::mutate(
-          MEAN = (PRESENCE_ABSENCE_M + PRESENCE_ABSENCE_F) / 2,
-          DIFF = PRESENCE_ABSENCE_M - PRESENCE_ABSENCE_F
-        ) %>%
-        dplyr::left_join(mis, by = "MARKERS")
-    }
-  } else {
-    silico.sum <- NULL
-  }
-  return(list(data.sum = data.sum, silico.sum = silico.sum))
+print.sexy_markers <- function(x, ...) {
+  cat("Candidate sex-linked marker screen\n")
+  cat("  Markers tested: ", nrow(x$statistics), "\n", sep = "")
+  cat("  Candidates: ", nrow(x$candidates), "\n", sep = "")
+  cat("  Depth method: ", if (isTRUE(x$depth_available)) {
+    "available"
+  } else "not available", "\n", sep = "")
+  cat("  Results: ", x$path.folder, "\n", sep = "")
+  invisible(x)
 }
 
+.sex_message <- function(...) {
+  text <- paste0(..., collapse = "")
+  message(paste(strwrap(text, width = 80L, exdent = 2L), collapse = "\n"))
+}
 
-#' @title Export FASTA
-#' @description Function to write fasta files for sex markers
-#' @keywords internal
-#' @export
-# FASTA from gds
+.sex_warning <- function(...) {
+  text <- paste0(..., collapse = "")
+  warning(
+    paste(strwrap(text, width = 80L, exdent = 2L), collapse = "\n"),
+    call. = FALSE
+  )
+}
 
-
-# FASTA file (different for silico)
-write_fasta <- function(sexmarkdf, filename) {
-  afile <- file(filename, open = 'w')
-  if (!is.null(species) && !is.null(population)) {
-    for (i in 1:length(sexmarkdf$MARKERS)) {
-      cat(
-        paste(
-          '>',Species,"|",population,'|',sexmarkdf$method[i],
-          sexmarkdf$MARKERS[i],'\n',
-          sexmarkdf$SEQUENCE[i],'\n',
-          sep = ''
-        ),
-        sep = '',
-        file = afile
-      )
-    }
-  } else {
-    for (i in 1:length(sexmarkdf$MARKERS)) {
-      cat(
-        paste(
-          '>', sexmarkdf$method[i],"|",sexmarkdf$MARKERS[i],'\n',
-          sexmarkdf$SEQUENCE[i],'\n',
-          sep = ''
-        ),
-        sep = '',
-        file = afile
-      )
-    }
+.sex_check_probability <- function(x, name) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x < 0 || x > 1) {
+    rlang::abort(paste0("`", name, "` must be one number from zero to one."))
   }
-  close(afile)
-} #write_fasta
+}
+
+.sex_check_nonnegative <- function(x, name) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x < 0) {
+    rlang::abort(paste0("`", name, "` must be one non-negative number."))
+  }
+}
+
+.sex_check_count <- function(x, name, minimum) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) ||
+      x != as.integer(x) || x < minimum) {
+    rlang::abort(paste0(
+      "`", name, "` must be a whole number of at least ", minimum, "."
+    ))
+  }
+  as.integer(x)
+}
+
+.sex_check_flag <- function(x, name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    rlang::abort(paste0("`", name, "` must be TRUE or FALSE."))
+  }
+}
+
+.sex_read_metadata <- function(strata, gds, sample.id, sex.column) {
+  if (is.null(strata)) {
+    metadata <- tryCatch(
+      genometranslator::extract_individuals_metadata(
+        gds = gds, whitelist = TRUE
+      ), error = function(error) NULL
+    )
+    if (is.null(metadata)) {
+      rlang::abort(
+        "No GDS individual metadata found; supply `strata` explicitly."
+      )
+    }
+  } else if (is.data.frame(strata)) {
+    metadata <- strata
+  } else if (is.character(strata) && length(strata) == 1L &&
+             !is.na(strata) && file.exists(strata)) {
+    metadata <- readr::read_tsv(
+      strata, show_col_types = FALSE, progress = FALSE
+    )
+  } else {
+    rlang::abort("`strata` must be NULL, a data frame, or a TSV file.")
+  }
+  metadata <- as.data.frame(metadata, stringsAsFactors = FALSE)
+  missing.columns <- setdiff(c("INDIVIDUALS", sex.column), names(metadata))
+  if (length(missing.columns)) {
+    rlang::abort(paste0(
+      "Sample metadata is missing: ",
+      paste(missing.columns, collapse = ", "), "."
+    ))
+  }
+  metadata$INDIVIDUALS <- as.character(metadata$INDIVIDUALS)
+  if (anyNA(metadata$INDIVIDUALS) || any(!nzchar(metadata$INDIVIDUALS)) ||
+      anyDuplicated(metadata$INDIVIDUALS)) {
+    rlang::abort("`INDIVIDUALS` must contain unique, non-missing sample IDs.")
+  }
+  metadata <- metadata[metadata$INDIVIDUALS %in% sample.id, , drop = FALSE]
+  if (!nrow(metadata)) {
+    rlang::abort("No metadata sample IDs match the active GDS samples.")
+  }
+  metadata
+}
+
+.sex_normalise <- function(x) {
+  value <- toupper(trimws(as.character(x)))
+  out <- rep("U", length(value))
+  out[value %in% c("F", "FEMALE")] <- "F"
+  out[value %in% c("M", "MALE")] <- "M"
+  out
+}
+
+.sex_marker_metadata <- function(gds, variant.id) {
+  fallback <- tibble::tibble(
+    VARIANT_ID = variant.id,
+    MARKERS = as.character(variant.id),
+    CHROM = as.character(SeqArray::seqGetData(gds, "chromosome")),
+    POS = suppressWarnings(as.numeric(SeqArray::seqGetData(gds, "position")))
+  )
+  metadata <- tryCatch(
+    genometranslator::extract_markers_metadata(gds = gds, whitelist = TRUE),
+    error = function(error) NULL
+  )
+  if (is.null(metadata) || !nrow(metadata)) return(fallback)
+  metadata <- tibble::as_tibble(metadata)
+  id.column <- intersect(c("VARIANT_ID", "M_SEQ", "variant.id"), names(metadata))
+  if (!length(id.column)) return(fallback)
+  matched <- metadata[match(variant.id, metadata[[id.column[[1L]]]]), , drop = FALSE]
+  matched <- dplyr::rename_with(matched, toupper)
+  if (!"VARIANT_ID" %in% names(matched)) matched$VARIANT_ID <- variant.id
+  if (!"MARKERS" %in% names(matched)) matched$MARKERS <- as.character(variant.id)
+  leading <- c("VARIANT_ID", "MARKERS", "CHROM", "POS")
+  matched[, c(intersect(leading, names(matched)), setdiff(names(matched), leading))]
+}
+
+.sex_get_dosage <- function(gds, variant.id, sample.id) {
+  SeqArray::seqFilterPush(gds)
+  on.exit(SeqArray::seqFilterPop(gds), add = TRUE)
+  SeqArray::seqSetFilter(gds, variant.id = variant.id, verbose = FALSE)
+  dosage <- as.matrix(SeqArray::seqGetData(gds, "$dosage_alt"))
+  if (nrow(dosage) == length(sample.id)) out <- dosage else
+    if (ncol(dosage) == length(sample.id)) out <- t(dosage) else
+      rlang::abort("GDS dosage dimensions do not match active sample IDs.")
+  storage.mode(out) <- "double"
+  out
+}
+
+.sex_get_depth <- function(gds, variant.id, sample.id) {
+  SeqArray::seqFilterPush(gds)
+  on.exit(SeqArray::seqFilterPop(gds), add = TRUE)
+  SeqArray::seqSetFilter(gds, variant.id = variant.id, verbose = FALSE)
+  normalise <- function(x) {
+    if (!is.matrix(x)) return(NULL)
+    if (nrow(x) == length(sample.id)) return(x)
+    if (ncol(x) == length(sample.id)) return(t(x))
+    NULL
+  }
+  depth <- tryCatch(
+    normalise(SeqArray::seqGetData(gds, "annotation/format/DP")),
+    error = function(error) NULL
+  )
+  if (is.null(depth)) {
+    embedded <- tryCatch(
+      .inversion_get_embedded_coverage(gds, variant.id, sample.id),
+      error = function(error) NULL
+    )
+    if (!is.null(embedded)) depth <- embedded$depth
+  }
+  if (!is.null(depth)) storage.mode(depth) <- "double"
+  depth
+}
+
+.sex_proportion_test <- function(success.f, total.f, success.m, total.m) {
+  pooled <- (success.f + success.m) / (total.f + total.m)
+  difference <- success.f / total.f - success.m / total.m
+  se <- sqrt(pooled * (1 - pooled) * (1 / total.f + 1 / total.m))
+  p <- 2 * stats::pnorm(-abs(difference / se))
+  p[!is.finite(p)] <- 1
+  p
+}
+
+.sex_welch_test <- function(female.matrix, male.matrix) {
+  nf <- colSums(is.finite(female.matrix))
+  nm <- colSums(is.finite(male.matrix))
+  mf <- colMeans(female.matrix, na.rm = TRUE)
+  mm <- colMeans(male.matrix, na.rm = TRUE)
+  vf <- apply(female.matrix, 2L, stats::var, na.rm = TRUE)
+  vm <- apply(male.matrix, 2L, stats::var, na.rm = TRUE)
+  se2 <- vf / nf + vm / nm
+  statistic <- (mf - mm) / sqrt(se2)
+  df <- se2^2 / ((vf / nf)^2 / (nf - 1) + (vm / nm)^2 / (nm - 1))
+  p <- 2 * stats::pt(-abs(statistic), df = df)
+  p[!is.finite(p) | nf < 2L | nm < 2L] <- NA_real_
+  p
+}
+
+.sex_chunk_statistics <- function(
+    dosage, depth, depth.scale, female, male, coverage.threshold
+) {
+  called <- is.finite(dosage)
+  present <- if (is.null(depth)) called else
+    is.finite(depth) & depth >= coverage.threshold
+  f.present <- colSums(present[female, , drop = FALSE])
+  m.present <- colSums(present[male, , drop = FALSE])
+  f.total <- rep(sum(female), ncol(dosage))
+  m.total <- rep(sum(male), ncol(dosage))
+  f.called <- colSums(called[female, , drop = FALSE])
+  m.called <- colSums(called[male, , drop = FALSE])
+  heterozygous <- called & abs(dosage - 1) < 1e-8
+  f.het <- colSums(heterozygous[female, , drop = FALSE])
+  m.het <- colSums(heterozygous[male, , drop = FALSE])
+  f.het.rate <- f.het / f.called
+  m.het.rate <- m.het / m.called
+  if (!is.null(depth)) {
+    normalized <- sweep(depth, 1L, depth.scale, "/")
+    normalized[!is.finite(normalized)] <- NA_real_
+    f.depth <- colMeans(normalized[female, , drop = FALSE], na.rm = TRUE)
+    m.depth <- colMeans(normalized[male, , drop = FALSE], na.rm = TRUE)
+    ratio <- f.depth / m.depth
+    ratio[!is.finite(ratio)] <- NA_real_
+    coverage.p <- .sex_welch_test(
+      log2(1 + normalized[female, , drop = FALSE]),
+      log2(1 + normalized[male, , drop = FALSE])
+    )
+  } else {
+    f.depth <- m.depth <- ratio <- coverage.p <- rep(NA_real_, ncol(dosage))
+  }
+  tibble::tibble(
+    female_presence = f.present / f.total,
+    male_presence = m.present / m.total,
+    presence_difference = female_presence - male_presence,
+    presence_p = .sex_proportion_test(f.present, f.total, m.present, m.total),
+    female_call_rate = f.called / f.total,
+    male_call_rate = m.called / m.total,
+    female_heterozygosity = f.het.rate,
+    male_heterozygosity = m.het.rate,
+    heterozygosity_difference = f.het.rate - m.het.rate,
+    heterozygosity_p = .sex_proportion_test(f.het, f.called, m.het, m.called),
+    female_normalized_depth = f.depth,
+    male_normalized_depth = m.depth,
+    coverage_ratio_female_male = ratio,
+    coverage_p = coverage.p
+  )
+}
+
+.sex_metadata_audit <- function(metadata, sex.column) {
+  other <- setdiff(names(metadata), c("INDIVIDUALS", sex.column, "SEX_RADR"))
+  if (!length(other)) return(tibble::tibble(
+    variable = character(), known_n = integer(), levels = integer(),
+    cramers_v = numeric(), warning = character()
+  ))
+  dplyr::bind_rows(lapply(other, function(variable) {
+    value <- metadata[[variable]]
+    keep <- metadata$SEX_RADR %in% c("F", "M") & !is.na(value)
+    tab <- table(metadata$SEX_RADR[keep], as.character(value[keep]))
+    n <- sum(tab)
+    v <- NA_real_
+    if (n > 0L && nrow(tab) > 1L && ncol(tab) > 1L) {
+      chi <- suppressWarnings(stats::chisq.test(tab, correct = FALSE))
+      v <- sqrt(unname(chi$statistic) /
+        (n * min(nrow(tab) - 1L, ncol(tab) - 1L)))
+    }
+    tibble::tibble(
+      variable = variable, known_n = n, levels = ncol(tab), cramers_v = v,
+      warning = ifelse(is.finite(v) && v >= 0.5,
+        "strong association with recorded sex", "")
+    )
+  }))
+}
+
+.sex_make_plots <- function(statistics, depth.available) {
+  theme <- ggplot2::theme_bw(base_size = 11) +
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+  make <- function(x, y, title, xlab, ylab) {
+    ggplot2::ggplot(statistics, ggplot2::aes(x = {{ x }}, y = {{ y }})) +
+      ggplot2::geom_point(alpha = 0.45, size = 1.2) +
+      ggplot2::labs(x = xlab, y = ylab, title = title) + theme
+  }
+  presence <- make(
+    presence_difference, -log10(pmax(presence_fdr, 1e-300)),
+    "Sex-biased marker presence", "Female - male marker presence",
+    "-log10 presence FDR"
+  )
+  heterozygosity <- make(
+    heterozygosity_difference,
+    -log10(pmax(heterozygosity_fdr, 1e-300)),
+    "Sex-biased marker heterozygosity", "Female - male heterozygosity",
+    "-log10 heterozygosity FDR"
+  )
+  coverage <- NULL
+  if (depth.available) coverage <- make(
+    log2(coverage_ratio_female_male),
+    -log10(pmax(coverage_fdr, 1e-300)),
+    "Sex-biased normalized depth", "log2 female / male normalized depth",
+    "-log10 coverage FDR"
+  ) + ggplot2::geom_point(na.rm = TRUE)
+  list(presence = presence, heterozygosity = heterozygosity, coverage = coverage)
+}
+
+.sex_save_plots <- function(plots, path.folder, formats) {
+  for (name in names(plots)) {
+    if (is.null(plots[[name]])) next
+    for (format in formats) ggplot2::ggsave(
+      file.path(path.folder, paste0("sex_markers_", name, ".", format)),
+      plots[[name]], width = 8, height = 5, units = "in", dpi = 300
+    )
+  }
+}
+
+.sex_write_fasta <- function(candidates, path.folder) {
+  sequence.column <- intersect(
+    c("SEQUENCE", "SEQ", "ALLELE_SEQUENCE"), names(candidates)
+  )
+  if (!nrow(candidates) || !length(sequence.column)) return(invisible(NULL))
+  sequence <- as.character(candidates[[sequence.column[[1L]]]])
+  keep <- !is.na(sequence) & nzchar(sequence)
+  if (!any(keep)) return(invisible(NULL))
+  labels <- gsub("[^A-Za-z0-9_.:-]", "_", candidates$MARKERS[keep])
+  readr::write_lines(
+    as.vector(rbind(paste0(">", labels), sequence[keep])),
+    file.path(path.folder, "candidate_sex_markers.fasta")
+  )
+}

@@ -54,7 +54,6 @@ Suggests:
     amap,
     fst (>= 0.8.4),
     knitr,
-    quantreg,
     ragg,
     rmarkdown,
     SNPRelate,
