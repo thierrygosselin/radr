@@ -571,6 +571,45 @@ structures or problems:</p>
 <p>Review returned tables and figures together with sample metadata. A
 duplicate, sex-linked marker, family group, or biologically divergent
 sample may be important information rather than an error.</p>
+<div class="section level3">
+<h3 id="screen-for-candidate-sex-linked-markers">Screen for candidate sex-linked markers<a class="anchor" aria-label="anchor" href="#screen-for-candidate-sex-linked-markers"></a>
+</h3>
+<p><code><a href="../reference/sexy_markers.html">sexy_markers()</a></code> accepts only a GDS filepath or an open
+GDS object. It respects the active marker and sample selections, reads
+the GDS in chunks, and restores the selections when it finishes. It does
+not run filters or alter the GDS.</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sex.markers</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/sexy_markers.html">sexy_markers</a></span><span class="op">(</span></span>
+<span>  data <span class="op">=</span> <span class="va">filtered</span>,</span>
+<span>  strata <span class="op">=</span> <span class="va">sample.metadata</span>,</span>
+<span>  sex.column <span class="op">=</span> <span class="st">"SEX"</span>,</span>
+<span>  require.significance <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">sex.markers</span><span class="op">$</span><span class="va">candidates</span></span></code></pre></div>
+<p>The screen compares three complementary signals between known females
+and males:</p>
+<ul>
+<li>marker presence identifies Y-like and W-like candidates;</li>
+<li>heterozygosity identifies X-like and Z-like candidates;</li>
+<li>normalized read depth provides a second X-like or Z-like signal when
+depth is available in the GDS.</li>
+</ul>
+<p>The complete <code>sex_marker_statistics.tsv</code> file reports
+effect sizes, p-values, and FDR values for every active marker. The
+smaller <code>candidate_sex_markers.tsv</code> file applies the
+thresholds recorded in the argument file. Candidate labels describe the
+direction of a signal; they do not prove that a marker is physically
+located on a sex chromosome.</p>
+<p>Include plate, lane, library, population, and other relevant columns
+in <code>strata</code>. The <code>sex_metadata_audit.tsv</code> file
+measures their association with recorded sex. Strong confounding can
+make technical dropout look sex-linked. Within-sample depth
+normalization reduces global sequencing-depth differences, but it cannot
+remove marker-specific batch effects. Confirm important markers in
+independent samples and, where possible, with genome placement or
+targeted validation.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="export-only-after-filtering-decisions">Export only after filtering decisions<a class="anchor" aria-label="anchor" href="#export-only-after-filtering-decisions"></a>
@@ -578,7 +617,7 @@ sample may be important information rather than an error.</p>
 <p>Use <code>genometranslator</code> to write the final GDS to a
 downstream format. The writer does not silently improve or filter the
 data:</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">genometranslator</span><span class="fu">::</span><span class="fu"><a href="https://thierrygosselin.github.io/genometranslator/reference/write_genome.html" class="external-link">write_genome</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">filtered</span>,</span>
 <span>  output <span class="op">=</span> <span class="st">"vcf"</span>,</span>
@@ -593,12 +632,11 @@ treatments.</p>
 <h2 id="dependencies-and-external-tools">Dependencies and external tools<a class="anchor" aria-label="anchor" href="#dependencies-and-external-tools"></a>
 </h2>
 <p>Inspect requirements at any time with:</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/radr_dependencies.html">radr_dependencies</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>The diagnostic separates the required package foundation from
 optional components. <code>SNPRelate</code> supports LD and IBS
-workflows; <code>quantreg</code> is used by <code><a href="../reference/sexy_markers.html">sexy_markers()</a></code>;
-and <code>ragg</code> accelerates PNG output from
+workflows, and <code>ragg</code> accelerates PNG output from
 <code><a href="../reference/detect_ibm.html">detect_ibm()</a></code>.</p>
 <p>VCF-level filtering functions may call the external
 <code>bcftools</code> executable, and <code><a href="../reference/run_bayescan.html">run_bayescan()</a></code>

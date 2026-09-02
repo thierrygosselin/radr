@@ -510,6 +510,48 @@ Review returned tables and figures together with sample metadata. A
 duplicate, sex-linked marker, family group, or biologically divergent
 sample may be important information rather than an error.
 
+### Screen for candidate sex-linked markers
+
+[`sexy_markers()`](https://thierrygosselin.github.io/radr/reference/sexy_markers.md)
+accepts only a GDS filepath or an open GDS object. It respects the
+active marker and sample selections, reads the GDS in chunks, and
+restores the selections when it finishes. It does not run filters or
+alter the GDS.
+
+``` r
+
+sex.markers <- sexy_markers(
+  data = filtered,
+  strata = sample.metadata,
+  sex.column = "SEX",
+  require.significance = TRUE
+)
+
+sex.markers$candidates
+```
+
+The screen compares three complementary signals between known females
+and males:
+
+- marker presence identifies Y-like and W-like candidates;
+- heterozygosity identifies X-like and Z-like candidates;
+- normalized read depth provides a second X-like or Z-like signal when
+  depth is available in the GDS.
+
+The complete `sex_marker_statistics.tsv` file reports effect sizes,
+p-values, and FDR values for every active marker. The smaller
+`candidate_sex_markers.tsv` file applies the thresholds recorded in the
+argument file. Candidate labels describe the direction of a signal; they
+do not prove that a marker is physically located on a sex chromosome.
+
+Include plate, lane, library, population, and other relevant columns in
+`strata`. The `sex_metadata_audit.tsv` file measures their association
+with recorded sex. Strong confounding can make technical dropout look
+sex-linked. Within-sample depth normalization reduces global
+sequencing-depth differences, but it cannot remove marker-specific batch
+effects. Confirm important markers in independent samples and, where
+possible, with genome placement or targeted validation.
+
 ## Export only after filtering decisions
 
 Use `genometranslator` to write the final GDS to a downstream format.
@@ -539,10 +581,8 @@ radr_dependencies()
 ```
 
 The diagnostic separates the required package foundation from optional
-components. `SNPRelate` supports LD and IBS workflows; `quantreg` is
-used by
-[`sexy_markers()`](https://thierrygosselin.github.io/radr/reference/sexy_markers.md);
-and `ragg` accelerates PNG output from
+components. `SNPRelate` supports LD and IBS workflows, and `ragg`
+accelerates PNG output from
 [`detect_ibm()`](https://thierrygosselin.github.io/radr/reference/detect_ibm.md).
 
 VCF-level filtering functions may call the external `bcftools`

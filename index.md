@@ -57,8 +57,8 @@ Install only what is needed for the planned analysis:
 # LD, linkage pruning, and IBS calculations on GDS
 BiocManager::install("SNPRelate")
 
-# Tidy-data distances, sex markers, and fast IBM PNG rendering
-install.packages(c("amap", "quantreg", "ragg"))
+# Tidy-data distances and fast IBM PNG rendering
+install.packages(c("amap", "ragg"))
 ```
 
 Function documentation identifies its additional dependencies. An

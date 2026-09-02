@@ -57,8 +57,8 @@ Install only what is needed for the planned analysis:
 # LD, linkage pruning, and IBS calculations on GDS
 BiocManager::install("SNPRelate")
 
-# Tidy-data distances, sex markers, and fast IBM PNG rendering
-install.packages(c("amap", "quantreg", "ragg"))
+# Tidy-data distances and fast IBM PNG rendering
+install.packages(c("amap", "ragg"))
 ```
 
 Function documentation identifies its additional dependencies. An
@@ -275,7 +275,7 @@ workflows.
 - [`detect_microsatellites()`](https://thierrygosselin.github.io/radr/reference/detect_microsatellites.md)
   : Detect microsatellites
 - [`sexy_markers()`](https://thierrygosselin.github.io/radr/reference/sexy_markers.md)
-  : Identify sex-linked markers and reassign genetic sex
+  : Screen a GDS for candidate sex-linked markers
 - [`run_bayescan()`](https://thierrygosselin.github.io/radr/reference/run_bayescan.md)
   : Run a BayeScan genome scan
 - [`check_bayescan()`](https://thierrygosselin.github.io/radr/reference/check_bayescan.md)

@@ -122,7 +122,7 @@ workflows.
 - [`detect_microsatellites()`](https://thierrygosselin.github.io/radr/reference/detect_microsatellites.md)
   : Detect microsatellites
 - [`sexy_markers()`](https://thierrygosselin.github.io/radr/reference/sexy_markers.md)
-  : Identify sex-linked markers and reassign genetic sex
+  : Screen a GDS for candidate sex-linked markers
 - [`run_bayescan()`](https://thierrygosselin.github.io/radr/reference/run_bayescan.md)
   : Run a BayeScan genome scan
 - [`check_bayescan()`](https://thierrygosselin.github.io/radr/reference/check_bayescan.md)
