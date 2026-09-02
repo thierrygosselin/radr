@@ -1,7 +1,10 @@
 #' Screen a GDS for candidate sex-linked markers
 #'
 #' `sexy_markers()` compares marker presence, heterozygosity, and, when
-#' available, normalized read depth between known females and males. It is a
+#' available, normalized read depth between known females and males. Dominant
+#' SilicoDArT markers stored with `MARKER_TYPE = SILICODART` contribute
+#' presence/absence evidence but are not interpreted as diploid heterozygosity.
+#' It is a
 #' read-only screen: active GDS sample and variant selections are respected and
 #' restored, and no filter is applied or written to the GDS.
 #'
@@ -50,6 +53,10 @@
 #' @return A `sexy_markers` object containing marker statistics, candidates,
 #'   an assignment-ready Y/W panel, sample summaries, a metadata audit, plots,
 #'   and the result-folder path.
+#' @seealso
+#'   Run `vignette("detecting_sex_linked_markers", package = "radr")` for the
+#'   biological background, guidance on discovery data, SilicoDArT and VCF
+#'   workflows, interpretation, alternative methods, and validation.
 #' @export
 #' @examples
 #' \dontrun{
@@ -235,6 +242,19 @@ sexy_markers <- function(
   }
 
   marker.metadata <- .sex_marker_metadata(gds, variant.id)
+  marker.type <- if ("MARKER_TYPE" %in% names(marker.metadata)) {
+    toupper(as.character(marker.metadata$MARKER_TYPE))
+  } else {
+    rep("SNP", length(variant.id))
+  }
+  marker.type[is.na(marker.type) | !nzchar(marker.type)] <- "SNP"
+  dominant <- marker.type == "SILICODART"
+  if (verbose && any(dominant)) {
+    .sex_message(
+      "SilicoDArT markers: ", sum(dominant),
+      "; presence/absence only, with heterozygosity disabled."
+    )
+  }
   chunks <- split(
     seq_along(variant.id), ceiling(seq_along(variant.id) / chunk.size)
   )
@@ -272,7 +292,8 @@ sexy_markers <- function(
       .sex_get_depth(gds, variant.id[idx], sample.id)
     } else NULL
     pieces[[i]] <- .sex_chunk_statistics(
-      dosage, depth, depth.scale, female, male, coverage.threshold
+      dosage, depth, depth.scale, female, male, coverage.threshold,
+      dominant = dominant[idx]
     )
     if (verbose && (i == length(chunks) || i %% 10L == 0L)) {
       .sex_message("Processed ", i, " of ", length(chunks), " chunk(s).")
@@ -296,15 +317,15 @@ sexy_markers <- function(
   w.like <- statistics$female_presence >= presence.threshold &
     statistics$male_presence <= absence.threshold &
     significant(statistics$presence_fdr)
-  x.het <- statistics$heterozygosity_difference >=
+  x.het <- !dominant & statistics$heterozygosity_difference >=
     min.heterozygosity.difference &
     significant(statistics$heterozygosity_fdr)
-  z.het <- statistics$heterozygosity_difference <=
+  z.het <- !dominant & statistics$heterozygosity_difference <=
     -min.heterozygosity.difference &
     significant(statistics$heterozygosity_fdr)
-  x.cov <- statistics$coverage_ratio_female_male >=
+  x.cov <- !dominant & statistics$coverage_ratio_female_male >=
     coverage.ratio.threshold & significant(statistics$coverage_fdr)
-  z.cov <- statistics$coverage_ratio_female_male <=
+  z.cov <- !dominant & statistics$coverage_ratio_female_male <=
     1 / coverage.ratio.threshold & significant(statistics$coverage_fdr)
 
   statistics$candidate_y_like <- y.like
@@ -326,7 +347,6 @@ sexy_markers <- function(
   candidates <- statistics[nzchar(statistics$candidate_classes), , drop = FALSE]
   assignment.panel <- .sex_assignment_panel(
     statistics = statistics,
-    depth.available = depth.available,
     coverage.threshold = coverage.threshold,
     n.female = n.female,
     n.male = n.male
@@ -396,6 +416,7 @@ sexy_markers <- function(
     metadata_audit = metadata.audit,
     plots = plots,
     depth_available = depth.available,
+    dominant_markers = sum(dominant),
     active_selection_restored = restored,
     path.folder = path.folder
   )
@@ -507,26 +528,48 @@ print.sexy_markers <- function(x, ...) {
 }
 
 .sex_marker_metadata <- function(gds, variant.id) {
-  fallback <- tibble::tibble(
-    VARIANT_ID = variant.id,
-    MARKERS = as.character(variant.id),
-    CHROM = as.character(SeqArray::seqGetData(gds, "chromosome")),
-    POS = suppressWarnings(as.numeric(SeqArray::seqGetData(gds, "position")))
-  )
   metadata <- tryCatch(
     genometranslator::extract_markers_metadata(gds = gds, whitelist = TRUE),
     error = function(error) NULL
   )
-  if (is.null(metadata) || !nrow(metadata)) return(fallback)
-  metadata <- tibble::as_tibble(metadata)
-  id.column <- intersect(c("VARIANT_ID", "M_SEQ", "variant.id"), names(metadata))
-  if (!length(id.column)) return(fallback)
-  matched <- metadata[match(variant.id, metadata[[id.column[[1L]]]]), , drop = FALSE]
-  matched <- dplyr::rename_with(matched, toupper)
-  if (!"VARIANT_ID" %in% names(matched)) matched$VARIANT_ID <- variant.id
-  if (!"MARKERS" %in% names(matched)) matched$MARKERS <- as.character(variant.id)
-  leading <- c("VARIANT_ID", "MARKERS", "CHROM", "POS")
-  matched[, c(intersect(leading, names(matched)), setdiff(names(matched), leading))]
+  if (!is.null(metadata) && nrow(metadata)) {
+    metadata <- tibble::as_tibble(metadata)
+    id.column <- intersect(
+      c("VARIANT_ID", "M_SEQ", "variant.id"), names(metadata)
+    )
+    if (length(id.column)) {
+      matched <- metadata[
+        match(variant.id, metadata[[id.column[[1L]]]]), , drop = FALSE
+      ]
+      matched <- dplyr::rename_with(matched, toupper)
+      if (!"VARIANT_ID" %in% names(matched)) {
+        matched$VARIANT_ID <- variant.id
+      }
+      if (!"MARKERS" %in% names(matched)) {
+        matched$MARKERS <- as.character(variant.id)
+      }
+      leading <- c("VARIANT_ID", "MARKERS", "CHROM", "POS")
+      return(matched[, c(
+        intersect(leading, names(matched)),
+        setdiff(names(matched), leading)
+      )])
+    }
+  }
+
+  read.core <- function(name, default) {
+    node <- gdsfmt::index.gdsn(gds, name, silent = TRUE)
+    if (is.null(node)) return(default)
+    value <- tryCatch(gdsfmt::read.gdsn(node), error = function(error) default)
+    if (length(value) != length(variant.id)) default else value
+  }
+  tibble::tibble(
+    VARIANT_ID = variant.id,
+    MARKERS = as.character(variant.id),
+    CHROM = as.character(read.core("chromosome", rep(NA_character_, length(variant.id)))),
+    POS = suppressWarnings(as.numeric(
+      read.core("position", rep(NA_real_, length(variant.id)))
+    ))
+  )
 }
 
 .sex_get_dosage <- function(gds, variant.id, sample.id) {
@@ -591,22 +634,54 @@ print.sexy_markers <- function(x, ...) {
 }
 
 .sex_chunk_statistics <- function(
-    dosage, depth, depth.scale, female, male, coverage.threshold
+    dosage, depth, depth.scale, female, male, coverage.threshold,
+    dominant = rep(FALSE, ncol(dosage))
 ) {
+  if (length(dominant) != ncol(dosage)) {
+    rlang::abort("Dominant-marker flags do not match the dosage columns.")
+  }
   called <- is.finite(dosage)
-  present <- if (is.null(depth)) called else
-    is.finite(depth) & depth >= coverage.threshold
+  has.depth <- if (is.null(depth)) {
+    rep(FALSE, ncol(dosage))
+  } else {
+    colSums(is.finite(depth)) > 0L
+  }
+  present <- called
+  if (any(dominant & !has.depth)) {
+    columns <- dominant & !has.depth
+    present[, columns] <- called[, columns, drop = FALSE] &
+      dosage[, columns, drop = FALSE] > 0
+  }
+  if (!is.null(depth) && any(has.depth)) {
+    present[, has.depth] <- is.finite(depth[, has.depth, drop = FALSE]) &
+      depth[, has.depth, drop = FALSE] >= coverage.threshold
+  }
+  presence.source <- ifelse(
+    dominant,
+    ifelse(has.depth, "silicodart_depth", "silicodart_presence"),
+    ifelse(has.depth, "read_depth", "genotype_call")
+  )
   f.present <- colSums(present[female, , drop = FALSE])
   m.present <- colSums(present[male, , drop = FALSE])
-  f.total <- rep(sum(female), ncol(dosage))
-  m.total <- rep(sum(male), ncol(dosage))
   f.called <- colSums(called[female, , drop = FALSE])
   m.called <- colSums(called[male, , drop = FALSE])
+  f.total <- rep(sum(female), ncol(dosage))
+  m.total <- rep(sum(male), ncol(dosage))
+  # SilicoDArT distinguishes explicit absence (0) from an unavailable
+  # observation (NA), so missing observations are excluded from its denominator.
+  f.total[dominant] <- f.called[dominant]
+  m.total[dominant] <- m.called[dominant]
   heterozygous <- called & abs(dosage - 1) < 1e-8
   f.het <- colSums(heterozygous[female, , drop = FALSE])
   m.het <- colSums(heterozygous[male, , drop = FALSE])
   f.het.rate <- f.het / f.called
   m.het.rate <- m.het / m.called
+  heterozygosity.p <- .sex_proportion_test(
+    f.het, f.called, m.het, m.called
+  )
+  f.het.rate[dominant] <- NA_real_
+  m.het.rate[dominant] <- NA_real_
+  heterozygosity.p[dominant] <- NA_real_
   if (!is.null(depth)) {
     normalized <- sweep(depth, 1L, depth.scale, "/")
     normalized[!is.finite(normalized)] <- NA_real_
@@ -624,6 +699,7 @@ print.sexy_markers <- function(x, ...) {
   tibble::tibble(
     female_presence = f.present / f.total,
     male_presence = m.present / m.total,
+    presence_source = presence.source,
     presence_difference = female_presence - male_presence,
     presence_p = .sex_proportion_test(f.present, f.total, m.present, m.total),
     female_call_rate = f.called / f.total,
@@ -631,7 +707,7 @@ print.sexy_markers <- function(x, ...) {
     female_heterozygosity = f.het.rate,
     male_heterozygosity = m.het.rate,
     heterozygosity_difference = f.het.rate - m.het.rate,
-    heterozygosity_p = .sex_proportion_test(f.het, f.called, m.het, m.called),
+    heterozygosity_p = heterozygosity.p,
     female_normalized_depth = f.depth,
     male_normalized_depth = m.depth,
     coverage_ratio_female_male = ratio,
@@ -640,7 +716,12 @@ print.sexy_markers <- function(x, ...) {
 }
 
 .sex_metadata_audit <- function(metadata, sex.column) {
-  other <- setdiff(names(metadata), c("INDIVIDUALS", sex.column, "SEX_RADR"))
+  identifier.columns <- c(
+    "INDIVIDUALS", "TARGET_ID", "ID_SEQ", "STRATA_SEQ", "FILTERS"
+  )
+  other <- setdiff(
+    names(metadata), c(identifier.columns, sex.column, "SEX_RADR")
+  )
   if (!length(other)) return(tibble::tibble(
     variable = character(), known_n = integer(), levels = integer(),
     cramers_v = numeric(), warning = character()
@@ -719,7 +800,7 @@ print.sexy_markers <- function(x, ...) {
 }
 
 .sex_assignment_panel <- function(
-    statistics, depth.available, coverage.threshold, n.female, n.male
+    statistics, coverage.threshold, n.female, n.male
 ) {
   keep <- statistics$candidate_y_like | statistics$candidate_w_like
   panel <- statistics[keep, , drop = FALSE]
@@ -745,8 +826,12 @@ print.sexy_markers <- function(x, ...) {
     ASSIGNMENT_DIRECTION = direction,
     EXPECTED_PRESENT_SEX = ifelse(direction == "Y-like", "M", "F"),
     EXPECTED_ABSENT_SEX = ifelse(direction == "Y-like", "F", "M"),
-    PRESENCE_SOURCE = if (depth.available) "read_depth" else "genotype_call",
-    COVERAGE_THRESHOLD = if (depth.available) coverage.threshold else NA_real_,
+    PRESENCE_SOURCE = panel$presence_source,
+    COVERAGE_THRESHOLD = ifelse(
+      panel$presence_source %in% c("read_depth", "silicodart_depth"),
+      coverage.threshold,
+      NA_real_
+    ),
     PRESENCE_EFFECT = panel$presence_difference,
     PRESENCE_FDR = panel$presence_fdr,
     DISCOVERY_FEMALES = n.female,

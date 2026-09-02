@@ -71,7 +71,10 @@ and the result-folder path.
 }
 \description{
 \code{sexy_markers()} compares marker presence, heterozygosity, and, when
-available, normalized read depth between known females and males. It is a
+available, normalized read depth between known females and males. Dominant
+SilicoDArT markers stored with \code{MARKER_TYPE = SILICODART} contribute
+presence/absence evidence but are not interpreted as diploid heterozygosity.
+It is a
 read-only screen: active GDS sample and variant selections are respected and
 restored, and no filter is applied or written to the GDS.
 }
@@ -108,4 +111,9 @@ result <- radr::sexy_markers(
 )
 result$candidates
 }
+}
+\seealso{
+Run \code{vignette("detecting_sex_linked_markers", package = "radr")} for the
+biological background, guidance on discovery data, SilicoDArT and VCF
+workflows, interpretation, alternative methods, and validation.
 }

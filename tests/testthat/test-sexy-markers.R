@@ -80,3 +80,59 @@ test_that("sex labels and numeric arguments are validated", {
     "whole number"
   )
 })
+
+test_that("SilicoDArT markers use presence and not heterozygosity", {
+  dosage <- cbind(
+    y_like = c(rep(0, 6), rep(2, 6)),
+    w_like = c(rep(2, 6), rep(0, 6))
+  )
+  female <- rep(c(TRUE, FALSE), each = 6)
+  male <- !female
+  statistics <- .sex_chunk_statistics(
+    dosage = dosage,
+    depth = NULL,
+    depth.scale = rep(1, 12),
+    female = female,
+    male = male,
+    coverage.threshold = 1,
+    dominant = c(TRUE, TRUE)
+  )
+
+  expect_equal(unname(statistics$female_presence), c(0, 1))
+  expect_equal(unname(statistics$male_presence), c(1, 0))
+  expect_equal(
+    statistics$presence_source,
+    rep("silicodart_presence", 2)
+  )
+  expect_true(all(is.na(statistics$female_heterozygosity)))
+  expect_true(all(is.na(statistics$male_heterozygosity)))
+  expect_true(all(is.na(statistics$heterozygosity_p)))
+
+  with.missing <- dosage[, 2, drop = FALSE]
+  with.missing[1, 1] <- NA_real_
+  missing.statistics <- .sex_chunk_statistics(
+    dosage = with.missing,
+    depth = NULL,
+    depth.scale = rep(1, 12),
+    female = female,
+    male = male,
+    coverage.threshold = 1,
+    dominant = TRUE
+  )
+  expect_equal(unname(missing.statistics$female_presence), 1)
+})
+
+test_that("metadata audit excludes identifier fields", {
+  metadata <- data.frame(
+    INDIVIDUALS = paste0("I", 1:12),
+    TARGET_ID = paste0("T", 1:12),
+    ID_SEQ = 1:12,
+    STRATA_SEQ = rep(1:2, each = 6),
+    FILTERS = "whitelist",
+    SEX = rep(c("F", "M"), each = 6),
+    SEX_RADR = rep(c("F", "M"), each = 6),
+    PLATE = rep(c("A", "B"), each = 6)
+  )
+  audit <- .sex_metadata_audit(metadata, "SEX")
+  expect_identical(audit$variable, "PLATE")
+})

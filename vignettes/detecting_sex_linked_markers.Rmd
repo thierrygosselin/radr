@@ -1,6 +1,6 @@
 ---
 title: "Detecting and validating candidate sex-linked markers with radr"
-author: "Floriaan Devloo-Delva and Thierry Gosselin"
+author: "Thierry Gosselin and Floriaan Devloo-Delva"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Detecting and validating candidate sex-linked markers with radr}
@@ -21,8 +21,9 @@ sex characters are absent or unreliable.
 
 `radr::sexy_markers()` screens an already prepared GDS dataset for markers whose
 presence, heterozygosity, or normalized read depth differs between recorded
-females and males. It is designed for diploid, biallelic SNP datasets, including
-RADseq, DArTseq, and related reduced-representation data. The function does not
+females and males. It supports diploid, biallelic SNP datasets and dominant
+SilicoDArT presence/absence markers stored with their marker type in GDS. These
+include RADseq, DArTseq, and related reduced-representation data. The function does not
 alter the GDS. It respects the active sample and marker selections, restores
 them before returning, and writes an auditable results folder.
 
@@ -74,6 +75,68 @@ than ZW females. Library size, capture efficiency, paralogy, and mapping bias
 can all affect this signal, so `sexy_markers()` normalizes depth within samples
 and still treats the result as candidate evidence.
 
+## Sex-linked markers can create false population structure
+
+Sex-linked markers matter even when sex determination is not the study target.
+Benestan et al. (2017) demonstrated this with RADseq and GBS data from American
+Lobster (*Homarus americanus*) and Arctic Char (*Salvelinus alpinus*). Their
+multivariate analyses initially separated individuals by sex rather than by the
+expected geographic or ecological groups. When the sex ratio differed among
+sampling groups, a small set of sex-linked markers created false differentiation
+in the panmictic lobster comparison and inflated differentiation in Arctic Char.
+
+The study used a complementary allele-frequency approach:
+
+1. DAPC was used to diagnose the unexpected male-female clustering.
+2. BayeScan treated females and males as the two groups and identified markers
+   with unusually high differentiation between sexes.
+3. Sex ratios were deliberately varied among artificial sampling groups to
+   measure their effect on FST.
+4. Candidate markers were removed in descending order of sex differentiation
+   and FST was recalculated with `assigner::fst_WC84()`.
+5. LD, BLAST, transcriptome annotation, comparative genome placement, and a
+   linkage map were used to investigate the candidate regions.
+
+Only 12 of 1,717 SNPs in American Lobster (0.7%) and 94 of 6,147 SNPs in Arctic
+Char (1.5%) were identified as sex outliers, yet they materially changed the
+population-genetic conclusions. Removing 11 of 12 candidates eliminated the
+false lobster differentiation in the most extreme sampling scenario. In Arctic
+Char, FST reached a plateau after approximately 80 candidates were removed and
+was more than threefold smaller than before their removal. In the paper's
+literature review, only 5 of 52 marine and diadromous population-genomic studies
+reported individual sex.
+
+This result has direct consequences for a `radr` workflow:
+
+* record and report sex whenever it is known;
+* cross-tabulate sex by population, site, year, plate, and sequencing batch;
+* colour PCA, DAPC, or other ordinations by sex before interpreting clusters;
+* repeat population-genetic summaries after removing or stratifying candidate
+  sex-linked markers; and
+* do not assume that thousands of autosomal markers will dilute a small number
+  of highly differentiated sex-linked markers in a weakly structured species.
+
+The Benestan et al. (2017) strategy is valuable but tests a different signal
+from `sexy_markers()`. BayeScan detects unusually large allele-frequency
+differences between sex groups. It does not directly model sex-specific marker
+presence or normalized read depth, and a sex outlier is not automatically on a
+sex chromosome. Population structure, batch effects, family structure, or
+unequal missingness can also differentiate the recorded sexes.
+
+When sex is unknown, Benestan et al. (2017) suggested first identifying genetic
+clusters unrelated to geography, treating those clusters as groups in BayeScan,
+and inspecting the heterozygosity of the outliers. This is an exploratory
+diagnostic, not a general replacement for recorded sex. The authors noted that
+the heterozygosity pattern is informative only when sex-linked regions are
+sufficiently differentiated. It can miss a small or weakly differentiated
+sex-determining region and can mistake another source of structure for sex.
+
+The study also illustrates good wet-laboratory design: Arctic Char samples from
+each location were distributed across at least six sequencing multiplexes to
+reduce confounding between sampling location and library. Computational
+adjustment is much less convincing when sex, population, and technical batch
+were never separated experimentally.
+
 ## Origin of the method
 
 The original `sexy_markers` method was developed by Floriaan Devloo-Delva,
@@ -91,8 +154,9 @@ positives. These values are empirical results from one species and dataset, not
 universal thresholds. They are nevertheless a useful warning that a small,
 unbalanced discovery set should be interpreted conservatively.
 
-The current `radr` implementation is a redesign rather than an exact copy of
-the published `radiator` function. It uses GDS input only, reads markers in
+The current `radr` implementation is a modern reimplementation rather than an
+exact copy of the published `radiator` function.
+It uses GDS input only, reads markers in
 chunks, applies explicit effect-size rules, calculates method-specific tests
 and false-discovery rates, audits metadata for confounding with recorded sex,
 and produces a separate Y/W panel for downstream assignment. Cite
@@ -100,6 +164,103 @@ Devloo-Delva et al. (2024) for the biological method and original validation,
 and record the `radr` version used for every new analysis.
 
 ## Prepare the discovery dataset
+
+### What data are best for discovery?
+
+The best discovery dataset is not defined by one sequencing format. It combines
+a study design in which recorded sex is reliable and separable from population
+and technical batch with data that preserve the three signals tested by
+`sexy_markers()`: genotype, marker presence, and read depth. Ideally, it also
+includes marker sequences, chromosome-scale coordinates, and an independent
+set of individuals reserved for validation.
+
+Individual-level whole-genome sequencing provides the most complete discovery
+data when sufficient depth and a suitable reference assembly are available. It
+samples the genome more evenly than restriction-site methods and is better
+suited to locating candidates, measuring copy number, and resolving a sex-linked
+region. Its cost and computational requirements can nevertheless limit sample
+size, and a small or sex-confounded whole-genome dataset is not automatically
+better than a well-balanced reduced-representation dataset.
+
+RADseq, ddRAD, GBS, and DArTseq are cost-effective discovery data and closely
+match the setting in which the original method was developed. They can provide
+many individuals, genotypes, read depth, and short marker sequences. Their
+limitations are sparse genomic sampling, restriction-site ascertainment,
+allelic dropout, and the possibility that no marker samples the
+sex-determining region. Preserve allele counts or retained depth and marker
+sequences during conversion whenever they are available.
+
+SilicoDArT can be particularly informative for strongly differentiated Y- or
+W-linked sequence. It records whether a restriction fragment is observed and
+can therefore retain a sex-specific sequence that has no shared SNP genotype,
+is absent from the reference assembly, or maps poorly. It also works without a
+reference genome. Its limitation is equally important: absence can reflect a
+true missing sequence, insufficient depth, restriction-site polymorphism,
+library failure, or allelic dropout. Dominant SilicoDArT observations cannot
+distinguish heterozygotes from presence homozygotes and must not be interpreted
+with a diploid heterozygosity model.
+
+A DArT file should be imported together with its sample metadata so that names,
+population, sex, and technical variables are embedded in the GDS from the
+start. Keep sex in a dedicated column rather than replacing population in
+`STRATA`:
+
+```{r, eval=FALSE}
+silicodart_gds <- genometranslator::read_genome(
+  data = "study.silicodart.csv",
+  strata = "study.strata.tsv"
+)
+
+silicodart_result <- radr::sexy_markers(
+  data = silicodart_gds,
+  strata = NULL,
+  sex.column = "SEX"
+)
+```
+
+`genometranslator::read_dart()` detects SilicoDArT automatically. It stores
+binary absence/presence in the GDS, labels the markers with
+`MARKER_TYPE = SILICODART`, and preserves original counts as read depth when a
+count-form SilicoDArT report is supplied. `sexy_markers()` consequently uses
+these markers for Y/W-like presence tests, disables their heterozygosity tests,
+and does not assign X/Z-like genotype classes from their synthetic GDS dosage.
+VCF SNP data remain richer for codominant genotype, heterozygosity, LD, mapping,
+and regional analyses. When both products are available, analyse them as
+complementary discovery datasets and prioritize candidates that replicate
+across data types or independent assays.
+
+Other data have more specialized roles:
+
+* a SNP array or targeted panel is usually better for validation than discovery
+  because its markers were selected in advance and may exclude sex-specific or
+  poorly mapping variation;
+* RNA-seq can support transcript- or gametolog-based methods such as SDpop, but
+  expression differences among tissues, stages, and sexes are additional
+  sources of signal and confounding; and
+* pooled sequencing can reveal sex-biased allele frequencies or coverage, but
+  it does not retain the individual-level observations and metadata required by
+  the current `radr::sexy_markers()` implementation.
+
+For SNP analysis in `radr`, the ideal input is a diploid, biallelic SeqArray GDS
+with individual genotypes, retained per-sample depth or allele counts, marker
+sequences, reference coordinates when available, and complete sample metadata.
+Dominant SilicoDArT is the supported exception and is identified explicitly in
+the GDS rather than presented as a biological diploid genotype.
+GDS is the analysis format, not a restriction on the original data source.
+`genometranslator` can standardize VCF, DArT, PLINK BED/TPED, GENEPOP, FSTAT,
+tidy or wide genotype tables, Parquet, and existing `genind`, `genlight`, and
+`gtypes` objects before a GDS is written. Use a format-specific
+`genometranslator::read_*()` function when non-default import choices matter,
+then write the standardized data with `genometranslator::write_gds()`.
+
+Do not apply ordinary marker filtering mechanically. Remove unequivocal assay
+failures and paralogous or technically invalid markers, but avoid aggressive
+call-rate filtering before examining sex-specific missingness: genuine Y- or
+W-like presence is expressed as missingness in the other sex. Similarly, do
+not LD-prune the initial discovery scan, because a linked block of candidates
+is valuable genomic evidence. A useful sensitivity analysis compares a
+minimally filtered screen with the conventionally filtered dataset and reports
+which candidates persist.
 
 Complete the ordinary sample and marker quality-control workflow before the
 final screen, but do not automatically discard every marker with sex-biased
@@ -312,6 +473,7 @@ understood.
 | **RADSex** | Demultiplexed RADseq reads; sex-biased marker presence and depth distributions | A fast, purpose-built workflow starting from reads, without requiring an existing SNP GDS |
 | **dartR / dartR.sexlinked** | Reduced-representation SNPs in `genlight`; sex-linked genotype and call-rate patterns | An R workflow for identifying, filtering, and using multiple classes of sex-linked loci |
 | **SDpop** | Genotypes or RNA-seq from natural populations; hierarchical models of sex-linkage and gametologs | Model-based inference of XY or ZW systems and posterior evidence for sex-linked genes, especially with mapped genomic data |
+| **BayeScan by sex** | Genotyped SNPs with females and males treated as groups; locus-specific FST outliers | Detecting strongly differentiated sex-associated markers and testing whether they bias population-genetic analyses |
 | **OutFLANK** | Genotyped SNPs partitioned by sex; allele-frequency differentiation | A generic outlier scan that can reveal differentiated homologous regions but is not a sex-marker-specific model |
 | **pcadapt** | Genotyped SNPs; association with principal components | A complementary structure-based outlier scan, but results can reflect population or technical structure unrelated to sex |
 
@@ -319,9 +481,11 @@ RADSex begins closer to raw RADseq reads and is especially attractive when a
 SNP dataset has not already been produced. `dartR.sexlinked` provides a broader
 genlight-based workflow that can identify sex-linked classes and infer sex.
 SDpop is a probabilistic population-genomic method with different data and model
-requirements. OutFLANK and pcadapt are generic outlier methods: they can detect
-allele-frequency differences between recorded sexes but do not by themselves
-establish sex linkage.
+requirements. BayeScan, OutFLANK, and pcadapt are generic outlier methods: they
+can detect allele-frequency differences between recorded sexes but do not by
+themselves establish sex linkage. Benestan et al. (2017) provide a particularly
+useful demonstration of BayeScan as both a discovery method and a sensitivity
+analysis for sex-ratio bias in estimates of population differentiation.
 
 ### Why the current radr workflow differs from dartR.sexlinked
 
@@ -365,6 +529,16 @@ advantages:
   active GDS selection in chunks and restores it unchanged. The reviewed dartR
   implementation converts the complete `genlight` object to a conventional R
   matrix before analysis, which can become memory intensive.
+* **The GDS requirement does not limit the upstream data format.**
+  `radr::sexy_markers()` deliberately analyses only a standardized SeqArray
+  GDS, while `genometranslator` can create that GDS from VCF, DArT, PLINK,
+  GENEPOP, FSTAT, tabular or Parquet data, and `genind`, `genlight`, or
+  `gtypes` objects. By contrast, the reviewed
+  `dartR.sexlinked` functions accept a dartR `genlight` object. The accompanying
+  `dartR.base` package exposes dedicated readers for DArT SNP, SilicoDArT, VCF,
+  PLINK, CSV, and FASTA inputs before analysis. Thus, neither sex-marker
+  function directly accepts all of these source formats; the difference is the
+  breadth of the conversion layer leading to its required analysis object.
 * **Discovery is separated from assignment.** `radr` writes a versioned,
   marker-level Y/W panel. `assigner::assign_genetic_sex()` applies explicit
   agreement and margin thresholds, retains recorded sex for comparison, and
@@ -414,6 +588,13 @@ Report enough detail for the screen to be reproduced and challenged:
 
 ## References
 
+Benestan L, Moore J-S, Sutherland BJG, Le Luyer J, Maaroufi H, Rougeux C,
+Normandeau E, Rycroft N, Atema J, Harris LN, Tallman RF, Greenwood SJ, Clark FK,
+Bernatchez L (2017) Sex matters in massive parallel sequencing: evidence for
+biases in genetic parameter estimation and investigation of sex determination
+systems. *Molecular Ecology*, 26, 6767-6783.
+[https://doi.org/10.1111/mec.14217](https://doi.org/10.1111/mec.14217)
+
 Devloo-Delva F, Gosselin T, Butcher PA, Grewe PM, Huveneers C, Thomson RB,
 Werry JM, Feutry P (2024) An R-based tool for identifying sex-linked markers
 from restriction site-associated DNA sequencing with applications to
@@ -429,6 +610,11 @@ Schartl M, Guiguen Y (2021) RADSex: a computational workflow to study sex
 determination using restriction site-associated DNA sequencing data.
 *Molecular Ecology Resources*, 21, 1715-1731.
 [https://doi.org/10.1111/1755-0998.13360](https://doi.org/10.1111/1755-0998.13360)
+
+Foll M, Gaggiotti OE (2008) A genome-scan method to identify selected loci
+appropriate for both dominant and codominant markers: a Bayesian perspective.
+*Genetics*, 180, 977-993.
+[https://doi.org/10.1534/genetics.108.092221](https://doi.org/10.1534/genetics.108.092221)
 
 Gruber B, Unmack PJ, Berry OF, Georges A (2018) dartr: an R package to
 facilitate analysis of SNP data generated from reduced representation genome
