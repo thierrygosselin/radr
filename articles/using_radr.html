@@ -577,7 +577,10 @@ sample may be important information rather than an error.</p>
 <p><code><a href="../reference/sexy_markers.html">sexy_markers()</a></code> accepts only a GDS filepath or an open
 GDS object. It respects the active marker and sample selections, reads
 the GDS in chunks, and restores the selections when it finishes. It does
-not run filters or alter the GDS.</p>
+not run filters or alter the GDS. See
+<code><a href="../articles/detecting_sex_linked_markers.html">vignette("detecting_sex_linked_markers", package = "radr")</a></code>
+for the biological background, statistical interpretation, alternative
+methods, and validation workflow.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">sex.markers</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/sexy_markers.html">sexy_markers</a></span><span class="op">(</span></span>
 <span>  data <span class="op">=</span> <span class="va">filtered</span>,</span>
@@ -601,6 +604,14 @@ smaller <code>candidate_sex_markers.tsv</code> file applies the
 thresholds recorded in the argument file. Candidate labels describe the
 direction of a signal; they do not prove that a marker is physically
 located on a sex chromosome.</p>
+<p>For classification, <code>sex_assignment_panel.tsv</code> contains
+only assignment-ready Y-like and W-like presence/absence candidates.
+Validate this panel in samples that were not used for marker discovery,
+then pass it to <code>assigner::assign_genetic_sex()</code>. The
+assignment step belongs in <code>assigner</code> because discovery
+accuracy, individual classification, and validation are separate
+inferential tasks. Recorded sex is retained for comparison and is never
+overwritten.</p>
 <p>Include plate, lane, library, population, and other relevant columns
 in <code>strata</code>. The <code>sex_metadata_audit.tsv</code> file
 measures their association with recorded sex. Strong confounding can

@@ -142,7 +142,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-01.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-02.
 
 ## Website and support
 
@@ -297,5 +297,7 @@ replacement documented on each page.
 
 - [Detecting candidate chromosomal inversions with
   radr](https://thierrygosselin.github.io/radr/articles/detecting_inversions.md):
+- [Detecting and validating candidate sex-linked markers with
+  radr](https://thierrygosselin.github.io/radr/articles/detecting_sex_linked_markers.md):
 - [Exploring and filtering genomic data with
   radr](https://thierrygosselin.github.io/radr/articles/using_radr.md):

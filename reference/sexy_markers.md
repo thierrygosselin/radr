@@ -106,8 +106,9 @@ sexy_markers(
 
 ## Value
 
-A `sexy_markers` object containing marker statistics, candidates, sample
-summaries, a metadata audit, plots, and the result-folder path.
+A `sexy_markers` object containing marker statistics, candidates, an
+assignment-ready Y/W panel, sample summaries, a metadata audit, plots,
+and the result-folder path.
 
 ## Details
 

@@ -516,7 +516,10 @@ sample may be important information rather than an error.
 accepts only a GDS filepath or an open GDS object. It respects the
 active marker and sample selections, reads the GDS in chunks, and
 restores the selections when it finishes. It does not run filters or
-alter the GDS.
+alter the GDS. See
+[`vignette("detecting_sex_linked_markers", package = "radr")`](https://thierrygosselin.github.io/radr/articles/detecting_sex_linked_markers.md)
+for the biological background, statistical interpretation, alternative
+methods, and validation workflow.
 
 ``` r
 
@@ -543,6 +546,14 @@ p-values, and FDR values for every active marker. The smaller
 `candidate_sex_markers.tsv` file applies the thresholds recorded in the
 argument file. Candidate labels describe the direction of a signal; they
 do not prove that a marker is physically located on a sex chromosome.
+
+For classification, `sex_assignment_panel.tsv` contains only
+assignment-ready Y-like and W-like presence/absence candidates. Validate
+this panel in samples that were not used for marker discovery, then pass
+it to `assigner::assign_genetic_sex()`. The assignment step belongs in
+`assigner` because discovery accuracy, individual classification, and
+validation are separate inferential tasks. Recorded sex is retained for
+comparison and is never overwritten.
 
 Include plate, lane, library, population, and other relevant columns in
 `strata`. The `sex_metadata_audit.tsv` file measures their association
