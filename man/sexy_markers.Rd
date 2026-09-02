@@ -66,7 +66,8 @@ depth data, a non-missing genotype is considered present.}
 }
 \value{
 A \code{sexy_markers} object containing marker statistics, candidates,
-sample summaries, a metadata audit, plots, and the result-folder path.
+an assignment-ready Y/W panel, sample summaries, a metadata audit, plots,
+and the result-folder path.
 }
 \description{
 \code{sexy_markers()} compares marker presence, heterozygosity, and, when

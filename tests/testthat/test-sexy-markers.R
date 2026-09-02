@@ -54,9 +54,15 @@ test_that("sexy_markers detects directional signals and restores filters", {
   expect_true(result$statistics$candidate_x_heterozygosity[3])
   expect_true(result$statistics$candidate_z_heterozygosity[4])
   expect_false(result$depth_available)
+  expect_equal(nrow(result$assignment_panel), 2)
+  expect_equal(
+    result$assignment_panel$ASSIGNMENT_DIRECTION,
+    c("Y-like", "W-like")
+  )
   expect_true(all(c(
     "sex_marker_statistics.tsv", "candidate_sex_markers.tsv",
-    "sex_sample_summary.tsv", "sex_metadata_audit.tsv"
+    "sex_assignment_panel.tsv", "sex_sample_summary.tsv",
+    "sex_metadata_audit.tsv"
   ) %in% list.files(result$path.folder)))
 })
 

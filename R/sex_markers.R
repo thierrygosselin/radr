@@ -48,7 +48,8 @@
 #' @param ... Common arguments: `path.folder` and `internal`.
 #'
 #' @return A `sexy_markers` object containing marker statistics, candidates,
-#'   sample summaries, a metadata audit, plots, and the result-folder path.
+#'   an assignment-ready Y/W panel, sample summaries, a metadata audit, plots,
+#'   and the result-folder path.
 #' @export
 #' @examples
 #' \dontrun{
@@ -323,6 +324,13 @@ sexy_markers <- function(
     ), collapse = ";")
   }, character(1))
   candidates <- statistics[nzchar(statistics$candidate_classes), , drop = FALSE]
+  assignment.panel <- .sex_assignment_panel(
+    statistics = statistics,
+    depth.available = depth.available,
+    coverage.threshold = coverage.threshold,
+    n.female = n.female,
+    n.male = n.male
+  )
 
   sample.summary <- tibble::tibble(
     sex = c("F", "M", "U"),
@@ -348,6 +356,9 @@ sexy_markers <- function(
   )
   readr::write_tsv(
     candidates, file.path(path.folder, "candidate_sex_markers.tsv")
+  )
+  readr::write_tsv(
+    assignment.panel, file.path(path.folder, "sex_assignment_panel.tsv")
   )
   readr::write_tsv(
     sample.summary, file.path(path.folder, "sex_sample_summary.tsv")
@@ -380,6 +391,7 @@ sexy_markers <- function(
   result <- list(
     statistics = statistics,
     candidates = candidates,
+    assignment_panel = assignment.panel,
     sample_summary = sample.summary,
     metadata_audit = metadata.audit,
     plots = plots,
@@ -703,5 +715,41 @@ print.sexy_markers <- function(x, ...) {
   readr::write_lines(
     as.vector(rbind(paste0(">", labels), sequence[keep])),
     file.path(path.folder, "candidate_sex_markers.fasta")
+  )
+}
+
+.sex_assignment_panel <- function(
+    statistics, depth.available, coverage.threshold, n.female, n.male
+) {
+  keep <- statistics$candidate_y_like | statistics$candidate_w_like
+  panel <- statistics[keep, , drop = FALSE]
+  if (!nrow(panel)) {
+    return(tibble::tibble(
+      VARIANT_ID = statistics$VARIANT_ID[0],
+      MARKERS = character(),
+      ASSIGNMENT_DIRECTION = character(),
+      EXPECTED_PRESENT_SEX = character(),
+      EXPECTED_ABSENT_SEX = character(),
+      PRESENCE_SOURCE = character(),
+      COVERAGE_THRESHOLD = numeric(),
+      PRESENCE_EFFECT = numeric(),
+      PRESENCE_FDR = numeric(),
+      DISCOVERY_FEMALES = integer(),
+      DISCOVERY_MALES = integer()
+    ))
+  }
+  direction <- ifelse(panel$candidate_y_like, "Y-like", "W-like")
+  tibble::tibble(
+    VARIANT_ID = panel$VARIANT_ID,
+    MARKERS = panel$MARKERS,
+    ASSIGNMENT_DIRECTION = direction,
+    EXPECTED_PRESENT_SEX = ifelse(direction == "Y-like", "M", "F"),
+    EXPECTED_ABSENT_SEX = ifelse(direction == "Y-like", "F", "M"),
+    PRESENCE_SOURCE = if (depth.available) "read_depth" else "genotype_call",
+    COVERAGE_THRESHOLD = if (depth.available) coverage.threshold else NA_real_,
+    PRESENCE_EFFECT = panel$presence_difference,
+    PRESENCE_FDR = panel$presence_fdr,
+    DISCOVERY_FEMALES = n.female,
+    DISCOVERY_MALES = n.male
   )
 }
