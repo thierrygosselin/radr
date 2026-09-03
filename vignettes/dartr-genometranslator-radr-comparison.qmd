@@ -1,0 +1,773 @@
+---
+title: "Genomic data ecosystems compared"
+subtitle: "dartRverse and the genometranslator–radr suite"
+author: "Thierry Gosselin"
+date: "2026-09-02"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+execute:
+  freeze: auto
+---
+
+## Purpose and scope
+
+This report compares the dartRverse suite (including `dartR.base` version
+1.2.3, dated 2026-02-17) with the ecosystem built around
+`genometranslator`, `radr`, and their companion packages. It is a technical
+audit of two different designs, not a benchmark and not a claim that one
+package suite is universally superior.
+
+The distinction matters because the comparison is broader than two filtering
+packages. dartRverse centres its workflow on the `genlight` object and retains
+strong links to DArT genotype reports and DArT-derived locus metrics. The
+`genometranslator`–`radr` ecosystem centres its workflow on persistent GDS,
+standardized genomic evidence, recalculation from the active data, and explicit
+filter provenance. These choices lead to different strengths, limitations, and
+levels of readiness for population-scale and whole-genome sequencing data.
+
+The comparison asks four practical questions:
+
+1. Which input formats and biological quantities are actually retained?
+2. Are statistics recomputed from the active samples and markers?
+3. Can filtering decisions be reconstructed and audited later?
+4. What information can legitimately be written to downstream formats?
+
+The distinction between phylogenetic interoperability and population-genomic
+quality control is important. dartR has long had broad phylogenetic and
+specialist export coverage, and its population-genomic functionality has grown
+substantially over the last 6 years. 
+
+The `radr` ecosystem prioritizes raw genotype evidence, population-aware
+quality control, scalable repeated filtering, and provenance.
+
+## Why researchers should control genotyping and assembly
+
+This report is not an argument against DArT genotyping products. I have used
+them extensively, and they can be extremely valuable for marker discovery,
+exploratory analyses, pilot studies, and projects in which access to raw reads
+or computational expertise is limited. The concern is narrower: for a detailed
+population-genomic investigation, researchers should be able to understand,
+test, and reproduce the steps that convert their reads into genotypes.
+
+Much of my work concerns species with low population differentiation. When the
+biological signal is small, it may be comparable in magnitude to technical
+variation introduced by library, plate, sequencing run, assembly, genotype
+calling, missing-data thresholds, or allele-frequency filters. Small changes
+in pipeline parameters can alter the retained loci, site-frequency spectrum,
+population structure, and downstream estimates. Empirical comparisons have
+shown that RADseq assembly, mapping, genotyping, and filtering choices can
+materially change population-genetic inference (Andrews et al., 2016; Shafer
+et al., 2017).
+
+For that reason, I need to know what happened to the reads. At minimum, a
+researcher should be able to answer:
+
+- How were reads demultiplexed, trimmed, and screened for quality?
+- Was locus construction de novo or reference guided, and which parameters
+  controlled locus assembly and matching among individuals?
+- Which aligner, reference assembly, and mapping-quality rules were used?
+- Which genotype caller and model generated the calls?
+- Which depth, likelihood, quality, allele-balance, missingness, and
+  allele-frequency thresholds were applied?
+- Were those statistics recalculated after samples or markers were removed?
+- Were library, plate, lane, project, or sequencing-run effects examined?
+- Can the complete workflow be rerun from raw reads with recorded software
+  versions, commands, parameters, and random seeds?
+
+This is not a demand that genotypes be called *manually*. On the contrary, the
+workflow should be scripted, versioned, and automated. Researchers do not need
+to invent an assembler or genotype caller, but they should control the choice
+of software and parameters and retain the intermediate evidence needed to
+evaluate the result.
+
+The practical barrier is now much lower than it was when reduced-representation
+sequencing first became common. Detailed reviews, protocols, maintained
+manuals, forums, reproducible examples, institutional support, and genomics
+workshops are widely available. Stacks, for example, provides an integrated
+and tunable workflow for de novo and reference-guided RADseq processing
+(Catchen et al., 2013; Rochette & Catchen, 2017; Rochette et al., 2019), with
+an extensive [online manual](https://catchenlab.life.illinois.edu/stacks/manual/).
+Training a student to run, document, and interrogate such a workflow is a
+valuable part of the scientific analysis rather than an optional technical
+exercise.
+
+The objective is not control for its own sake. It is to distinguish a weak
+biological signal from a plausible technical signal, perform sensitivity
+analyses, and make the path from reads to inference inspectable by collaborators,
+reviewers, and future users of the data.
+
+## Overview of current genomic formats
+
+File formats should be evaluated by what they preserve, not only by whether a
+program can read them. A format may be excellent for a specific analysis while
+being unsuitable as the primary record of sequencing evidence.
+
+| Format or family | Principal strength | Information normally retained | Recommended role |
+|---|---|---|---|
+| **VCF/BCF** | Standardized variant interchange | Coordinates, REF/ALT alleles, multiallelic records, filters, INFO annotations, `GT`, phase, and extensible FORMAT fields such as `GL`/`PL`, `AD`, `DP`, and `GQ` | **Preferred source and archival exchange format.** Prefer `GT` with `GL` or `PL`; retain allele depth and quality fields when available |
+| **SeqArray GDS** | Compressed, indexed, disk-backed analytical storage | VCF-like variants and annotations in arrays that support selection, random access, and chunked computation | **Preferred persistent working format** for `genometranslator` and `radr` after import |
+| **PLINK 2 PGEN/PVAR/PSAM** | Very fast, compact genotype analysis | REF/ALT tracking, hard calls, dosages, phase, multiallelic variants, selected VCF-style metadata, phenotypes, and covariates | Excellent **derived analysis format** for PLINK 2 workflows; generally not the sole archival record of sequencing evidence |
+| **PLINK 1 BED/BIM/FAM** | Broad compatibility and efficient biallelic hard-call storage | Compact genotype dosage/calls, basic variant coordinates and alleles, sample/family fields | Useful derived compatibility format; substantially less expressive than VCF or PGEN |
+| **DArT two-row allele counts** | Retains allele-specific DArT read support | Per-individual counts for both alleles, from which depth, balance, and genotypes can be evaluated | Preferred DArT input when VCF is unavailable; convert to standardized GDS for analysis |
+| **DArT one- or two-row genotype reports** | Convenient vendor genotype delivery | Called genotypes and vendor locus summaries | Usable, but less informative than allele counts because the evidence behind each call is reduced or absent |
+| **Genepop, FSTAT, and STRUCTURE-style genotype matrices** | Simple exchange with established population-genetics programs | Primarily sample, population, locus, and genotype codes | Legacy analysis/exchange formats only; do not use as the authoritative sequencing-data archive |
+
+### VCF/BCF, GDS, and PLINK serve different purposes
+
+- **VCF or BCF is the evidence-preserving interchange format.** The VCF
+  specification defines variant alleles, coordinates, filters, annotations,
+  genotype calls, genotype likelihoods, depth, quality, and phase (Danecek et
+  al., 2011). BCF is its binary representation. This is the best starting point
+  when the caller can provide `GT` with `GL` or `PL`, and preferably `AD`, `DP`,
+  `GQ`, and genotype filters. See the official
+  [VCF 4.5 specification](https://samtools.github.io/hts-specs/VCFv4.5.pdf)
+  and [HTS specifications repository](https://github.com/samtools/hts-specs).
+- **GDS is the persistent analytical representation.** SeqArray reorganizes
+  VCF-like information into compressed arrays that can be selected and read in
+  chunks without materializing the complete genotype matrix (Zheng et al.,
+  2017). In this ecosystem, VCF/BCF is imported once and GDS becomes the
+  filtered, auditable working object.
+- **PLINK is an excellent derived analysis representation.** PLINK 2's
+  PGEN/PVAR/PSAM files improve on BED/BIM/FAM by tracking REF/ALT alleles and
+  supporting dosage, phase, multiallelic variants, and additional metadata.
+  They are optimized for PLINK operations and broad analytical compatibility
+  (Purcell et al., 2007; Chang et al., 2015). See the official
+  [PLINK 2 format reference](https://www.cog-genomics.org/plink/2.0/formats).
+- **Conversion is directional.** A rich VCF can be converted to a purpose-built
+  PLINK dataset. If likelihoods, allele depths, filters, or annotations are
+  discarded during that conversion, converting back to VCF cannot recreate
+  them. The original VCF/BCF and the GDS audit trail should therefore be kept.
+
+For this ecosystem the recommended sequence is:
+
+1. Preserve the original VCF/BCF, preferably with `GT`, `GL` or `PL`, and the
+   available depth and quality fields.
+2. Import it with `genometranslator::read_genome()` to create or open the
+   persistent GDS working representation.
+3. Perform QC and filtering from the active GDS state with complete audits.
+4. Export PGEN or BED only when a downstream PLINK-compatible analysis needs
+   it.
+
+### Why legacy population-genetics formats are insufficient
+
+Genepop, FSTAT, and STRUCTURE-style formats were designed for multilocus
+genotype analyses rather than for preserving sequencing evidence. They remain
+useful as narrow inputs to the programs and methods for which they were
+created (Goudet, 1995; Pritchard et al., 2000; Rousset, 2008). The problem is
+using them as the master copy of RADseq or whole-genome data.
+
+For RADseq, conversion to a legacy genotype matrix commonly loses or obscures:
+
+- per-sample REF and ALT read depth, genotype likelihood, and genotype quality;
+- the relationship among multiple SNPs originating from the same read or RAD
+  locus;
+- read position, locus sequence, reference placement, and technical metrics;
+- site and genotype filters, multiallelic state, phase, and explicit missingness
+  provenance; and
+- enough information to recalculate depth- and confidence-based statistics
+  after samples are removed.
+
+These losses matter because RADseq QC is not only a question of whether a cell
+contains a genotype. Allele dropout, paralogy, uneven depth, batch structure,
+linked SNPs on the same sequence, and genotype uncertainty can all produce a
+plausible-looking genotype matrix.
+
+At whole-genome scale, the limitations become more severe:
+
+- plain-text genotype matrices grow very large and are slow to parse repeatedly;
+- most operations require reading or materializing the full matrix rather than
+  selecting compressed genomic ranges or annotation fields;
+- variant coordinates and alleles may be represented minimally or by local
+  conventions rather than a sequencing-variant schema;
+- rich per-variant and per-genotype annotations have no standard destination;
+  and
+- programs developed for relatively small sets of approximately independent
+  loci may require aggressive LD pruning and model-specific preparation before
+  millions of linked variants can be analysed responsibly.
+
+The last point separates the **file format** from the **analysis model**. For
+example, the original STRUCTURE model assumes loci are unlinked and in linkage
+equilibrium within populations (Pritchard et al., 2000). Exporting a whole
+genome to STRUCTURE text does not make all of its linked variants appropriate
+for that model. A legacy export should be a deliberate, filtered endpoint—not
+the beginning of quality control and not the archival dataset.
+
+## The fundamental difference: the data model
+
+The most important difference between the two ecosystems is not the number of
+functions. It is the object used internally to represent genomic data.
+
+dartR uses the `genlight` class from `adegenet` as its central data object.
+The `genlight` class was introduced as a memory-efficient representation of
+genome-wide SNP data. It stores, for each individual and locus, the number or
+frequency of a reference allele using bit-level compression. This is extremely
+efficient for biallelic SNP matrices and can accommodate different ploidies.
+The biological matrix is complemented by locus and individual information,
+which dartR commonly stores in the `@other` slot (Jombart & Ahmed, 2011).
+
+The packages developed around `radr` use two complementary representations:
+
+1. **SeqArray GDS is the persistent genomic data store.** GDS is a hierarchical,
+   array-oriented, compressed, disk-backed format. SeqArray builds a
+   sequencing-variant schema on GDS and supports efficient random access to
+   samples, variants, genotypes, alleles, and VCF-like annotations without
+   loading the entire dataset into memory (Zheng et al., 2017).
+2. **Tibbles are the analytical and reporting representation.** Selected data
+   are extracted from GDS into rectangular tables and manipulated with focused
+   tidyverse packages. Under the tidy-data model, each variable is a column,
+   each observation is a row, and each cell contains one value. Each type of
+   observational unit belongs in its own table (Wickham, 2014; Wickham et al.,
+   2019). For example, one table describes markers, another samples, and a long
+   genotype table can use one row per sample-marker observation.
+
+GDS and tibbles are therefore not alternatives. The GDS is the compressed
+source of truth; tibbles are explicit, readable views used for calculations,
+joins, summaries, audits, and figures. Results can be written back to GDS as
+metadata or active selections without making the full genotype matrix an
+in-memory table.
+
+### What kinds of genomic data can each representation hold?
+
+| Data type or property | `genlight` | SeqArray GDS used by `genometranslator` | Tibbles used by the ecosystem |
+|---|---|---|---|
+| Biallelic SNP genotypes | Native strength: compact allele dosage per individual and locus | Native and compact | Straightforward in either wide or long form |
+| Variable ploidy | Supported by `genlight`; values represent allele counts or frequencies within the declared ploidy | Ploidy-aware genotype arrays can be stored when represented by the importer and schema | Can represent any ploidy explicitly, but conventions must be defined |
+| Multiallelic variants | Not naturally represented as one dosage value at one locus; records generally need to be removed, reduced, or split | Native VCF-style variant records may contain multiple alternate alleles | Naturally represented using allele identifiers or separate rows, although potentially large |
+| Phased genotypes and haplotypes | No native phase-aware haplotype representation in the core dosage matrix | Phased genotype information and related FORMAT annotations can be retained when available in the source | Can represent haplotypes explicitly in columns/rows, but without storage compression |
+| Indels and complex alleles | A biallelic dosage could be stored, but many `genlight`/dartR paths assume single-base SNP allele labels | REF and ALT strings and associated annotations can represent SNPs, indels, and other VCF records | Can store arbitrary allele strings and variant classes |
+| Structural-variant annotations | Not a native strength | Can store variant records and annotations hierarchically; support by a particular analysis remains function-specific | Can describe intervals, breakpoints, and annotations explicitly |
+| Dominant presence/absence markers | Values can be stored, and dartR uses `genlight` for SilicoDArT, but biological meaning depends on external datatype conventions | Can be stored with an explicit marker type and separate presence/depth semantics | Naturally represented as logical or 0/1 observations |
+| Per-sample total depth | Not part of the core `genlight` dosage matrix; may be supplied in additional structures or summarized metrics | Retained as a sample-by-variant FORMAT field when imported | Easily analysed as one variable in a long table |
+| Per-sample REF and ALT depth | Not represented by the single dosage value | Retained as allele-depth arrays for compatible inputs | Easily represented, but expensive for whole genomes if fully materialized |
+| Genotype likelihood or quality | Not part of the core dosage representation | Can retain VCF FORMAT annotations such as genotype quality or likelihood fields when imported | Can represent the values explicitly after selective extraction |
+| Marker and sample metadata | Stored through `genlight` slots and dartR conventions such as `@other$loc.metrics` and `@other$ind.metrics` | Stored as GDS annotations with standardized extraction functions | Natural rectangular representation for joining, checking, and reporting metadata |
+| Complete filter state | Successive objects and `@other$history` record much of the workflow | Active sample/variant selections and filter annotations persist in the GDS | Kept/removed audit tables make decisions directly inspectable |
+| Whole-genome scale | Memory-efficient bit-level storage for biallelic dosage. dartR offers optional, documented-as-testing file-backed matrices, but functions that call operations such as `as.matrix(x)` still materialize complete or selected matrices in RAM | Disk-backed compressed storage designed for whole-genome variant data, with sample/variant selection, random access, and chunked processing without loading the complete dataset | Best used for selected subsets and summaries rather than the complete whole-genome genotype matrix |
+
+The ability of a container to hold a data type does not imply that every
+analysis can use it. For example, SeqArray can retain multiallelic variants and
+complex annotations, while an HWE or LD function may deliberately require
+filtered biallelic SNPs. The advantage is that unsupported information need not
+be silently destroyed during import; it can be retained, inspected, and
+filtered explicitly.
+
+### Scale illustration: 2,000 individuals and 100,000 SNPs
+
+Consider a modest whole-genome subset containing 2,000 individuals and 100,000
+SNPs. It contains 200 million sample-by-variant genotype cells.
+
+| Representation | Approximate implication |
+|---|---|
+| Ordinary R numeric matrix | 200 million double-precision values require about 1.6 GB before object overhead, metadata, missing-value structures, and temporary copies |
+| Ordinary R integer matrix | About 800 MB for the genotype values alone, again before overhead and copies |
+| Bit-packed biallelic dosage | The theoretical core genotype information is on the order of tens of megabytes; for example, two bits per diploid genotype would require about 50 MB, before object metadata and implementation overhead |
+| Plain VCF containing only `GT` | Approximately 0.8 GB is plausible from three genotype characters plus a separator per cell, before site columns and headers; the exact size depends on genotype spelling and missingness |
+| Plain VCF containing `GT:AD:DP:GQ` | Commonly several gigabytes because every cell also carries text representations of allele depth, total depth, and genotype quality |
+| Compressed VCF/BCF or GDS | Size is highly data-dependent because missingness, allele frequencies, repeated strings, annotations, compression method, and depth fields all matter; dimensions alone cannot provide a defensible file-size prediction |
+
+These values illustrate scale; they are not performance benchmarks. In
+particular, comparing only file sizes can be misleading. A small `genlight`
+object is valuable for analyses that require only biallelic dosage, whereas a
+larger GDS may intentionally retain allele depths, quality fields, filters, and
+annotations that the `genlight` object does not contain.
+
+Opening a SeqArray GDS normally creates a connection and reads its structure
+and selection metadata; it does not load all 200 million genotype cells.
+Opening and closing can therefore take a fraction of a second to a few seconds
+on a local disk, largely independently of the full genotype matrix. This is an
+expectation, not a guaranteed timing: storage hardware, network filesystems,
+GDS structure, validation checks, and active-filter restoration all contribute.
+Importing the original VCF into GDS is a separate, one-time operation and can
+take substantially longer.
+
+Actual project-specific values should be reported rather than estimated. The
+following pattern records file sizes and connection times without extracting
+the complete genotype matrix:
+
+```{r}
+#| eval: false
+
+vcf <- "study.vcf.gz"
+gds.file <- "study.gds"
+
+data.frame(
+  file = c(vcf, gds.file),
+  size_gib = file.info(c(vcf, gds.file))$size / 1024^3
+)
+
+open.time <- system.time({
+  genome <- genometranslator::read_genome(
+    data = gds.file,
+    verbose = FALSE
+  )
+})
+
+close.time <- system.time({
+  SeqArray::seqClose(genome)
+})
+
+open.time
+close.time
+```
+
+This measures the cost of reopening an already imported GDS. It should not be
+presented as the time required to read or analyse every genotype. Extraction
+time must be benchmarked separately for the particular subset and fields used
+by an analysis.
+
+### Why GDS was chosen
+
+The decision to build around GDS was made approximately a decade ago, before
+whole-genome resequencing became routine in many of these projects. It was a
+strategic, long-term choice: reduced-representation datasets were already
+growing, and it was clear that repeatedly materializing complete genomic
+matrices in memory would not remain sustainable as projects moved toward whole
+genomes.
+
+That choice now allows the same overall workflow to span DArT, RADseq, and
+whole-genome data while retaining richer evidence than a dosage matrix alone.
+The objective was not merely to make today's filtering run faster. It was to
+avoid redesigning the ecosystem when variant counts reached millions, depth
+and allele balance became essential QC variables, and analyses needed to be
+resumed from a persistent filtered state.
+
+### Division of responsibilities around the data model
+
+| Responsibility | Package |
+|---|---|
+| STACKS/genotyping workflows | `stackr` |
+| Standardization | `standart` |
+| Reference placement and genome-coordinate work | `scaffoldr` |
+| Format detection, translation, metadata normalization, and GDS construction | `genometranslator` |
+| Quality control, filtering, diagnostics, and genomic discovery | `radr` |
+| Downstream individual and sex assignment | `assigner` |
+
+This separation is intentional. `genometranslator` should not decide which
+markers are biologically acceptable, and `radr` should not require a different
+implementation for every input format. Once information is normalized in GDS,
+the same QC method can operate on DArT, VCF, PLINK, or another supported source.
+
+## Reading: format names are not enough
+
+The preferred input is a **VCF containing called genotypes (`GT`) and genotype
+likelihoods (`GL`) or Phred-scaled genotype likelihoods (`PL`)**. When the
+sequencing pipeline provides them, allele depth (`AD`), total depth (`DP`),
+genotype quality (`GQ`), and genotype-level filters (`FT`) should also be
+retained. A called genotype alone records the pipeline's final decision;
+likelihoods and read depths retain evidence needed to evaluate that decision.
+
+The following table lists genotype inputs, rather than merely naming broad
+format families. Preferred inputs are listed first. It reflects the inspected
+package sources as of the date of this report.
+
+| Preference and input | dartR reader | `genometranslator::read_genome()` detection and underlying reader | Important consequence |
+|---|---|---|---|
+| **1. VCF (`.vcf` or `.vcf.gz`) with `GT` and `GL` or `PL`** | `dartR.base::gl.read.vcf()` uses `vcfR::read.vcfR()` and converts calls to a `genlight` dosage matrix | Detects the VCF header or extension and dispatches to `genometranslator::read_vcf()` | `genometranslator` imports to SeqArray GDS and can retain the richer VCF record and FORMAT evidence. The inspected dartR conversion does not preserve a general sample-by-variant FORMAT model in `genlight` |
+| **2. DArT two-row allele-count CSV** | No count-preserving reader was identified. `gl.read.dart()` recognizes one- and two-row genotype encodings, but its detector is not a reader for arbitrary per-allele counts | Detects DArT `counts` and dispatches to `genometranslator::read_dart()` | Preferred when DArT input is required: observed read support is retained separately for both alleles in every individual-marker cell |
+| DArT two-row SNP genotype CSV | `dartR.base::gl.read.dart()`; automatically distinguishes the supported one- and two-row genotype reports | Detects DArT `2rows` and dispatches to `genometranslator::read_dart()` | Both read the called genotypes, but this is not equivalent to retaining per-allele counts |
+| DArT one-row SNP genotype CSV | `dartR.base::gl.read.dart()` | Detects DArT `1row` and dispatches to `genometranslator::read_dart()` | Both supported; less underlying evidence is available than in the count report |
+| SilicoDArT presence/absence CSV | `dartR.base::gl.read.silicodart()` | Detects SilicoDArT and dispatches to `genometranslator::read_dart()` | Both recognize dominant presence/absence markers |
+| Count-valued SilicoDArT CSV | No distinct count-preserving route identified | Detects count-valued SilicoDArT through `genometranslator::read_dart()` | Presence/absence and its read support can remain distinct in GDS |
+| PLINK binary files (`.bed`, `.bim`, `.fam`) | `dartR.base::gl.read.PLINK()` uses `snpStats::read.plink()` | Detects `.bed` plus companion files and dispatches to `genometranslator::read_plink()` | Both support binary PLINK, but convert it into different internal data models |
+| PLINK text files (`.ped`, `.map`) | `dartR.base::gl.read.PLINK()` invokes external PLINK to make BED before conversion | Not the direct text route exposed by `read_genome()`; use a supported PLINK representation | dartR support depends on an external PLINK conversion |
+| PLINK transposed files (`.tped`, `.tfam`) | No direct `gl.read.PLINK()` route documented in the inspected source | Detects `.tped` plus `.tfam` and dispatches to `genometranslator::read_plink()` | Directly supported by `genometranslator` |
+| Generic SNP genotype CSV (`0/1/2` or nucleotide pairs) | `dartR.base::gl.read.csv()` | A standardized wide or long TSV/tibble is detected and normalized internally | The required table conventions differ; these are dosage/call tables, not substitutes for VCF likelihoods or allele depths |
+| Aligned FASTA sequence files | `dartR.base::gl.read.fasta()`; biallelic SNPs are extracted and multiallelic sites skipped | No FASTA genotype reader is dispatched by `read_genome()` | A genuine dartR-only direct reader in this comparison |
+| Genepop (`.gen`) | No direct core genotype reader identified in the inspected dartR exports | Detects and dispatches to `genometranslator::read_genepop()` | Normalized through the common interface |
+| FSTAT (`.dat`) | No direct core genotype reader identified in the inspected dartR exports | Detects and dispatches to `genometranslator::read_fstat()` | Normalized through the common interface |
+| SeqArray GDS (`.gds`) | No direct GDS-to-`genlight` reader among the inspected `gl.read.*()` functions | Detects a GDS file and opens it; an existing `SeqVarGDSClass` connection is also accepted | Persistent filters and annotations are restored without loading the complete genotype matrix |
+| Apache Parquet (`.parquet`) | No direct genotype reader identified | Detects Parquet and normalizes its tabular content internally | Useful for package-native tabular data, but it is not a VCF-equivalent variant schema |
+| Legacy RAD/FST (`.rad`) | No direct reader identified | Detects and reads the legacy package format internally; deprecated | Supported for migration, not recommended for new data |
+| `genind`, `genlight`, or `gtypes` R objects, including `.rds` | `genlight` is dartR's native object | Detects the object/class and dispatches to `read_genind()`, `read_genlight()`, or `read_gtypes()` | Allows migration into the standardized ecosystem |
+
+`dartR.popgen::gl.read.structure()` is not counted above as a genotype importer:
+it reads output files produced by STRUCTURE and returns run summaries and
+Q-matrices. It serves a useful but different purpose.
+
+For `genometranslator`, users normally need only:
+
+```{r}
+#| eval: false
+
+genome <- genometranslator::read_genome(
+  data = "study.vcf.gz",
+  strata = "study_strata.tsv"
+)
+```
+
+`read_genome()` detects the supported input and dispatches to the appropriate
+engine. The exported `read_*()` functions remain available when a user needs
+format-specific arguments, but they are not required for routine import.
+
+### Why VCF is preferred
+
+VCF is preferred because it is a documented, community-maintained interchange
+standard rather than a vendor-specific report layout. It defines variant
+coordinates, REF and ALT alleles, filters, INFO annotations, and extensible
+per-sample FORMAT fields (Danecek et al., 2011). In particular, `GT` records the genotype call, `GL`
+records log10-scaled genotype likelihoods, and `PL` records the corresponding
+Phred-scaled likelihoods. This makes the meanings and ordering of the values
+portable between compliant tools. See the
+[official VCF specification](https://samtools.github.io/hts-specs/VCFv4.5.pdf)
+and the [HTS specifications repository](https://github.com/samtools/hts-specs).
+
+The preferred VCF therefore contains `GT` plus `GL` or `PL`, rather than `GT`
+alone. Retaining `AD`, `DP`, `GQ`, and `FT` where available further strengthens
+quality control. It allows downstream analyses to revisit confidence, allele
+balance, depth, and filters instead of treating every called genotype as
+equally certain.
+
+### If DArT input is required, prefer two-row allele counts
+
+DArT deliverables are not interchangeable. The principal forms encountered by
+this ecosystem are:
+
+- **one-row SNP genotype reports**, containing a called diploid genotype per
+  individual and marker;
+- **two-row SNP genotype reports**, using separate binary rows for the two
+  alleles but still representing genotype calls rather than read counts;
+- **two-row allele-count reports**, containing the observed read support for
+  each allele in each individual; and
+- **SilicoDArT reports**, representing dominant presence/absence markers, which
+  may also contain count-valued read support.
+
+If a project must work from DArT output, the preferred input is the **two-row
+allele-count report**, not merely a two-row binary genotype report. The two
+rows preserve, for each individual and marker, the observed read depth
+supporting each allele. `genometranslator::read_dart()` can retain those
+allele-specific counts, total depth, and the derived genotype in GDS.
+
+Allele-specific depth makes it possible to evaluate allelic balance in
+heterozygotes, weakly supported calls, allele dropout, unusually deep markers,
+batch effects, and minor allele depth. It also permits relevant summaries to be
+recomputed after individuals are removed. A called genotype or an average
+depth per marker cannot reconstruct this sample-by-marker evidence. The
+inspected dartR import path reduces the data to a `genlight` genotype matrix
+and marker-level metrics; it does not retain the full REF/ALT count matrix.
+
+### What dartR actually does with DArT depth
+
+The inspected `gl.read.dart()` documentation correctly states that both
+one-row and two-row genotype reports are recognized. The internal detector,
+however, uses the maximum sample value to decide whether the report contains
+one genotype row or two binary allele rows. A genuine allele-count report can
+contain values much larger than two and therefore falls outside that logic.
+
+For ordinary DArT genotype input, dartR may calculate a marker-level `rdepth`
+using the number of called individuals, genotype-derived allele-presence
+proportions, and the imported DArT summary columns `AvgCountRef` and
+`AvgCountSnp`. That quantity is an estimated average for the marker. It is not
+the matrix of observed REF and ALT read counts for every sample-marker pair.
+
+This distinction matters because two datasets may have the same genotype and
+average marker depth but very different allelic balance, dropout, batch
+effects, or support for rare alleles. For population-genomic QC, the count
+report is therefore the preferred DArT input whenever available.
+
+## Recalculation after samples are removed
+
+It would also be incorrect to say that dartR never recalculates statistics.
+`gl.read.dart(recalc = TRUE)` recalculates several genotype-derived locus
+metrics, including call rate, observed genotype frequencies, and average PIC.
+Many dartR filters maintain flags indicating whether a metric is current.
+
+The limitation is narrower:
+
+- DArT-supplied technical summaries that cannot be reconstructed from the
+  `genlight` genotype matrix remain properties of the original DArT report.
+- Some filters expose a `recalc` option and do not always enable it by default.
+- Marker-level reconstructed depth cannot replace sample-by-marker REF and ALT
+  counts that were never retained.
+- A function call in `@other$history` records intent, but it is not a complete
+  table of exactly which markers and samples were removed and retained.
+
+In the GDS workflow, statistics are calculated from the currently active
+samples and markers. When sample removal changes the dataset, downstream call
+rate, allele count, allele frequency, monomorphism, and depth summaries are
+regenerated from that active state. Filters write explicit kept and removed
+tables and preserve a removal reason in marker/sample metadata.
+
+## Detection and filtering
+
+| QC question | dartR | radr | Material difference |
+|---|---|---|---|
+| Missing genotypes per marker | `gl.filter.callrate()` | `filter_genotyping()` | radr recomputes active-sample missingness and writes complete marker audits |
+| Missingness and heterozygosity per individual | Reporting, subsetting, and call-rate tools | `filter_individuals()` | radr integrates sample missingness, heterozygosity, coverage, audit, and subsequent monomorphism checks |
+| All-missing markers | `gl.filter.allna()` | `detect_all_missing()` plus relevant filters | radr separates diagnosis from removal |
+| Rare alleles | `gl.filter.maf()` | `filter_ma(ma.stats = "mac" | "maf" | "mad")` | radr supports MAC, MAF, and minor allele depth; MAC is the preferred general-purpose criterion, while MAD uses actual allele-read support when available |
+| REF/ALT calibration | Genlight dosage orientation and locus metrics | Count-, depth-, or ancestral-state calibration | radr can redefine the observed minor allele after sample filtering and distinguish count-based from depth-based evidence |
+| Markers shared among strata | No close dedicated filter identified | `filter_common_markers()` | radr can require marker representation across defined strata |
+| Monomorphic markers | `gl.filter.monomorphs()` | `filter_monomorphic()` and automatic integration into filters that alter the active samples | radr explicitly rechecks monomorphism after individual removal, when polymorphic status can change |
+| DArT reproducibility | `gl.filter.reproducibility()` | `filter_dart_reproducibility()` | Both necessarily use a DArT pipeline metric; radr labels and audits that provenance |
+| Read depth | `gl.filter.rdepth()` using available locus metrics | `filter_coverage()` using retained sample/marker depth and allele depth | Marker-average filtering and sample-by-marker evidence answer different QC questions |
+| Secondary SNPs on reads | `gl.filter.secondaries()` | `filter_snp_number()` and `filter_snp_position_read()` | radr separates number-per-locus and position-on-read decisions |
+| HWE | Exact or chi-square tests, by population or pooled; multiple-testing adjustment is optional and off by default | Fast exact mid-p testing, population thresholds, multiple threshold outputs, and integration with other QC evidence | dartR is not statistically trivial, but radr is more conservative operationally and provides richer sensitivity diagnostics |
+| Excess heterozygosity | `gl.filter.excess.het()` tests HWE-like excess, initially focusing on loci with observed heterozygosity above 50% | `detect_paralogs()`, `detect_het_outliers()`, HWE, allele-balance, and coverage-aware diagnostics | Excess heterozygosity can flag candidates but is not, by itself, a reliable paralog diagnosis |
+| Duplicate samples | Replicate and Hamming-distance functions | `detect_duplicate_genomes()` | radr produces an explicit diagnostic/audit workflow |
+| Mixed or contaminated samples | No close dedicated equivalent found | `detect_mixed_genomes()` | radr-specific diagnostic |
+| Identity by missingness | No close dedicated equivalent found | `detect_ibm()` | radr can expose wet-lab plate/lane structure encoded in missingness |
+| Rare-allele support and biallelic problems | No close unified diagnostics | `detect_rare_alleles()`, `detect_biallelic_problems()` | radr separates weak read support for rare alleles from genotype-representation errors |
+| Linkage disequilibrium | `gl.filter.ld()` | `filter_ld()` | radr operates on active genomic coordinates and records removed/retained markers |
+| Sex-linked markers | `dartR.sexlinked` reports, retains, drops, and infers sex | `sexy_markers()` combines presence, heterozygosity, and normalized depth while treating SilicoDArT as dominant | radr preserves evidence by method and produces an assignment-ready panel without interpreting dominant data as diploid heterozygosity |
+| Inversion candidates | No equivalent identified in the inspected modules | `detect_inversions()` | radr-specific discovery workflow |
+
+### Hardy--Weinberg filtering: a fairer characterization
+
+The dartR implementation is more capable than a "naive HWE filter" label
+suggests. It offers exact and chi-square tests, population-wise testing, a
+threshold for the number of populations showing departure, and optional
+multiple-testing correction. Its important operational defaults are a minimum
+population size of five and no multiple-comparison adjustment.
+
+The radr distinction is therefore not simply possession of a better exact
+test. It is the surrounding workflow: exact mid-p calculations, conservative
+default thresholds, diagnostics over several significance and population
+thresholds, warnings about population structure and missingness, integration
+with coverage and mixed-genome checks, and complete kept/removed outputs.
+
+### Putative paralogs
+
+dartR does address excess heterozygosity, so it should receive credit for
+screening one common paralog signal. The biological caution is that excess
+heterozygosity is nonspecific: duplication, collapsed loci, sex linkage,
+population mixture, contamination, and genotyping error can produce similar
+patterns. A defensible paralog assessment should combine genotype proportions
+with coverage, allele balance, reproducibility, population consistency, and
+sequence/reference evidence where these are available.
+
+## Writing and the `gl2*` functions
+
+dartR has impressive breadth of specialist exporters, particularly for
+phylogenetics and established external programs. Breadth does not guarantee
+lossless round-tripping, however. Every writer can export only the information
+retained by the central object.
+
+| Writer or pattern | What the inspected code does | Limitation or risk |
+|---|---|---|
+| `gl2vcf()` | Calls `gl2plink()`, creates PED/MAP intermediates, then invokes an external PLINK 1.9 binary to recode them as VCF | This is a PLINK-generated genotype VCF, not reconstruction of the source VCF. Original FORMAT fields, allele depths, genotype likelihoods, phasing, and most INFO annotations are not recoverable |
+| DArT SNP to VCF | Can produce a minimal VCF if the `genlight` object has usable allele labels; unmapped coordinates are set to chromosome/position zero | So it can write *a* VCF from DArT SNP genotypes, contrary to a categorical claim that it cannot. It cannot write the original DArT allele counts or technical evidence into a faithful VCF |
+| SilicoDArT to VCF/PLINK | `gl2plink()` does not visibly reject dominant data before converting values 0/1/2 to diploid allele pairs | Presence/absence value 1 risks being represented as a heterozygous diploid genotype; such conversion is biologically inappropriate without an explicit dominant-marker model |
+| `gl2plink()` missing data | The inspected PED writer converts missing genotypes to `"0/0"`, then removes `/`, yielding the required PLINK missing allele pair `0 0` | The output is syntactically conventional, but the code is easy to misread as a reference homozygote; explicit tests are warranted |
+| `gl2plink()` alleles | Extracts alleles using fixed character positions in strings such as `A/T` | Assumes simple single-character biallelic alleles and is unsuitable for indels or more complex allele strings |
+| `gl2vcf()` coordinates | If the maximum current position is below 1000 and no genome-position field is supplied, positions become zero; chromosomes may also become zero | Read-relative SNP positions are deliberately discarded, but valid small genomic coordinates could be misclassified by the heuristic |
+| `gl2vcf()` external command | Builds one shell command as a string and expects `plink` at `file.path(plink.bin.path, "plink")` | Paths containing spaces or shell-sensitive characters are fragile; exit status is not handled as explicitly as with `system2()` argument vectors |
+| Temporary files | Uses fixed names such as `gl_plink_temp` in the output folder and `mylist.txt` in the session temp directory | Concurrent calls can collide; intermediate files can remain in the output directory |
+| `gl2gds()` | Writes an SNPRelate GDS containing genotype, sample ID, variant ID, chromosome, position, and allele | It is not equivalent to the richer SeqArray GDS used by genometranslator: DArT metrics, sample metadata, per-genotype depth, allele counts, and filter provenance are not carried into the created GDS |
+| Specialist `gl2*` exporters | Many correctly target PHYLIP, PAUP, SNAPPER, TreeMix, BayesAss, GenAlEx, STRUCTURE, and related programs | These are genuine dartR strengths, but many are terminal text exports rather than reversible translations |
+| Return values | Several writers return `NULL`; some return a generated table invisibly | Programmatic composition and validation are inconsistent across writers |
+
+### Why `gl2vcf()` is necessarily lossy
+
+A `genlight` matrix principally stores genotype dosage and a limited set of
+locus/sample annotations. Once a VCF has been reduced to that representation,
+the following cannot generally be reconstructed:
+
+- per-allele read depth (`AD`), total depth (`DP`), and genotype quality (`GQ`);
+- genotype likelihoods (`GL`/`PL`) and phasing;
+- multiallelic alleles removed during import;
+- heterogeneous INFO fields and flags not retained in locus metrics;
+- the complete original VCF header and provenance.
+
+The name `gl2vcf()` is therefore accurate as an export operation, but its
+output should not be interpreted as a lossless VCF round trip. A GDS generated
+directly from the source VCF or DArT allele-count report retains substantially
+more evidence for later filtering and re-export.
+
+## Provenance and reproducibility
+
+| Provenance level | dartR | genometranslator + radr |
+|---|---|---|
+| Function history | Calls are appended to `@other$history` by many functions | Function calls and arguments are written and filter parameters are retained |
+| Current metric flags | `@other$loc.metrics.flags` tracks whether several metrics are believed current | Statistics are derived from the active GDS state when needed |
+| Removed markers | Usually inferred by comparing objects or rerunning history | Explicit per-step removed-marker table with reason |
+| Retained markers | Present in returned object | Explicit per-step retained-marker table plus active GDS selection |
+| Removed/retained samples | Usually inferred from successive objects | Explicit sample audits for functions capable of sample removal |
+| Reopening a project | Requires the correct serialized object and interpretation of its history | GDS reopens with sample/variant selection and filter metadata |
+| Genotype evidence | Primarily dosage matrix plus selected metrics | Dosage, missingness, total depth, allele depth, and source metadata when available |
+
+## Overall interpretation
+
+dartR remains particularly strong as a broad `genlight` analysis and export
+ecosystem. Its many phylogenetic and specialist writers are real advantages,
+and recent versions contain considerably more population-genomic functionality
+than older versions. The source audit also corrects three overly broad
+criticisms: dartR does read ordinary two-row DArT genotype files, it does
+recalculate several genotype-derived metrics, and `gl2vcf()` can generate a
+minimal VCF from DArT SNP genotypes.
+
+The central limitation for modern population-genomic QC is information loss.
+The inspected dartR DArT reader does not retain two-row per-individual allele
+counts; its VCF reader simplifies VCF into `genlight`; and many downstream
+statistics can consequently use only genotype dosage or imported/reconstructed
+marker summaries. Once raw evidence is discarded, later functions cannot
+recreate it.
+
+The `genometranslator -> radr -> assigner` design is strongest when the goal is
+to maintain a traceable chain from raw genotype evidence to filtered markers
+and downstream assignment:
+
+1. ingest heterogeneous sources through one interface;
+2. retain technical evidence in a disk-backed GDS;
+3. recompute statistics from active samples and markers;
+4. separate detection from removal;
+5. audit every removal and retention decision; and
+6. export only representations that are biologically valid for the marker type.
+
+## Recommendations for the radr ecosystem
+
+1. Continue treating the DArT allele-count report as the preferred DArT SNP
+   input and explain why it differs from the two-row binary genotype report.
+2. Record the engine used by every genometranslator adapter in its help page and
+   run log, just as `vcfR` and `snpStats` should be visible in a dartR audit.
+3. Maintain an explicit matrix of which fields survive every conversion.
+4. Refuse or strongly warn about biologically invalid dominant-to-diploid
+   conversions, particularly SilicoDArT to VCF, PLINK, or HWE workflows.
+5. Recalculate monomorphism and allele statistics whenever active individuals
+   change.
+6. Keep assembly/genotyping responsibilities in `stackr`, normalization in
+   `standart`, reference placement in `scaffoldr`, format translation in
+   `genometranslator`, QC/discovery in `radr`, and assignment in `assigner`.
+7. Add round-trip tests that compare genotypes, alleles, coordinates, missing
+   values, metadata, and depth—not merely whether an output file was created.
+
+## Audited source locations
+
+The principal dartR files inspected for this report were:
+
+- `dartR.base/R/gl.read.dart.r`
+- `dartR.base/R/utils.read.dart.r`
+- `dartR.base/R/utils.dart2genlight.r`
+- `dartR.base/R/gl.read.vcf.r`
+- `dartR.base/R/gl.read.PLINK.r`
+- `dartR.base/R/gl2vcf.r`
+- `dartR.base/R/gl2plink.r`
+- `dartR.base/R/gl2gds.r`
+- `dartR.base/R/gl.filter.callrate.r`
+- `dartR.base/R/gl.filter.maf.r`
+- `dartR.base/R/gl.filter.hwe.r`
+- `dartR.base/R/gl.filter.excess.het.r`
+- `dartR.sexlinked/R/gl.report.sexlinked.r`
+- `dartR.sexlinked/R/gl.filter.sexlinked.r`
+- `dartR.sexlinked/R/gl.infer.sex.r`
+
+The principal local comparison files were:
+
+- `genometranslator/R/read_genome.R`
+- `genometranslator/R/dart.R`
+- `genometranslator/R/vcf.R`
+- `genometranslator/R/plink.R`
+- `genometranslator/R/gds.R`
+- `radr/R/filter_genotyping.R`
+- `radr/R/filter_individuals.R`
+- `radr/R/filter_ma.R`
+- `radr/R/filter_monomorphic.R`
+- `radr/R/filter_common_markers.R`
+- `radr/R/filter_hwe.R`
+- `radr/R/filter_coverage.R`
+- `radr/R/detect_paralogs.R`
+- `radr/R/sex_markers.R`
+
+Because this is a source-snapshot audit, findings should be rechecked when any
+of the compared implementations changes.
+
+## References
+
+Andrews, K. R., Good, J. M., Miller, M. R., Luikart, G., & Hohenlohe, P. A.
+(2016). Harnessing the power of RADseq for ecological and evolutionary
+genomics. *Nature Reviews Genetics*, *17*, 81--92.
+https://doi.org/10.1038/nrg.2015.28
+
+Catchen, J., Hohenlohe, P. A., Bassham, S., Amores, A., & Cresko, W. A. (2013).
+Stacks: An analysis tool set for population genomics. *Molecular Ecology*,
+*22*(11), 3124--3140. https://doi.org/10.1111/mec.12354
+
+Chang, C. C., Chow, C. C., Tellier, L. C. A. M., Vattikuti, S., Purcell, S. M.,
+& Lee, J. J. (2015). Second-generation PLINK: Rising to the challenge of larger
+and richer datasets. *GigaScience*, *4*, 7.
+https://doi.org/10.1186/s13742-015-0047-8
+
+Danecek, P., Auton, A., Abecasis, G., Albers, C. A., Banks, E., DePristo,
+M. A., Handsaker, R. E., Lunter, G., Marth, G. T., Sherry, S. T., McVean, G.,
+& Durbin, R. (2011). The variant call format and VCFtools. *Bioinformatics*,
+*27*(15), 2156--2158. https://doi.org/10.1093/bioinformatics/btr330. Current
+format specification: https://samtools.github.io/hts-specs/VCFv4.5.pdf
+
+Graffelman, J., & Moreno, V. (2013). The mid p-value in exact tests for
+Hardy--Weinberg equilibrium. *Statistical Applications in Genetics and
+Molecular Biology*, *12*(4), 433--448.
+
+Gruber, B., Unmack, P. J., Berry, O. F., & Georges, A. (2018). dartr: An R
+package to facilitate analysis of SNP data generated from reduced
+representation genome sequencing. *Molecular Ecology Resources*, *18*(3),
+691--699. https://doi.org/10.1111/1755-0998.12745
+
+Goudet, J. (1995). FSTAT (version 1.2): A computer program to calculate
+F-statistics. *Journal of Heredity*, *86*(6), 485--486.
+https://doi.org/10.1093/oxfordjournals.jhered.a111627
+
+Jombart, T., & Ahmed, I. (2011). adegenet 1.3-1: New tools for the analysis of
+genome-wide SNP data. *Bioinformatics*, *27*(21), 3070--3071.
+https://doi.org/10.1093/bioinformatics/btr521
+
+Linck, E., & Battey, C. J. (2019). Minor allele frequency thresholds strongly
+affect population structure inference with genomic data sets. *Molecular
+Ecology Resources*, *19*(3), 639--647.
+
+Purcell, S., Neale, B., Todd-Brown, K., Thomas, L., Ferreira, M. A. R., Bender,
+D., et al. (2007). PLINK: A tool set for whole-genome association and
+population-based linkage analyses. *The American Journal of Human Genetics*,
+*81*(3), 559--575.
+
+Pritchard, J. K., Stephens, M., & Donnelly, P. (2000). Inference of population
+structure using multilocus genotype data. *Genetics*, *155*(2), 945--959.
+
+Rousset, F. (2008). genepop'007: A complete re-implementation of the Genepop
+software for Windows and Linux. *Molecular Ecology Resources*, *8*(1),
+103--106. https://doi.org/10.1111/j.1471-8286.2007.01931.x
+
+Rochette, N. C., & Catchen, J. M. (2017). Deriving genotypes from RAD-seq
+short-read data using Stacks. *Nature Protocols*, *12*, 2640--2659.
+https://doi.org/10.1038/nprot.2017.123
+
+Rochette, N. C., Rivera-Colon, A. G., & Catchen, J. M. (2019). Stacks 2:
+Analytical methods for paired-end sequencing improve RADseq-based population
+genomics. *Molecular Ecology*, *28*(21), 4737--4754.
+https://doi.org/10.1111/mec.15253
+
+Robledo-Ruiz, D. A., Austin, L., Amos, J. N., Castrejon-Figueroa, J., Harley,
+D. K., Magrath, M. J. L., Sunnucks, P., & Pavlova, A. (2023). Easy-to-use R
+functions to separate reduced-representation genomic datasets into sex-linked
+and autosomal loci, and conduct sex assignment. *Molecular Ecology Resources*.
+
+Shafer, A. B. A., Peart, C. R., Tusso, S., Maayan, I., Brelsford, A., Wheat,
+C. W., & Wolf, J. B. W. (2017). Bioinformatic processing of RAD-seq data
+dramatically impacts downstream population genetic inference. *Methods in
+Ecology and Evolution*, *8*(8), 907--917.
+https://doi.org/10.1111/2041-210X.12700
+
+Waples, R. S. (2015). Testing for Hardy--Weinberg proportions: Have we lost the
+plot? *Journal of Heredity*, *106*(1), 1--19.
+
+Wigginton, J. E., Cutler, D. J., & Abecasis, G. R. (2005). A note on exact
+tests of Hardy--Weinberg equilibrium. *The American Journal of Human Genetics*,
+*76*(5), 887--893.
+
+Wickham, H. (2014). Tidy data. *Journal of Statistical Software*, *59*(10),
+1--23. https://doi.org/10.18637/jss.v059.i10
+
+Wickham, H., Averick, M., Bryan, J., Chang, W., McGowan, L. D., Francois, R.,
+Grolemund, G., Hayes, A., Henry, L., Hester, J., Kuhn, M., Pedersen, T. L.,
+Miller, E., Bache, S. M., Muller, K., Ooms, J., Robinson, D., Seidel, D. P.,
+Spinu, V., Takahashi, K., Vaughan, D., Wilke, C., Woo, K., & Yutani, H. (2019).
+Welcome to the tidyverse. *Journal of Open Source Software*, *4*(43), 1686.
+https://doi.org/10.21105/joss.01686
+
+Zheng, X., Gogarten, S. M., Lawrence, M., Stilp, A., Conomos, M. P., Weir,
+B. S., Laurie, C., & Levine, D. (2017). SeqArray---a storage-efficient
+high-performance data format for WGS variant calls. *Bioinformatics*, *33*(15),
+2251--2257. https://doi.org/10.1093/bioinformatics/btx145

@@ -1,6 +1,6 @@
 #' @name filter_ld
-#' @title GBS/RADseq short and long distance linkage disequilibrium pruning
-#' @description SNP short and long distance linkage disequilibrium pruning.
+#' @title Filter linkage disequilibrium
+#' @description Prune short- and long-distance linkage disequilibrium in a GDS.
 #'
 #' **Filter target:** Markers.
 #'
@@ -128,8 +128,8 @@
 #' settings for a reproducible analysis. The missingness-aware option is passed
 #' as \code{long.ld.missing} through \code{...}.
 #'
-#' @return The filtered data in the same representation as the input. GDS
-#' marker metadata and active variants are updated in place. LD summaries,
+#' @return The input GDS with marker metadata and active variants updated in
+#' place. LD summaries,
 #' plots, marker lists, and filtering parameters are written to the output
 #' folder when applicable.
 
@@ -237,12 +237,11 @@ filter_ld <- function(
   if (missing(data)) rlang::abort("data is missing")
 
   # Folders---------------------------------------------------------------------
-  path.folder <- generate_folder(
-    rad.folder = "filter_ld",
-    path.folder = path.folder,
-    internal = internal,
-    file.date = file.date,
-    verbose = verbose)
+  path.folder <- radr_folder(
+    rad.folder = paste0("filter_ld_", file.date),
+    path.folder = path.folder %||% getwd(),
+    prefix.int = TRUE
+  )
 
   # write the dots file
   tgbase::write_tgbase_tsv(
@@ -300,8 +299,10 @@ filter_ld <- function(
 
   # Detect format --------------------------------------------------------------
   data.type <- genometranslator::detect_genomic_format(data)
-  if (!data.type %in% c("tbl_df", "fst.file", "SeqVarGDSClass", "gds.file")) {
-    rlang::abort("Input not supported for this function: read function documentation")
+  if (!data.type %in% c("SeqVarGDSClass", "gds.file")) {
+    rlang::abort(
+      "`data` must be a GDS filepath or an open SeqVarGDSClass object."
+    )
   }
 
   # Import data ---------------------------------------------------------------
@@ -323,8 +324,15 @@ filter_ld <- function(
       data.type <- "SeqVarGDSClass"
     }
 
-    wl <- bl <- genometranslator::extract_markers_metadata(data, whitelist = TRUE) %>%
-      dplyr::arrange(LOCUS, MARKERS)
+    wl <- genometranslator::extract_markers_metadata(
+      gds = data, whitelist = TRUE
+    )
+    if (!"MARKERS" %in% names(wl)) {
+      wl$MARKERS <- paste0("VARIANT_", wl$VARIANT_ID)
+    }
+    wl <- wl |>
+      dplyr::arrange(.data$LOCUS, .data$MARKERS)
+    bl <- wl
   }
 
   # Filter parameters: initiate -----------------------------------------------
@@ -424,7 +432,10 @@ filter_ld <- function(
       if (filter.short.ld == "first") {
         wl %<>%
           dplyr::group_by(LOCUS) %>%
-          dplyr::summarise(POS = min(POS)) %>%
+          dplyr::slice_min(
+            order_by = suppressWarnings(as.numeric(POS)),
+            n = 1L, with_ties = FALSE
+          ) %>%
           dplyr::ungroup(.)
       }#End snp first
 
@@ -432,7 +443,10 @@ filter_ld <- function(
       if (filter.short.ld == "last") {
         wl %<>%
           dplyr::group_by(LOCUS) %>%
-          dplyr::summarise(POS = max(POS)) %>%
+          dplyr::slice_max(
+            order_by = suppressWarnings(as.numeric(POS)),
+            n = 1L, with_ties = FALSE
+          ) %>%
           dplyr::ungroup(.)
       }#End snp last
 
@@ -464,7 +478,10 @@ filter_ld <- function(
           keep.first.select <- wl %>%
             dplyr::filter(LOCUS %in% keep.first$LOCUS) %>%
             dplyr::group_by(LOCUS) %>%
-            dplyr::summarise(POS = min(POS)) %>%
+            dplyr::slice_min(
+              order_by = suppressWarnings(as.numeric(POS)),
+              n = 1L, with_ties = FALSE
+            ) %>%
             dplyr::ungroup(.)
 
           pick.middle.select <- wl %>%

@@ -7,22 +7,27 @@
 state and is being actively
 developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
 [![packageversion](https://img.shields.io/badge/Package%20version-0.0.0.9000-orange.svg)](commits/main)
-[![Last-changedate](https://img.shields.io/badge/last%20change-2026--09--02-brightgreen.svg)](/commits/main)
+[![Last-changedate](https://img.shields.io/badge/last%20change-2026--09--03-brightgreen.svg)](/commits/main)
 <!-- badges: end -->
 
-`radr` explores, diagnoses, visualizes, and filters individual genomic
-data. It works primarily with GDS files and objects created by
-[`genometranslator`](https://thierrygosselin.github.io/genometranslator/).
+## Origin of the name
 
-The two packages have deliberately different responsibilities:
+RADseq remains widely used, while whole-genome sequencing and its many
+variants increasingly need to be on researchers’ **radar**. My hope is
+that **radr** will help researchers make that transition.
 
-- `genometranslator` reads, standardizes, and writes genomic formats;
-- `radr` investigates data quality and applies explicit filters.
+[`genometranslator`](https://thierrygosselin.github.io/genometranslator/)
+and [`radr`](https://thierrygosselin.github.io/radr/) are descendants of
+**radiator**. Their emergence is best viewed as a small software
+**adaptive radiation**: functions inherited from **radiator** were
+partitioned and developed into two packages occupying distinct
+computational niches.
 
-`explore_genomes()` offers a guided first exploration. It is not a
-universal filtering recipe: established analyses should use selected
-`detect_*()` and `filter_*()` functions in an order justified for the
-dataset.
+- [`genometranslator`](https://thierrygosselin.github.io/genometranslator/)
+  reads, standardizes, and writes genomic formats;
+- [`radr`](https://thierrygosselin.github.io/radr/) explores, diagnoses,
+  visualizes, and filters individual genomic data created by
+  [`genometranslator`](https://thierrygosselin.github.io/genometranslator/).
 
 ## Installation
 
@@ -56,20 +61,8 @@ radr::radr_dependencies()
 The returned table distinguishes required components from optional
 components and states which workflow uses each optional dependency.
 
-### Optional R packages
-
-Install only what is needed for the planned analysis:
-
-``` r
-# LD, linkage pruning, and IBS calculations on GDS
-BiocManager::install("SNPRelate")
-
-# Tidy-data distances and fast IBM PNG rendering
-install.packages(c("amap", "ragg"))
-```
-
-Function documentation identifies its additional dependencies. An
-optional package is not required merely to install or load radr.
+There is no plan to submit the package to CRAN or Bioconductor. A
+GitHub-based development environment suits me well.
 
 ### Optional command-line tools with Conda
 
@@ -119,11 +112,24 @@ ibm <- radr::detect_ibm(
 
 # Guided exploration for a new dataset
 screened <- radr::explore_genomes(data = genome)
+
+# Dataset-tailored workflow with functions chained directly with the native R pipe:
+genome.filtered <- genome |>
+  radr::filter_genotyping() |>
+  radr::filter_ma() |>
+  radr::filter_snp_number() |>
+  radr::filter_ld() |>
+  radr::filter_coverage() |>
+  radr::filter_individuals() |>
+  radr::detect_mixed_genomes() |>
+  radr::detect_duplicate_genomes()
 ```
 
-Filtering order should follow what is known about the project rather
-than a fixed recipe. Filtering individuals first changes marker
-statistics, while filtering markers first changes individual statistics.
+`explore_genomes()` offers a guided first exploration. It is not a
+universal filtering recipe: established analyses should use selected
+`detect_*()` and `filter_*()` functions in an order justified for the
+dataset. Filtering individuals first changes marker statistics, while
+filtering markers first changes individual statistics.
 
 The [getting-started
 vignette](https://thierrygosselin.github.io/radr/articles/using_radr.html#build-a-tailored-workflow)
@@ -145,7 +151,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-02.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-03.
 
 ## Website and support
 

@@ -8,6 +8,9 @@
 #' \emph{See details of this function for more info}.
 #' @param group.rank (Number) The number of group to class the MAF.
 #' @param filename (optional) Name of the file written to the working directory.
+#' @param strata Optional sample metadata containing `INDIVIDUALS` and
+#'   `group.column`.
+#' @param group.column Metadata column used to calculate local MAF.
 #' @rdname diagnostic_maf
 #' @keywords internal
 #' @export
@@ -23,54 +26,52 @@
 #' @seealso \link{filter_ma}
 
 
-diagnostic_ma <- function(data, group.rank, filename = NULL){
+diagnostic_ma <- function(
+    data, group.rank, filename = NULL, strata = NULL,
+    group.column = "STRATA"
+){
 
   if (missing(data)) rlang::abort("Input file missing")
   if (missing(group.rank)) rlang::abort("group.rank argument missing")
 
-  data <- genometranslator::read_genome(data = data, import.metadata = TRUE)
-
-  # if (is.vector(data)) {
-  #   data <- genometranslator::read_genome(data = data, import.metadata = TRUE)
-  #   message("Using the file in your directory")
-  #
-  # } else {
-  #   data <- data
-  #   message("Using the file from your global environment")
-  # }
-
-  # Check if allele frequency column is found
-  if (!tibble::has_name(data, "FREQ_ALT")) {
-    data <- radr::allele_frequencies(data, verbose = TRUE)$freq.long %>%
-      dplyr::rename(FREQ_ALT = MAF_LOCAL, GLOBAL_MAF = MAF_GLOBAL)
-  }
+  data <- summarise_genomic_data(
+    data = data,
+    strata = strata,
+    group.column = group.column,
+    by.strata = TRUE,
+    write.files = FALSE,
+    verbose = FALSE,
+    internal = TRUE,
+    path.folder = tempdir()
+  )$stratum.statistics
 
   # Local
   test.local <- data %>%
-    dplyr::select(LOCUS, POP_ID, FREQ_ALT) %>%
-    dplyr::group_by(LOCUS, POP_ID) %>%
+    dplyr::filter(.data$GROUP != "OVERALL") %>%
+    dplyr::group_by(.data$VARIANT_ID) %>%
     dplyr::summarise(
-      MAF_P = min(FREQ_ALT, na.rm = TRUE)
+      MAF_L = mean(.data$MINOR_ALLELE_FREQUENCY, na.rm = TRUE),
+      .groups = "drop"
     ) %>%
-    dplyr::group_by(LOCUS) %>%
-    dplyr::summarise(MAF_L = mean(MAF_P, na.rm = TRUE)) %>%
     dplyr::group_by(RANK = dplyr::ntile(MAF_L, group.rank)) %>%
     dplyr::summarise(
-      LOCAL_MAF = mean(MAF_L, na.rm = T),
-      n = length(LOCUS)
+      LOCAL_MAF = mean(MAF_L, na.rm = TRUE),
+      n = dplyr::n()
     ) %>%
     dplyr::select(-n)
 
   # Global
 
   test.global <- data %>%
-    dplyr::select(LOCUS, POP_ID, GLOBAL_MAF) %>%
-    dplyr::group_by(LOCUS) %>%
-    dplyr::summarise(GLOBAL_MAF = mean(GLOBAL_MAF, na.rm = TRUE)) %>%
+    dplyr::filter(.data$GROUP == "OVERALL") %>%
+    dplyr::transmute(
+      VARIANT_ID = .data$VARIANT_ID,
+      GLOBAL_MAF = .data$MINOR_ALLELE_FREQUENCY
+    ) %>%
     dplyr::group_by(RANK = dplyr::ntile(GLOBAL_MAF, group.rank)) %>%
     dplyr::summarise(
-      GLOBAL_MAF = mean(GLOBAL_MAF, na.rm = T),
-      n = length(LOCUS)
+      GLOBAL_MAF = mean(GLOBAL_MAF, na.rm = TRUE),
+      n = dplyr::n()
     ) %>%
     dplyr::select(GLOBAL_MAF, n)
 

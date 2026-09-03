@@ -100,14 +100,13 @@
 #' }
 
 
-#' @rdname detect_het_outliers
-#' @export
+#' @noRd
 
 
 #' @author Eric Anderson \email{eric.anderson@noaa.gov} and
 #' Thierry Gosselin \email{thierrygosselin@@icloud.com}
 
-detect_het_outliers <- function(
+.detect_het_outliers_legacy <- function(
   data,
   nreps = 2000,
   burn.in = NULL,

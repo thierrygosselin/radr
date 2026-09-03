@@ -16,18 +16,21 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.path = "README-")
 [![Last-changedate](https://img.shields.io/badge/last%20change-`r gsub('-', '--', Sys.Date())`-brightgreen.svg)](/commits/main)
 <!-- badges: end -->
 
-`radr` explores, diagnoses, visualizes, and filters individual genomic data.
-It works primarily with GDS files and objects created by
+## Origin of the name
+
+RADseq remains widely used, while whole-genome sequencing and its many variants
+increasingly need to be on researchers' **radar**. My hope is that **radr** will
+help researchers make that transition.
+
+[`genometranslator`](https://thierrygosselin.github.io/genometranslator/) and
+[`radr`](https://thierrygosselin.github.io/radr/) are descendants of
+**radiator**. Their emergence is best viewed as a small software **adaptive
+radiation**: functions inherited from **radiator** were partitioned and
+developed into two packages occupying distinct computational niches.
+
+* [`genometranslator`](https://thierrygosselin.github.io/genometranslator/) reads, standardizes, and writes genomic formats;
+* [`radr`](https://thierrygosselin.github.io/radr/) explores, diagnoses, visualizes, and filters individual genomic data created by
 [`genometranslator`](https://thierrygosselin.github.io/genometranslator/).
-
-The two packages have deliberately different responsibilities:
-
-* `genometranslator` reads, standardizes, and writes genomic formats;
-* `radr` investigates data quality and applies explicit filters.
-
-`explore_genomes()` offers a guided first exploration. It is not a universal
-filtering recipe: established analyses should use selected `detect_*()` and
-`filter_*()` functions in an order justified for the dataset.
 
 ## Installation
 
@@ -60,21 +63,9 @@ radr::radr_dependencies()
 The returned table distinguishes required components from optional components
 and states which workflow uses each optional dependency.
 
-### Optional R packages
 
-Install only what is needed for the planned analysis:
-
-```{r optional-packages, eval=FALSE}
-# LD, linkage pruning, and IBS calculations on GDS
-BiocManager::install("SNPRelate")
-
-# Tidy-data distances and fast IBM PNG rendering
-install.packages(c("amap", "ragg"))
-
-```
-
-Function documentation identifies its additional dependencies. An optional
-package is not required merely to install or load radr.
+There is no plan to submit the package to CRAN or Bioconductor. A GitHub-based
+development environment suits me well.
 
 ### Optional command-line tools with Conda
 
@@ -123,10 +114,23 @@ ibm <- radr::detect_ibm(
 
 # Guided exploration for a new dataset
 screened <- radr::explore_genomes(data = genome)
+
+# Dataset-tailored workflow with functions chained directly with the native R pipe:
+genome.filtered <- genome |>
+  radr::filter_genotyping() |>
+  radr::filter_ma() |>
+  radr::filter_snp_number() |>
+  radr::filter_ld() |>
+  radr::filter_coverage() |>
+  radr::filter_individuals() |>
+  radr::detect_mixed_genomes() |>
+  radr::detect_duplicate_genomes()
 ```
 
-Filtering order should follow what is known about the project rather than a
-fixed recipe. Filtering individuals first changes marker statistics, while
+`explore_genomes()` offers a guided first exploration. It is not a universal
+filtering recipe: established analyses should use selected `detect_*()` and
+`filter_*()` functions in an order justified for the dataset.
+Filtering individuals first changes marker statistics, while
 filtering markers first changes individual statistics.
 
 The

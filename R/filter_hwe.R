@@ -69,8 +69,7 @@
 #' @inheritParams genometranslator::read_strata
 #' @inheritParams radr_common_arguments
 
-#' @rdname filter_hwe
-#' @export
+#' @noRd
 
 #' @section Interactive version:
 #'
@@ -262,7 +261,7 @@
 #' sequence data. Human Genetics, 136, 727-741.
 
 
-filter_hwe <- function(
+.filter_hwe_legacy <- function(
   data,
   interactive.filter = TRUE,
   filter.hwe = TRUE,

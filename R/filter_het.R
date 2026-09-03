@@ -214,12 +214,11 @@
 #' filtered_genome <- het_result$tidy.filtered.het
 #' }
 
-#' @rdname filter_het
-#' @export
+#' @noRd
 #' @seealso \link{plot_density_distribution_het}
 
 
-filter_het <- function(
+.filter_het_legacy <- function(
   interactive.filter = TRUE,
   data,
   strata = NULL,

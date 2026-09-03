@@ -4,7 +4,13 @@
 \alias{diagnostic_ma}
 \title{MA diagnostic}
 \usage{
-diagnostic_ma(data, group.rank, filename = NULL)
+diagnostic_ma(
+  data,
+  group.rank,
+  filename = NULL,
+  strata = NULL,
+  group.column = "STRATA"
+)
 }
 \arguments{
 \item{data}{A file in the working directory or object in the global environment
@@ -16,6 +22,11 @@ in wide or long (tidy) formats. To import, the function uses
 \item{group.rank}{(Number) The number of group to class the MAF.}
 
 \item{filename}{(optional) Name of the file written to the working directory.}
+
+\item{strata}{Optional sample metadata containing \code{INDIVIDUALS} and
+\code{group.column}.}
+
+\item{group.column}{Metadata column used to calculate local MAF.}
 }
 \description{
 Minor Allele diagnostic, help choose a filter threshold.

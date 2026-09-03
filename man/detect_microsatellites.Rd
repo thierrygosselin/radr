@@ -2,84 +2,84 @@
 % Please edit documentation in R/detect_microsatellites.R
 \name{detect_microsatellites}
 \alias{detect_microsatellites}
-\title{Detect microsatellites}
+\title{Detect candidate microsatellite motifs}
 \usage{
-detect_microsatellites(data, gmata.dir = NULL, verbose = TRUE, ...)
+detect_microsatellites(
+  data,
+  motif.lengths = 1:6,
+  min.repeats = c(10, 6, 5, 4, 4, 4),
+  canonicalize = TRUE,
+  chunk.size = 50000L,
+  save.plots = TRUE,
+  plot.formats = c("png", "pdf"),
+  verbose = TRUE,
+  ...
+)
 }
 \arguments{
-\item{data}{(path or object)
-Object in your global environment or a file in the working directory.
-The tibble must contain 2 columns named: \code{MARKERS} and \code{SEQUENCE}.
-When RADseq data from DArT is used, \code{\link{explore_genomes}} generates
-automatically this file under the name \code{whitelist.markers.tsv}.}
+\item{data}{A GDS filepath or open \code{SeqVarGDSClass} object. Marker metadata
+must contain \code{SEQUENCE}.}
 
-\item{gmata.dir}{(path) For the function to work, the path to the directory
-with GMATA software needs to be given.
-If not found or \code{NULL}, the function download GMATA
-from github in the working directory.
-Default: \code{gmata.dir = NULL}.}
+\item{motif.lengths}{Integer motif lengths to scan.}
 
-\item{verbose}{Logical indicating whether progress messages are emitted.
-Default: \code{verbose = TRUE}.}
+\item{min.repeats}{Minimum consecutive copies for each motif length. Supply
+one value per \code{motif.lengths}, or one named value for every length.}
 
-\item{...}{Additional arguments passed to lower-level screening or filtering
-functions.}
+\item{canonicalize}{Group rotational and reverse-complement equivalents under
+one canonical motif label.}
+
+\item{chunk.size}{Number of marker sequences scanned per chunk.}
+
+\item{save.plots}{Save summary plots.}
+
+\item{plot.formats}{One or both of \code{"png"} and \code{"pdf"}.}
+
+\item{verbose}{Display concise progress messages.}
+
+\item{...}{Common arguments: \code{path.folder} and \code{internal}.}
 }
 \value{
-6 files are returned in the folder: detect_microsatellites:
-\enumerate{
-\item ".fa.fms": the fasta file of sequences
-\item ".fa.fms.sat1": the summary of sequences analysed (not important)
-\item ".fa.ssr": The microsatellites found per markers (see GMATA doc)
-\item ".fa.ssr.sat2": Extensive summary (see GMATA doc).
-\item "blacklist.microsatellites.tsv": The list of markers with microsatellites.
-\item "whitelist.microsatellites.tsv": The whitelist of markers with NO microsatellites.
-}
-In the global environment, the object is a list with the blacklist and
-the whitelist.
+A \code{detect_microsatellites} object containing marker status, repeat
+hits, candidate markers, markers with no detected repeats, markers lacking
+sequence, thresholds, plots, output paths, and confirmation that the active
+GDS filter was unchanged.
 }
 \description{
-Detect Simple Sequence Reapeats (SSR)
-commonly known as microsatellites...
-\strong{radr} is not re-inventing the wheel here, it uses the
-software \href{https://github.com/XuewenWangUGA/GMATA}{GMATA: Genome-wide Microsatellite Analyzing Toward Application}.
+Scans marker sequences for perfect tandem repeats, also called simple
+sequence repeats (SSRs). A detected repeat is a sequence motif consistent
+with a microsatellite; it is not evidence that the locus is polymorphic or
+suitable as a microsatellite marker.
+}
+\details{
+The scanner is implemented internally and requires no downloaded software.
+Repeat thresholds are explicit and saved with every analysis. By default,
+motif lengths one through six require 10, 6, 5, 4, 4, and 4 consecutive
+copies, respectively. Imperfect or interrupted repeats are not detected.
 }
 \note{
-Thanks to Peter Grewe for the idea of including this type of filter inside
-radr.
+Thanks to Peter Grewe for suggesting this diagnostic for radr.
 }
+\section{Interpretation}{
+
+Markers are assigned one of three states:
+\itemize{
+\item \code{SSR_DETECTED}: at least one qualifying perfect repeat was found;
+\item \code{NO_SSR_DETECTED}: a sequence was scanned but no repeat passed;
+\item \code{SEQUENCE_UNAVAILABLE}: the marker could not be evaluated.
+}
+Markers without sequence are never placed among markers without detected
+repeats. Removing an SSR-containing marker is a separate filtering decision.
+}
+
 \examples{
 \dontrun{
-# The simplest way to run the function when the raw data was DArT:
-mic <- radr::detect_microsatellites(data = "my_whitelist.tsv")
-
-# With stacks pipeline, the populations module need to be run with --fasta-loci
-# You could prepare the file this way (uncomment the function):
-#
-# prep_stacks_fasta <- function(fasta.file) {
-#   fasta <- suppressWarnings(
-#     vroom::vroom(
-#      file = fasta.file,
-#      delim = "\t",
-#      col_names = "DATA",
-#      col_types = "c",
-#      comment = "#"
-#    ) \%>\%
-#      dplyr::mutate(MARKERS = stringi::stri_sub(str = DATA, from = 3, to = 7)) \%>\%
-#      tidyr::separate(data = ., col = DATA, into = c("SEQUENCE", "LOCUS"), sep = "_")
-#  )
-#
-#  fasta <- dplyr::bind_cols(
-#   dplyr::filter(fasta, MARKERS == "Locus") \%>\%
-#   dplyr::select(LOCUS),
-#   dplyr::filter(fasta, MARKERS != "Locus") \%>\%
-#   dplyr::select(SEQUENCE)
-#  ) \%>\%
-#  dplyr::mutate(LOCUS = as.numeric(LOCUS))
-#   return(fasta)
-#  } #prep_stacks_fasta
-
+ssr <- radr::detect_microsatellites(data = "study.gds")
+ssr$candidates
 }
+}
+\references{
+Wang X, Lu P, Luo Z (2013). GMATo: A novel tool for the identification and
+analysis of microsatellites in large genomes. \emph{Bioinformation}, 9, 541-544.
 }
 \author{
 Thierry Gosselin \email{thierrygosselin@icloud.com}

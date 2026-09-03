@@ -4,31 +4,68 @@
 \alias{summarise_genomic_data}
 \title{Summarise genomic data}
 \usage{
-summarise_genomic_data(data, path.folder = NULL, digits = 4, verbose = TRUE)
+summarise_genomic_data(
+  data,
+  strata = NULL,
+  group.column = "STRATA",
+  by.strata = TRUE,
+  chunk.size = 2000L,
+  digits = 6L,
+  write.files = TRUE,
+  verbose = TRUE,
+  ...
+)
 }
 \arguments{
-\item{data}{Tidy genomic data or a Genomic Data Structure (GDS) file or
-object:
-\itemize{
-\item tidy data
-\item Genomic Data Structure (GDS)
+\item{data}{A GDS filepath or an open \code{SeqVarGDSClass} object.}
+
+\item{strata}{Optional data frame or TSV containing \code{INDIVIDUALS} and
+\code{group.column}. If \code{NULL}, metadata are read from the GDS.}
+
+\item{group.column}{Metadata column used for stratified summaries.}
+
+\item{by.strata}{Calculate group summaries in addition to pooled summaries.}
+
+\item{chunk.size}{Number of active variants read at a time.}
+
+\item{digits}{Decimal places used in returned and written tables.}
+
+\item{write.files}{Write summary tables to disk.}
+
+\item{verbose}{Display progress and summary messages.}
+
+\item{...}{Common arguments: \code{path.folder} and \code{internal}.}
 }
-
-\emph{How to get GDS and tidy data ?}
-Use \code{\link[genometranslator]{read_genome}} to import supported formats
-and \code{\link[genometranslator]{tidy_genome}} when a tidy table is needed.}
-
-\item{path.folder}{(path, optional) By default will print results in the working directory.
-Default: \code{path.folder = NULL}.}
-
-\item{digits}{(integer, optional). Default: \code{digits = 4}.}
-
-\item{verbose}{Logical indicating whether progress messages are emitted.
-Default: \code{verbose = TRUE}.}
+\value{
+A \code{summarise_genomic_data} object containing \code{marker.statistics},
+\code{stratum.statistics}, \code{group.summary}, \code{path.folder}, \code{output.files}, and
+\code{active.selection.restored}. The function does not alter persistent filters.
 }
 \description{
-Calculate summary statistics from tidy genomic data or a GDS
-file. Statistics are calculated by population and marker and include REF and
-ALT allele frequencies, observed and expected heterozygosity, and the
-inbreeding coefficient (FIS).
+Calculate allele-frequency, missingness, and heterozygosity statistics from
+active biallelic markers and samples in a GDS. Genotypes are read in chunks.
+}
+\details{
+\code{ALT_FREQUENCY} is the VCF ALT-allele frequency. In contrast,
+\code{MINOR_ALLELE_FREQUENCY} is the smaller REF or ALT frequency and is always
+between zero and 0.5. In stratified results,
+\code{POOLED_MINOR_ALLELE_FREQUENCY} tracks the allele that is minor in the
+pooled sample even where that allele is locally common or fixed.
+}
+\section{FIS}{
+
+\code{FIS} is \code{1 - Ho / He}. It is \code{NA} for monomorphic markers because expected
+heterozygosity is zero and the coefficient is undefined.
+}
+
+\examples{
+\dontrun{
+x <- radr::summarise_genomic_data(
+  "study.gds", strata = "sample_metadata.tsv"
+)
+x$marker.statistics
+}
+}
+\author{
+Thierry Gosselin \email{thierrygosselin@icloud.com}
 }

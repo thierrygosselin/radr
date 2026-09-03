@@ -80,7 +80,6 @@ reference:
 - title: Population-genetic summaries
   desc: Calculate diversity, differentiation, relatedness, and private variation.
   contents:
-  - allele_frequencies
   - beta_estimator
   - ibdg_fh
   - pi

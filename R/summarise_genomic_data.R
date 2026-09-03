@@ -1,189 +1,335 @@
-#' @name summarise_genomic_data
-#' @title Summarise genomic data
-#' @description Calculate summary statistics from tidy genomic data or a GDS
-#' file. Statistics are calculated by population and marker and include REF and
-#' ALT allele frequencies, observed and expected heterozygosity, and the
-#' inbreeding coefficient (FIS).
-#' @param data Tidy genomic data or a Genomic Data Structure (GDS) file or
-#' object:
-#' \itemize{
-#' \item tidy data
-#' \item Genomic Data Structure (GDS)
-#' }
+#' Summarise genomic data
 #'
-#' \emph{How to get GDS and tidy data ?}
-#' Use \code{\link[genometranslator]{read_genome}} to import supported formats
-#' and \code{\link[genometranslator]{tidy_genome}} when a tidy table is needed.
-# @param filename (optional) Name of the file written to the working directory.
-#' @param path.folder (path, optional) By default will print results in the working directory.
-#' Default: \code{path.folder = NULL}.
-#' @param digits (integer, optional). Default: \code{digits = 4}.
-#' @inheritParams radr_common_arguments
-#' @rdname summarise_genomic_data
+#' Calculate allele-frequency, missingness, and heterozygosity statistics from
+#' active biallelic markers and samples in a GDS. Genotypes are read in chunks.
+#'
+#' `ALT_FREQUENCY` is the VCF ALT-allele frequency. In contrast,
+#' `MINOR_ALLELE_FREQUENCY` is the smaller REF or ALT frequency and is always
+#' between zero and 0.5. In stratified results,
+#' `POOLED_MINOR_ALLELE_FREQUENCY` tracks the allele that is minor in the
+#' pooled sample even where that allele is locally common or fixed.
+#'
+#' @section FIS:
+#' `FIS` is `1 - Ho / He`. It is `NA` for monomorphic markers because expected
+#' heterozygosity is zero and the coefficient is undefined.
+#'
+#' @param data A GDS filepath or an open `SeqVarGDSClass` object.
+#' @param strata Optional data frame or TSV containing `INDIVIDUALS` and
+#'   `group.column`. If `NULL`, metadata are read from the GDS.
+#' @param group.column Metadata column used for stratified summaries.
+#' @param by.strata Calculate group summaries in addition to pooled summaries.
+#' @param chunk.size Number of active variants read at a time.
+#' @param digits Decimal places used in returned and written tables.
+#' @param write.files Write summary tables to disk.
+#' @param verbose Display progress and summary messages.
+#' @param ... Common arguments: `path.folder` and `internal`.
+#'
+#' @return A `summarise_genomic_data` object containing `marker.statistics`,
+#' `stratum.statistics`, `group.summary`, `path.folder`, `output.files`, and
+#' `active.selection.restored`. The function does not alter persistent filters.
+#'
+#' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
 #' @export
-# @keywords internal
-
+#' @examples
+#' \dontrun{
+#' x <- radr::summarise_genomic_data(
+#'   "study.gds", strata = "sample_metadata.tsv"
+#' )
+#' x$marker.statistics
+#' }
 summarise_genomic_data <- function(
-  data,
-  path.folder = NULL,
-  digits = 4,
-  verbose = TRUE
+    data, strata = NULL, group.column = "STRATA", by.strata = TRUE,
+    chunk.size = 2000L, digits = 6L, write.files = TRUE,
+    verbose = TRUE, ...
 ) {
-  # Cleanup-------------------------------------------------------------------
-  file.date <- format(Sys.time(), "%Y%m%d@%H%M")
-  if (verbose) message("Execution date@time: ", file.date)
-  old.dir <- getwd()
-  opt.change <- getOption("width")
-  options(width = 70)
-  timing <- proc.time()# for timing
-  #back to the original directory and options
-  on.exit(setwd(old.dir), add = TRUE)
-  on.exit(options(width = opt.change), add = TRUE)
-  on.exit(timing <- proc.time() - timing, add = TRUE)
-  on.exit(if (verbose) message("\nComputation time, overall: ", round(timing[[3]]), " sec"), add = TRUE)
-  on.exit(if (verbose) cat("###################### summarise_genomic_data completed #######################\n"), add = TRUE)
+  force(data)
+  .start <- tgbase::startup(
+    package = "radr", f.name = "summarise_genomic_data", verbose = verbose
+  )
+  file.date <- .start$file.date
+  on.exit(tgbase::teardown(.start), add = TRUE)
 
-  # Checking for missing and/or default arguments-------------------------------
-  if (missing(data)) rlang::abort("Input file missing")
-
-
-  # Folders---------------------------------------------------------------------
-  path.folder <- generate_folder(
-    rad.folder = "summary_stats",
-    path.folder = path.folder,
-    prefix.int = FALSE,
-    internal = FALSE,
-    file.date = file.date,
-    verbose = verbose)
-
-  # Detect format --------------------------------------------------------------
-  data.type <- genometranslator::detect_genomic_format(data)
-  if (!data.type %in% c("tbl_df", "fst.file", "SeqVarGDSClass", "gds.file")) {
-    rlang::abort("Input not supported for this function: read function documentation")
+  dots <- rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE)
+  unknown <- setdiff(names(dots), c("path.folder", "internal"))
+  if (length(unknown)) {
+    rlang::abort(paste0(
+      "Unknown argument(s): ", paste(unknown, collapse = ", "), "."
+    ))
+  }
+  parent.folder <- dots$path.folder %||% getwd()
+  internal <- isTRUE(dots$internal)
+  chunk.size <- .paralog_check_count(chunk.size, "chunk.size", 1L)
+  digits <- .paralog_check_count(digits, "digits", 0L)
+  .paralog_check_flag(by.strata, "by.strata")
+  .paralog_check_flag(write.files, "write.files")
+  .paralog_check_flag(verbose, "verbose")
+  if (!is.character(group.column) || length(group.column) != 1L ||
+      is.na(group.column) || !nzchar(group.column)) {
+    rlang::abort("`group.column` must be one non-empty column name.")
   }
 
-  if (data.type %in% c("SeqVarGDSClass", "gds.file")) {
-    tgbase::check_package(package = "SeqArray", cran = FALSE, bioc = TRUE)
-
-    message("Importing gds file...")
-    if (data.type == "gds.file") {
-      data <- genometranslator::read_genome(data, verbose = verbose)
-      data.type <- "SeqVarGDSClass"
-    }
-
-    tidy.data <- genometranslator::extract_genotypes_metadata(
-      gds = data,
-      genotypes.meta.select = c("MARKERS", "COL", "INDIVIDUALS", "POP_ID", "ALT_DOSAGE"))
-
-    if (length(tidy.data) == 0) {
-      tidy.data <- genometranslator::tidy_genome(data = data)
-    }
-    SeqArray::seqClose(data)
-    data <- tidy.data
-    tidy.data <- NULL
-
-  } else {#tidy.data
-    if (is.vector(data)) data <- genometranslator::read_genome(data = data, import.metadata = TRUE)
+  dir.create(parent.folder, recursive = TRUE, showWarnings = FALSE)
+  parent.folder <- normalizePath(parent.folder, mustWork = TRUE)
+  path.folder <- if (internal) parent.folder else radr_folder(
+    rad.folder = paste0("summarise_genomic_data_", file.date),
+    path.folder = parent.folder, prefix.int = TRUE
+  )
+  dir.create(path.folder, recursive = TRUE, showWarnings = FALSE)
+  if (verbose && !internal) {
+    .summary_message("Folder created: ", basename(path.folder))
   }
-  if (verbose) message("Summarizing...")
-  # the function
-  summarise_group <- function(x, maf = c("global", "local"), digits = 6) {
-    maf <- match.arg(arg = maf, choices = c("global", "local"))
-    x %<>%
-      dplyr::summarise(
-        N = as.numeric(length(unique(INDIVIDUALS))),
-        PP = as.numeric(length(ALT_DOSAGE[ALT_DOSAGE == 0])),
-        PQ = as.numeric(length(ALT_DOSAGE[ALT_DOSAGE == 1])),
-        QQ = as.numeric(length(ALT_DOSAGE[ALT_DOSAGE == 2]))
-      ) %>%
-      dplyr::ungroup(.) %>%
-      dplyr::mutate(
-        FREQ_REF = ((PP*2) + PQ)/(2*N),
-        FREQ_ALT = ((QQ*2) + PQ)/(2*N),
-        HET_O = PQ/N,
-        HET_E = 2 * FREQ_REF * FREQ_ALT,
-        FIS = dplyr::if_else(HET_O == 0, 1, round(((HET_E - HET_O) / HET_E), digits)),
-        PP = NULL, PQ = NULL, QQ = NULL
-      )
 
-    if (maf == "global") {
-      x %<>% dplyr::rename(MAF_GLOBAL = FREQ_ALT)
-    } else {
-      x %<>% dplyr::rename(MAF_LOCAL = FREQ_ALT)
+  opened.here <- FALSE
+  if (inherits(data, "SeqVarGDSClass")) {
+    gds <- data
+  } else if (is.character(data) && length(data) == 1L && !is.na(data) &&
+             file.exists(data) && grepl("\\.gds$", data, ignore.case = TRUE)) {
+    gds <- SeqArray::seqOpen(data)
+    opened.here <- TRUE
+  } else {
+    rlang::abort(
+      "`data` must be a GDS filepath or an open SeqVarGDSClass object."
+    )
+  }
+  on.exit({
+    if (opened.here) try(SeqArray::seqClose(gds), silent = TRUE)
+  }, add = TRUE)
+
+  selection.before <- SeqArray::seqGetFilter(gds)
+  SeqArray::seqFilterPush(gds)
+  filter.pushed <- TRUE
+  on.exit({
+    if (filter.pushed) try(SeqArray::seqFilterPop(gds), silent = TRUE)
+  }, add = TRUE)
+
+  sample.id <- as.character(SeqArray::seqGetData(gds, "sample.id"))
+  variant.id <- SeqArray::seqGetData(gds, "variant.id")
+  if (!length(sample.id) || !length(variant.id)) {
+    rlang::abort("The active GDS selection contains no samples or markers.")
+  }
+  if (!genometranslator::detect_biallelic_markers(gds)) {
+    rlang::abort("Genomic summaries require active biallelic markers.")
+  }
+
+  metadata <- .paralog_read_metadata(
+    strata, gds, sample.id, group.column, by.strata
+  )
+  sample.id <- sample.id[sample.id %in% metadata$INDIVIDUALS]
+  metadata <- metadata[
+    match(sample.id, metadata$INDIVIDUALS), , drop = FALSE
+  ]
+  SeqArray::seqSetFilter(gds, sample.id = sample.id, verbose = FALSE)
+  groups <- as.character(metadata[[group.column]])
+  if (anyNA(groups) || any(!nzchar(trimws(groups)))) {
+    rlang::abort(paste0("`", group.column, "` contains missing values."))
+  }
+  if (by.strata && "OVERALL" %in% groups) {
+    rlang::abort("`OVERALL` is reserved for the pooled GDS summary.")
+  }
+
+  marker.metadata <- .sex_marker_metadata(gds, variant.id)
+  if (verbose) {
+    .summary_message(
+      "Summarising ", length(variant.id), " markers for ",
+      length(sample.id), " samples."
+    )
+  }
+  chunks <- split(
+    seq_along(variant.id), ceiling(seq_along(variant.id) / chunk.size)
+  )
+  statistics <- vector("list", length(chunks))
+  for (i in seq_along(chunks)) {
+    index <- chunks[[i]]
+    statistics[[i]] <- .summary_chunk_statistics(
+      variant.id[index],
+      .sex_get_dosage(gds, variant.id[index], sample.id),
+      groups, by.strata
+    )
+    if (verbose && (i == length(chunks) || i %% 10L == 0L)) {
+      .summary_message("Processed marker chunk ", i, " of ", length(chunks), ".")
     }
-
-    return(x)
-  }#End summarise_group
-
-  data  %<>% dplyr::filter(!is.na(ALT_DOSAGE))
-  # ms: markers stats
-
-  ms <- data %>%
-    dplyr::group_by(MARKERS) %>%
-    summarise_group(x = ., maf = "global", digits = digits)
-
-  # mps: markers pop stats
-  mps <- data %>%
-    dplyr::group_by(MARKERS, POP_ID) %>%
-    summarise_group(x = ., maf = "local", digits = digits)
-
-  # ps: pop stats
-  ps <- dplyr::bind_cols(
-    dplyr::group_by(data, POP_ID) %>% dplyr::summarise(N = length(unique(INDIVIDUALS))),
-    dplyr::group_by(mps, POP_ID) %>%
-      dplyr::summarise(
-        .data = .,
-        dplyr::across(
-          .cols = c(N, FREQ_REF, MAF_LOCAL, HET_O, HET_E),
-          .fns = \(x) mean(x, na.rm = TRUE)
-        ),
-        .groups = "keep"
-      ) %>%
-      dplyr::rename(N_MEAN = N)
-  ) %>%
+  }
+  stratum.statistics <- dplyr::bind_rows(statistics)
+  pooled <- stratum.statistics |>
+    dplyr::filter(.data$GROUP == "OVERALL") |>
+    dplyr::select(
+      "VARIANT_ID",
+      POOLED_MINOR_ALLELE = "MINOR_ALLELE"
+    )
+  stratum.statistics <- stratum.statistics |>
+    dplyr::left_join(pooled, by = "VARIANT_ID") |>
     dplyr::mutate(
-      POP_ID1 = NULL,
-      FIS = dplyr::if_else(HET_O == 0, 1, round(((HET_E - HET_O) / HET_E), digits))
-    ) %>%
-    dplyr::mutate(
-      dplyr::across(
-        .cols = c(FREQ_REF, MAF_LOCAL, HET_O, HET_E, FIS),
-        .fns  = \(x) round(x, digits = digits)
+      POOLED_MINOR_ALLELE_FREQUENCY = dplyr::if_else(
+        .data$POOLED_MINOR_ALLELE == "REF",
+        .data$REF_FREQUENCY, .data$ALT_FREQUENCY
       )
     )
+  marker.statistics <- stratum.statistics |>
+    dplyr::filter(.data$GROUP == "OVERALL") |>
+    dplyr::select(-"GROUP") |>
+    dplyr::left_join(marker.metadata, by = "VARIANT_ID") |>
+    dplyr::select(
+      dplyr::any_of(c("VARIANT_ID", "MARKERS", "CHROM", "POS")),
+      dplyr::everything()
+    )
+  group.summary <- .summary_group_statistics(stratum.statistics)
 
-  # writting the results
-  tgbase::write_tgbase_tsv(
-    data = ms,
-    path.folder = path.folder,
-    filename = "summary.stats.markers",
-    date = TRUE,
-    internal = FALSE,
-    write.message = "standard",
-    verbose = verbose
+  count.columns <- c(
+    "VARIANT_ID", "N_SAMPLES", "NUMBER_CALLED", "NUMBER_MISSING",
+    "HOM_REF", "HET", "HOM_ALT", "REF_ALLELE_COUNT",
+    "ALT_ALLELE_COUNT", "MINOR_ALLELE_COUNT"
+  )
+  decimals <- setdiff(
+    names(stratum.statistics)[
+      vapply(stratum.statistics, is.numeric, logical(1))
+    ], count.columns
+  )
+  stratum.statistics[decimals] <- lapply(
+    stratum.statistics[decimals], round, digits = digits
+  )
+  marker.decimals <- intersect(decimals, names(marker.statistics))
+  marker.statistics[marker.decimals] <- lapply(
+    marker.statistics[marker.decimals], round, digits = digits
+  )
+  group.decimals <- setdiff(
+    names(group.summary)[vapply(group.summary, is.numeric, logical(1))],
+    c("N_SAMPLES", "N_MARKERS_TOTAL", "N_MARKERS_CALLED")
+  )
+  group.summary[group.decimals] <- lapply(
+    group.summary[group.decimals], round, digits = digits
   )
 
-  tgbase::write_tgbase_tsv(
-    data = mps,
-    path.folder = path.folder,
-    filename = "summary.stats.markers.pop",
-    date = TRUE,
-    internal = FALSE,
-    write.message = "standard",
-    verbose = verbose
-  )
+  output.files <- character()
+  if (write.files) {
+    names.out <- c(
+      "genomic_marker_statistics.tsv",
+      "genomic_stratum_statistics.tsv",
+      "genomic_group_summary.tsv"
+    )
+    tables <- list(marker.statistics, stratum.statistics, group.summary)
+    output.files <- file.path(path.folder, names.out)
+    for (i in seq_along(output.files)) {
+      readr::write_tsv(tables[[i]], output.files[[i]], na = "NA")
+    }
+    args.file <- file.path(
+      path.folder,
+      paste0("radr_summarise_genomic_data_args_", file.date, ".tsv")
+    )
+    readr::write_tsv(tibble::tibble(
+      argument = c(
+        "group.column", "by.strata", "chunk.size", "digits", "write.files"
+      ),
+      value = as.character(c(
+        group.column, by.strata, chunk.size, digits, write.files
+      ))
+    ), args.file)
+    output.files <- c(output.files, args.file)
+  }
 
-  tgbase::write_tgbase_tsv(
-    data = ps,
-    path.folder = path.folder,
-    filename = "summary.stats.pop",
-    date = TRUE,
-    internal = FALSE,
-    write.message = "standard",
-    verbose = verbose
+  SeqArray::seqFilterPop(gds)
+  filter.pushed <- FALSE
+  selection.after <- SeqArray::seqGetFilter(gds)
+  restored <- identical(
+    selection.before$sample.sel, selection.after$sample.sel
+  ) && identical(
+    selection.before$variant.sel, selection.after$variant.sel
   )
+  if (!restored) {
+    rlang::abort("The active GDS selection was not restored.")
+  }
+  if (verbose) {
+    .summary_message("Genomic summaries written to: ", path.folder)
+  }
 
-  return(res = list(summary.stats.pop = ps,
-                    summary.stats.markers.pop = mps,
-                    summary.stats.markers = ms))
-}#End summary_stats_vcf_tidy
+  out <- list(
+    marker.statistics = tibble::as_tibble(marker.statistics),
+    stratum.statistics = tibble::as_tibble(stratum.statistics),
+    group.summary = tibble::as_tibble(group.summary),
+    path.folder = path.folder,
+    output.files = tibble::tibble(files = output.files),
+    active.selection.restored = restored
+  )
+  class(out) <- c("summarise_genomic_data", class(out))
+  out
+}
+
+.summary_chunk_statistics <- function(
+    variant.id, dosage, groups, by.strata = TRUE
+) {
+  group.index <- list(OVERALL = seq_len(nrow(dosage)))
+  if (by.strata) {
+    group.index <- c(group.index, split(seq_along(groups), groups))
+  }
+  dplyr::bind_rows(lapply(names(group.index), function(group) {
+    x <- dosage[group.index[[group]], , drop = FALSE]
+    called <- colSums(!is.na(x))
+    hom.ref <- colSums(x == 0, na.rm = TRUE)
+    het <- colSums(x == 1, na.rm = TRUE)
+    hom.alt <- colSums(x == 2, na.rm = TRUE)
+    alt.count <- colSums(x, na.rm = TRUE)
+    ref.count <- 2 * called - alt.count
+    alt.frequency <- ifelse(called > 0, alt.count / (2 * called), NA_real_)
+    ref.frequency <- ifelse(called > 0, ref.count / (2 * called), NA_real_)
+    maf <- pmin(ref.frequency, alt.frequency)
+    ho <- ifelse(called > 0, het / called, NA_real_)
+    he <- 2 * ref.frequency * alt.frequency
+    fis <- ifelse(is.finite(he) & he > 0, 1 - ho / he, NA_real_)
+    minor <- ifelse(
+      is.na(maf), NA_character_,
+      ifelse(alt.frequency <= ref.frequency, "ALT", "REF")
+    )
+    tibble::tibble(
+      VARIANT_ID = variant.id, GROUP = group, N_SAMPLES = nrow(x),
+      NUMBER_CALLED = called, NUMBER_MISSING = nrow(x) - called,
+      CALL_RATE = called / nrow(x), HOM_REF = hom.ref, HET = het,
+      HOM_ALT = hom.alt, REF_ALLELE_COUNT = ref.count,
+      ALT_ALLELE_COUNT = alt.count, REF_FREQUENCY = ref.frequency,
+      ALT_FREQUENCY = alt.frequency, MINOR_ALLELE = minor,
+      MINOR_ALLELE_COUNT = ifelse(
+        minor == "ALT", alt.count,
+        ifelse(minor == "REF", ref.count, NA_real_)
+      ),
+      MINOR_ALLELE_FREQUENCY = maf,
+      OBSERVED_HETEROZYGOSITY = ho,
+      EXPECTED_HETEROZYGOSITY = he, FIS = fis
+    )
+  }))
+}
+
+.summary_group_statistics <- function(statistics) {
+  safe.mean <- function(x) {
+    if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+  }
+  statistics |>
+    dplyr::group_by(.data$GROUP) |>
+    dplyr::summarise(
+      N_SAMPLES = max(.data$N_SAMPLES),
+      N_MARKERS_TOTAL = dplyr::n(),
+      N_MARKERS_CALLED = sum(.data$NUMBER_CALLED > 0),
+      MEAN_CALL_RATE = safe.mean(.data$CALL_RATE),
+      MEAN_ALT_FREQUENCY = safe.mean(.data$ALT_FREQUENCY),
+      MEAN_MINOR_ALLELE_FREQUENCY = safe.mean(
+        .data$MINOR_ALLELE_FREQUENCY
+      ),
+      MEAN_OBSERVED_HETEROZYGOSITY = safe.mean(
+        .data$OBSERVED_HETEROZYGOSITY
+      ),
+      MEAN_EXPECTED_HETEROZYGOSITY = safe.mean(
+        .data$EXPECTED_HETEROZYGOSITY
+      ),
+      MEAN_MARKER_FIS = safe.mean(.data$FIS),
+      WEIGHTED_FIS = {
+        expected <- sum(
+          .data$EXPECTED_HETEROZYGOSITY * .data$NUMBER_CALLED,
+          na.rm = TRUE
+        )
+        observed <- sum(.data$HET, na.rm = TRUE)
+        if (expected > 0) 1 - observed / expected else NA_real_
+      },
+      .groups = "drop"
+    )
+}
+
+.summary_message <- function(...) {
+  message(paste(strwrap(paste0(...), width = 80, exdent = 2), collapse = "\n"))
+}

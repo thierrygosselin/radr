@@ -2,32 +2,59 @@
 % Please edit documentation in R/private_alleles.R
 \name{private_alleles}
 \alias{private_alleles}
-\title{Find private alleles}
+\title{Detect private alleles}
 \usage{
-private_alleles(data, strata = NULL, verbose = TRUE)
+private_alleles(
+  data,
+  strata = NULL,
+  group.column = "STRATA",
+  min.allele.count = 1L,
+  min.call.rate = 0,
+  chunk.size = 2000L,
+  write.files = TRUE,
+  verbose = TRUE,
+  ...
+)
 }
 \arguments{
-\item{data}{A tidy genomic data frame or another genomic object supported by
-the calling function.}
+\item{data}{A GDS filepath or open \code{SeqVarGDSClass} object.}
 
-\item{strata}{(path or object) The strata file or object.
-Additional documentation is available in \code{\link[genometranslator]{read_strata}}.
-Use that function to whitelist/blacklist populations/individuals.
-Option to set \code{pop.levels/pop.labels} is also available.}
+\item{strata}{Optional sample metadata containing \code{INDIVIDUALS} and
+\code{group.column}. If \code{NULL}, metadata are read from the GDS.}
 
-\item{verbose}{Logical indicating whether progress messages are emitted.
-Default: \code{verbose = FALSE}.}
+\item{group.column}{Metadata column defining the strata.}
+
+\item{min.allele.count}{Minimum allele count in its only observed stratum.}
+
+\item{min.call.rate}{Minimum marker call rate required in every stratum.}
+
+\item{chunk.size}{Number of variants read at a time.}
+
+\item{write.files}{Write result tables.}
+
+\item{verbose}{Display progress and summary messages.}
+
+\item{...}{Common arguments: \code{path.folder} and \code{internal}.}
 }
 \value{
-A list with an object highlighting private alleles by markers and strata and
-a second object with private alleles summarized by strata.
+A \code{private_alleles} object with \code{private.alleles},
+\code{stratum.summary}, \code{marker.statistics}, and output information.
 }
 \description{
-The function highlight private alleles by strata, using a GDS or tidy file or object.
+Identify REF or ALT alleles observed in exactly one stratum among the active
+samples and biallelic markers in a GDS. Allele counts are calculated from
+active diploid dosages; absence means a count of zero, not missing data.
+}
+\details{
+Results include call rate and allele count so a private allele supported by
+one chromosome can be distinguished from a well-supported private allele.
+Use \code{min.allele.count} and \code{min.call.rate} to define minimum evidence.
 }
 \examples{
 \dontrun{
-corals.private.alleles.by.pop <- radr::private_alleles(data = tidy, strata = strata.pop)
+private <- radr::private_alleles(
+  "study.gds", strata = "sample_metadata.tsv"
+)
 }
 }
 \author{

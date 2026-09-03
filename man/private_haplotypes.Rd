@@ -2,29 +2,57 @@
 % Please edit documentation in R/private_haplotypes.R
 \name{private_haplotypes}
 \alias{private_haplotypes}
-\title{private haplotypes}
+\title{Detect private phased haplotypes}
 \usage{
-private_haplotypes(data, strata = NULL, verbose = TRUE)
+private_haplotypes(
+  data,
+  strata = NULL,
+  group.column = "STRATA",
+  min.variants = 2L,
+  min.haplotype.count = 1L,
+  write.files = TRUE,
+  verbose = TRUE,
+  ...
+)
 }
 \arguments{
-\item{data}{A tidy genomic dataframe
-Used internally in \href{https://github.com/thierrygosselin/radr}{radr}
-and might be of interest for users.
-\emph{How to get a tidy data frame ?}
-Look into \pkg{genometranslator} \code{\link[genometranslator]{tidy_genome}}.}
+\item{data}{A GDS filepath or open \code{SeqVarGDSClass} object.}
 
-\item{strata}{(optional) A strata file or object in the global environment.
-The strata is a tab-separated data frame with 2 columns: \code{INDIVIDUALS} and
-\code{STRATA}. If used, the strata will replace the current STRATA or POP_ID in the
-dataset. Use this argument if you want to find private haplotypes on another
-hierarchical level, other than POP_ID.}
+\item{strata}{Optional metadata containing \code{INDIVIDUALS} and \code{group.column}.}
+
+\item{group.column}{Metadata column defining strata.}
+
+\item{min.variants}{Minimum variants required to define a haplotype.}
+
+\item{min.haplotype.count}{Minimum chromosome count in the private stratum.}
+
+\item{write.files}{Write result and summary tables.}
+
+\item{verbose}{Display progress and summary messages.}
+
+\item{...}{Common arguments: \code{path.folder} and \code{internal}.}
 }
 \value{
-A list with private haplotypes per markers and strata and a summary of
-overall number of private haplotypes per strata.
+A \code{private_haplotypes} object containing \code{private.haplotypes},
+\code{haplotype.statistics}, \code{stratum.summary}, and output information.
 }
 \description{
-Minor Allele Frequency filter.
+Construct genuine phased haplotypes across variants sharing a \code{LOCUS} and
+identify haplotypes observed in exactly one stratum. Unlike the historical
+implementation, this function does not label a single-marker diploid
+genotype string as a haplotype.
+}
+\details{
+A sample-locus observation is usable when every variant is called and every
+heterozygous genotype is phased. Homozygous genotypes do not require phase.
+Loci with fewer than \code{min.variants} active variants are not analysed.
+}
+\examples{
+\dontrun{
+private <- radr::private_haplotypes(
+  "phased.gds", strata = "sample_metadata.tsv"
+)
+}
 }
 \author{
 Thierry Gosselin \email{thierrygosselin@icloud.com}

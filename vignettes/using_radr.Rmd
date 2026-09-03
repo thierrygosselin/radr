@@ -75,6 +75,35 @@ It records operation order, parameter values, before-and-after dimensions, and
 blacklist information. This works identically for piped and sequential calls:
 the shared backing GDS, rather than the R expression, connects the history.
 
+## Summarise the active genomic data
+
+`summarise_genomic_data()` works directly from the active GDS selection. It
+reads genotypes in chunks and reports pooled and per-stratum call rates,
+genotype and allele counts, REF and ALT frequencies, minor-allele frequency,
+observed and expected heterozygosity, and FIS. It does not convert the complete
+dataset to a tidy genotype table and it restores the active GDS filters after
+the calculation.
+
+```{r genomic-summary, eval=FALSE}
+genomic.summary <- summarise_genomic_data(
+  data = genome,
+  strata = "strata.tsv",
+  group.column = "STRATA"
+)
+
+genomic.summary$marker.statistics
+genomic.summary$stratum.statistics
+genomic.summary$group.summary
+```
+
+ALT frequency and minor-allele frequency are deliberately separate. The ALT
+allele is defined by the VCF record and can have a frequency greater than 0.5;
+the minor allele is whichever allele is less frequent in the samples being
+summarized. The stratum table also retains the pooled minor-allele identity, so
+the same biological allele can be compared across groups even when it becomes
+locally common or fixed. FIS is reported as missing for monomorphic markers,
+where expected heterozygosity is zero and the coefficient is undefined.
+
 ## Inspect missingness before choosing what to remove
 
 A common first question is whether to filter markers or individuals first.
@@ -451,11 +480,84 @@ The `detect_*()` functions investigate particular structures or problems:
 duplicates <- detect_duplicate_genomes(data = filtered)
 mixed <- detect_mixed_genomes(data = filtered)
 paralogs <- detect_paralogs(data = filtered)
+rare.alleles <- detect_rare_alleles(data = filtered)
+microsatellites <- detect_microsatellites(data = filtered)
 ```
 
 Review returned tables and figures together with sample metadata. A duplicate,
 sex-linked marker, family group, or biologically divergent sample may be
 important information rather than an error.
+
+`detect_paralogs()` implements a conservative HDplot diagnostic using
+heterozygosity among called samples and REF/ALT read-ratio deviation among
+heterozygous genotypes. It reports pooled and per-stratum evidence, MAF,
+missingness, evidence sufficiency, and transparent candidate categories.
+Candidate labels are not proof of paralogy: population structure, sex linkage,
+copy-number variation, collapsed repeats, contamination, and mapping or
+genotyping errors can produce similar signals. Inspect
+`paralogs$strata.statistics` and validate important candidates with sequence,
+reference-placement, segregation, or copy-number evidence before removal.
+
+`detect_rare_alleles()` recalculates the observed minor allele, carrier
+count, supporting read depth, and heterozygote balance from the active GDS. It
+does not assume ALT is minor and does not treat weak evidence as proof of null
+alleles or allele dropout. Pooled and per-stratum warnings identify markers for
+review; filtering remains a separate, auditable decision.
+
+`detect_microsatellites()` scans marker sequences stored in the GDS for
+perfect tandem repeats. Its motif lengths and minimum repeat counts are
+explicit parameters saved with the results. A sequence motif is a candidate
+microsatellite, not evidence that the locus is polymorphic. Markers lacking a
+sequence are reported separately and are not classified as repeat-free.
+
+### Population-genetic diagnostics and filters
+
+The population-genetic utilities operate directly on the active GDS selection.
+They calculate statistics from the current samples and markers, write explicit
+evidence tables, and restore temporary selections. The three filters below
+then record permanent marker or individual decisions in the standard audit:
+
+```{r population-diagnostics, eval=FALSE}
+biallelic <- detect_biallelic_problems(filtered)
+het.outliers <- detect_het_outliers(filtered, strata = sample.metadata)
+diversity <- pi(filtered, strata = sample.metadata)
+fh <- ibdg_fh(filtered, strata = sample.metadata)
+private <- private_alleles(filtered, strata = sample.metadata)
+
+filtered <- filtered |>
+  filter_fis(strata = sample.metadata, fis.min.threshold = -0.5,
+             fis.max.threshold = 0.5) |>
+  filter_het(strata = sample.metadata, marker.range = c(0, 0.8)) |>
+  filter_hwe(strata = sample.metadata, p.threshold = 1e-4,
+             adjustment = "BH")
+```
+
+`detect_biallelic_problems()` distinguishes the alleles declared in each VCF
+record from alleles observed in active samples. A declared multiallelic record
+does not become a biallelic record merely because only two alleles remain in
+the current sample subset.
+
+`pi()` reports finite-sample-corrected nucleotide diversity. Its default is
+mean diversity per callable variant; per-base diversity requires an explicit
+callable-sequence denominator. Individual heterozygosity is returned under its
+own name and is not presented as individual nucleotide diversity.
+
+`ibdg_fh()` calculates the individual homozygosity coefficient on a consistent
+count scale. It reports expectations from both stratum-specific and pooled
+allele frequencies, so population structure is visible rather than silently
+absorbed into one estimate.
+
+Private alleles are alleles observed in exactly one stratum, subject to allele
+count and call-rate controls. Private haplotypes are stricter:
+`private_haplotypes()` requires multiple variants sharing a genuine `LOCUS`
+and phased genotypes. It does not rename an unphased per-marker genotype as a
+haplotype.
+
+HWE, FIS, and heterozygosity filters are quality-control tools, not automatic
+tests of biological validity. Population mixture, family structure, selection,
+sex linkage, inversions, and technical errors can all cause departures. Use
+strata deliberately, inspect the evidence tables, and compare sensitivity to
+reasonable thresholds before removing markers.
 
 ### Screen for candidate sex-linked markers
 

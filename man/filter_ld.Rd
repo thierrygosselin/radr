@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter_ld.R
 \name{filter_ld}
 \alias{filter_ld}
-\title{GBS/RADseq short and long distance linkage disequilibrium pruning}
+\title{Filter linkage disequilibrium}
 \usage{
 filter_ld(
   data,
@@ -65,13 +65,13 @@ Default: \code{verbose = TRUE}.}
 functions.}
 }
 \value{
-The filtered data in the same representation as the input. GDS
-marker metadata and active variants are updated in place. LD summaries,
+The input GDS with marker metadata and active variants updated in
+place. LD summaries,
 plots, marker lists, and filtering parameters are written to the output
 folder when applicable.
 }
 \description{
-SNP short and long distance linkage disequilibrium pruning.
+Prune short- and long-distance linkage disequilibrium in a GDS.
 
 \strong{Filter target:} Markers.
 

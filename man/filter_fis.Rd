@@ -2,57 +2,68 @@
 % Please edit documentation in R/filter_fis.R
 \name{filter_fis}
 \alias{filter_fis}
-\title{Fis filter}
+\title{Filter markers using FIS}
 \usage{
 filter_fis(
   data,
-  approach = "haplotype",
-  fis.min.threshold,
-  fis.max.threshold,
-  fis.diff.threshold,
-  pop.threshold,
-  percent,
-  filename,
-  verbose = TRUE
+  strata = NULL,
+  group.column = "STRATA",
+  unit = c("variant", "locus"),
+  fis.min.threshold = -Inf,
+  fis.max.threshold = Inf,
+  strata.threshold = 1L,
+  min.call.rate = 0.8,
+  chunk.size = 2000L,
+  verbose = TRUE,
+  ...
 )
 }
 \arguments{
-\item{data}{A GDS filename or open \code{SeqVarGDSClass} object.}
+\item{data}{A GDS filepath or open \code{SeqVarGDSClass} object.}
 
-\item{approach}{Character. By \code{"SNP"} or by \code{"haplotype"}.
-The function will consider the SNP or haplotype statistics to filter the marker.
-Default: \code{approach = "haplotype"}.}
+\item{strata}{Optional metadata containing \code{INDIVIDUALS} and \code{group.column}.}
 
-\item{fis.min.threshold}{Number.}
+\item{group.column}{Metadata column defining strata.}
 
-\item{fis.max.threshold}{Number.}
+\item{unit}{Filter individual \code{"variant"} records or complete \code{"locus"}
+groups defined by marker \code{LOCUS}.}
 
-\item{fis.diff.threshold}{Number (0 - 1)}
+\item{fis.min.threshold}{Minimum permitted FIS.}
 
-\item{pop.threshold}{Fixed number of pop required to keep the locus.}
+\item{fis.max.threshold}{Maximum permitted FIS.}
 
-\item{percent}{Is the threshold a percentage ? TRUE or FALSE.}
+\item{strata.threshold}{Number or proportion of eligible strata that must
+violate a limit before removal. Values below one are proportions.}
 
-\item{filename}{(optional) The function uses \code{\link[fst]{write.fst}},
-to write the tidy data frame in
-the folder created in the working directory. The file extension appended to
-the \code{filename} provided is \code{.rad}.}
+\item{min.call.rate}{Minimum marker call rate within a stratum.}
 
-\item{verbose}{Logical. Display progress messages.
-Default: \code{verbose = TRUE}.}
+\item{chunk.size}{Number of variants read at a time.}
+
+\item{verbose}{Display progress and summary messages.}
+
+\item{...}{Common argument \code{path.folder}.}
+}
+\value{
+The filtered open GDS connection. The GDS, filter history, and full
+kept/removed audits are updated on disk.
 }
 \description{
-Filter markers or loci using within-stratum inbreeding-coefficient
-statistics.
-
-\strong{Filter target:} Markers or loci, depending on \code{approach}.
+Calculate within-stratum FIS from active biallelic GDS genotypes and remove
+variants, or all variants in their RAD/read locus, when departures exceed
+the requested limits in enough strata.
 }
 \details{
-The Fis calculated uses the ratio of averages (1-mean(Ho)/mean(Hs))
-and NOT THE AVERAGE OF RATIOS (Nei 1987).
+FIS is \code{1 - Ho / He} and is undefined for monomorphic marker-stratum
+combinations. Undefined or low-call-rate combinations are excluded from the
+evidence count rather than treated as passing or failing.
 }
-\references{
-Nei M. (1987) Molecular Evolutionary Genetics. Columbia University Press.
+\examples{
+\dontrun{
+genome <- radr::filter_fis(
+  genome, strata = "sample_metadata.tsv",
+  fis.min.threshold = -0.5, fis.max.threshold = 0.5
+)
+}
 }
 \author{
 Thierry Gosselin \email{thierrygosselin@icloud.com}

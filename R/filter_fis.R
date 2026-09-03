@@ -1,144 +1,117 @@
-# Fis
-#' @title Fis filter
-#' @description
-#' Filter markers or loci using within-stratum inbreeding-coefficient
-#' statistics.
+#' Filter markers using FIS
 #'
-#' **Filter target:** Markers or loci, depending on \code{approach}.
+#' Calculate within-stratum FIS from active biallelic GDS genotypes and remove
+#' variants, or all variants in their RAD/read locus, when departures exceed
+#' the requested limits in enough strata.
 #'
-#' @param approach Character. By \code{"SNP"} or by \code{"haplotype"}.
-#' The function will consider the SNP or haplotype statistics to filter the marker.
-#' Default: \code{approach = "haplotype"}.
-#' @param fis.min.threshold Number.
-#' @param fis.max.threshold Number.
-#' @param fis.diff.threshold Number (0 - 1)
-#' @param pop.threshold Fixed number of pop required to keep the locus.
-#' @param percent Is the threshold a percentage ? TRUE or FALSE.
-#' @param filename (optional) The function uses \code{\link[fst]{write.fst}},
-#' to write the tidy data frame in
-#' the folder created in the working directory. The file extension appended to
-#' the \code{filename} provided is \code{.rad}.
-#' @inheritParams genometranslator::tidy_genome
-#' @param verbose Logical. Display progress messages.
-#' Default: \code{verbose = TRUE}.
+#' FIS is `1 - Ho / He` and is undefined for monomorphic marker-stratum
+#' combinations. Undefined or low-call-rate combinations are excluded from the
+#' evidence count rather than treated as passing or failing.
 #'
-#' @details
-#' The Fis calculated uses the ratio of averages (1-mean(Ho)/mean(Hs))
-#' and NOT THE AVERAGE OF RATIOS (Nei 1987).
-#' @references Nei M. (1987) Molecular Evolutionary Genetics. Columbia University Press.
+#' @param data A GDS filepath or open `SeqVarGDSClass` object.
+#' @param strata Optional metadata containing `INDIVIDUALS` and `group.column`.
+#' @param group.column Metadata column defining strata.
+#' @param unit Filter individual `"variant"` records or complete `"locus"`
+#'   groups defined by marker `LOCUS`.
+#' @param fis.min.threshold Minimum permitted FIS.
+#' @param fis.max.threshold Maximum permitted FIS.
+#' @param strata.threshold Number or proportion of eligible strata that must
+#'   violate a limit before removal. Values below one are proportions.
+#' @param min.call.rate Minimum marker call rate within a stratum.
+#' @param chunk.size Number of variants read at a time.
+#' @param verbose Display progress and summary messages.
+#' @param ... Common argument `path.folder`.
+#' @return The filtered open GDS connection. The GDS, filter history, and full
+#' kept/removed audits are updated on disk.
 #' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
-#' @rdname filter_fis
 #' @export
-
+#' @examples
+#' \dontrun{
+#' genome <- radr::filter_fis(
+#'   genome, strata = "sample_metadata.tsv",
+#'   fis.min.threshold = -0.5, fis.max.threshold = 0.5
+#' )
+#' }
 filter_fis <- function(
-    data,
-    approach = "haplotype",
-    fis.min.threshold,
-    fis.max.threshold,
-    fis.diff.threshold,
-    pop.threshold,
-    percent,
-    filename,
-    verbose = TRUE
+    data, strata = NULL, group.column = "STRATA",
+    unit = c("variant", "locus"), fis.min.threshold = -Inf,
+    fis.max.threshold = Inf, strata.threshold = 1L,
+    min.call.rate = 0.8, chunk.size = 2000L, verbose = TRUE, ...
 ) {
-  # Common startup -------------------------------------------------------------
-  .start <- tgbase::startup(
-    package = "radr",
-    f.name = "filter_fis",
-    verbose = verbose
-  )
+  force(data)
+  unit <- match.arg(unit)
+  if (!is.numeric(fis.min.threshold) || length(fis.min.threshold) != 1L ||
+      !is.numeric(fis.max.threshold) || length(fis.max.threshold) != 1L ||
+      fis.min.threshold > fis.max.threshold) {
+    rlang::abort("FIS limits must be ordered numeric scalars.")
+  }
+  if (!is.numeric(strata.threshold) || length(strata.threshold) != 1L ||
+      is.na(strata.threshold) || strata.threshold <= 0) {
+    rlang::abort("`strata.threshold` must be positive.")
+  }
+  .paralog_check_probability(min.call.rate, "min.call.rate")
+  .start <- tgbase::startup(package = "radr", f.name = "filter_fis", verbose = verbose)
   on.exit(tgbase::teardown(.start), add = TRUE)
-  # on.exit(rm(list = setdiff(ls(envir = sys.frame(-1L)), obj.keeper), envir = sys.frame(-1L)))
-
-
-
-  if (is.vector(data)) {
-    data <- readr::read_tsv(data, col_names = TRUE)
+  dots <- rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE)
+  unknown <- setdiff(names(dots), "path.folder")
+  if (length(unknown)) rlang::abort(paste0("Unknown argument(s): ", paste(unknown, collapse = ", "), "."))
+  parent <- dots$path.folder %||% getwd()
+  path.folder <- radr_folder(
+    rad.folder = paste0("filter_fis_", .start$file.date),
+    path.folder = parent, prefix.int = TRUE
+  )
+  opened <- .filter_gds_open(data)
+  gds <- opened$gds
+  genometranslator::sync_gds(gds, verbose = FALSE)
+  if (!genometranslator::detect_biallelic_markers(gds)) {
+    rlang::abort("FIS filtering requires active biallelic markers.")
   }
-  pop.number <- dplyr::n_distinct(data$POP_ID)
-
-  if (stringi::stri_detect_fixed(pop.threshold, ".") & pop.threshold < 1) {
-    multiplication.number <- 1/pop.number
-    message("Using a proportion threshold...")
-    threshold.id <- "of proportion"
-  } else if (stringi::stri_detect_fixed(percent, "T")) {
-    multiplication.number <- 100/pop.number
-    message("Using a percentage threshold...")
-    threshold.id <- "percent"
-  } else {
-    multiplication.number <- 1
-    message("Using a fixed threshold...")
-    threshold.id <- "population as a fixed"
+  summary <- summarise_genomic_data(
+    gds, strata = strata, group.column = group.column, by.strata = TRUE,
+    chunk.size = chunk.size, write.files = FALSE, verbose = FALSE,
+    internal = TRUE, path.folder = path.folder
+  )$stratum.statistics |>
+    dplyr::filter(.data$GROUP != "OVERALL") |>
+    dplyr::mutate(
+      ELIGIBLE = .data$CALL_RATE >= min.call.rate & is.finite(.data$FIS),
+      VIOLATION = .data$ELIGIBLE &
+        (.data$FIS < fis.min.threshold | .data$FIS > fis.max.threshold)
+    )
+  evidence <- summary |>
+    dplyr::group_by(.data$VARIANT_ID) |>
+    dplyr::summarise(
+      N_ELIGIBLE_STRATA = sum(.data$ELIGIBLE),
+      N_VIOLATING_STRATA = sum(.data$VIOLATION),
+      PROPORTION_VIOLATING = dplyr::if_else(
+        .data$N_ELIGIBLE_STRATA > 0,
+        .data$N_VIOLATING_STRATA / .data$N_ELIGIBLE_STRATA, NA_real_
+      ),
+      MIN_FIS = if (any(.data$ELIGIBLE)) min(.data$FIS[.data$ELIGIBLE]) else NA_real_,
+      MAX_FIS = if (any(.data$ELIGIBLE)) max(.data$FIS[.data$ELIGIBLE]) else NA_real_,
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(
+      REMOVE = if (strata.threshold < 1) {
+        .data$PROPORTION_VIOLATING >= strata.threshold
+      } else .data$N_VIOLATING_STRATA >= strata.threshold
+    )
+  marker <- .sex_marker_metadata(gds, SeqArray::seqGetData(gds, "variant.id"))
+  evidence <- dplyr::left_join(evidence, marker, by = "VARIANT_ID")
+  if (unit == "locus") {
+    if (!"LOCUS" %in% names(evidence)) {
+      rlang::abort("`unit = \"locus\"` requires marker `LOCUS` metadata.")
+    }
+    remove.loci <- unique(evidence$LOCUS[evidence$REMOVE])
+    evidence$REMOVE <- evidence$LOCUS %in% remove.loci
   }
-
-  if (missing(approach) | approach == "haplotype") {
-    message("Approach selected: haplotype")
-    fis.filter <- data %>%
-      dplyr::select(LOCUS, POS, POP_ID, FIS) %>%
-      dplyr::group_by (LOCUS, POP_ID) %>%
-      dplyr::summarise(
-        FIS_MIN = min(FIS),
-        FIS_MAX = max(FIS),
-        FIS_DIFF = FIS_MAX-FIS_MIN
-      ) %>%
-      dplyr::filter(FIS_MIN >= fis.min.threshold) %>%
-      dplyr::filter(FIS_MAX <= fis.max.threshold) %>%
-      dplyr::filter(FIS_DIFF <= fis.diff.threshold) %>%
-      dplyr::group_by(LOCUS) %>%
-      dplyr::tally(.) %>%
-      dplyr::filter((n * multiplication.number) >= pop.threshold) %>%
-      dplyr::select(LOCUS) %>%
-      dplyr::left_join(data, by = "LOCUS") %>%
-      dplyr::arrange(LOCUS, POP_ID)
-  } else {
-    message("Approach selected: SNP")
-    fis.filter <- data %>%
-      dplyr::select(LOCUS, POS, POP_ID, FIS) %>%
-      dplyr::group_by(LOCUS, POS, POP_ID) %>%
-      dplyr::summarise(
-        FIS_MIN = min(FIS),
-        FIS_MAX = max(FIS),
-        FIS_DIFF = FIS_MAX-FIS_MIN
-      ) %>%
-      dplyr::filter(FIS_MIN >= fis.min.threshold) %>%
-      dplyr::filter(FIS_MAX <= fis.max.threshold) %>%
-      dplyr::filter(FIS_DIFF <= fis.diff.threshold) %>%
-      dplyr::group_by(LOCUS, POS) %>%
-      dplyr::tally(.) %>%
-      dplyr::filter((n * multiplication.number) >= pop.threshold) %>%
-      dplyr::select(LOCUS, POS) %>%
-      dplyr::left_join(data, by = c("LOCUS", "POS")) %>%
-      dplyr::arrange(LOCUS, POS, POP_ID)
-}
-
-
-  if (missing(filename) == "FALSE") {
-    message("Saving the file in your working directory...")
-    readr::write_tsv(fis.filter, filename, append = FALSE, col_names = TRUE)
-    saving <- paste("Saving was selected, the filename:", filename, sep = " ")
-  } else {
-    saving <- "Saving was not selected..."
-  }
-
-
-  invisible(cat(sprintf(
-    "Fis filter:
-Fis min >= %s or Fis max <= %s or
-difference along the read/haplotype between the max and min Fis > %s,
-all in %s percent of the sampling sites/pop were removed\n
-The number of SNP removed by the Fis filter = %s SNP
-The number of LOCI removed by the Fis filter = %s LOCI
-The number of SNP before -> after the Fis filter: %s -> %s SNP
-The number of LOCI before -> after the Fis filter: %s -> %s LOCI\n
-%s\n
-Working directory:
-%s",
-    fis.min.threshold, fis.max.threshold, fis.diff.threshold, pop.threshold,
-    dplyr::n_distinct(data$POS) - dplyr::n_distinct(fis.filter$POS),
-    dplyr::n_distinct(data$LOCUS) - dplyr::n_distinct(fis.filter$LOCUS),
-    dplyr::n_distinct(data$POS), dplyr::n_distinct(fis.filter$POS),
-    dplyr::n_distinct(data$LOCUS), dplyr::n_distinct(fis.filter$LOCUS),
-    saving, getwd()
-  )))
-  return(fis.filter)
+  remove <- evidence$VARIANT_ID[evidence$REMOVE]
+  readr::write_tsv(summary, file.path(path.folder, "fis_stratum_statistics.tsv"), na = "NA")
+  readr::write_tsv(evidence, file.path(path.folder, "fis_filter_evidence.tsv"), na = "NA")
+  .filter_gds_apply_markers(
+    gds, remove, "filter.fis", path.folder, .start$file.date,
+    "FIS limits / strata threshold",
+    c(fis.min.threshold, fis.max.threshold, strata.threshold), verbose
+  )
+  if (verbose) .summary_message("FIS-filtered markers: ", length(remove), ".")
+  gds
 }

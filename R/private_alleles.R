@@ -1,173 +1,125 @@
-# private_alleles
-
-#' @name private_alleles
-#' @title Find private alleles
-#' @description The function highlight private alleles by strata, using a GDS or tidy file or object.
-
-#' @inheritParams genometranslator::read_strata
-#' @inheritParams radr_common_arguments
-
-#' @return A list with an object highlighting private alleles by markers and strata and
-#' a second object with private alleles summarized by strata.
-
+#' Detect private alleles
+#'
+#' Identify REF or ALT alleles observed in exactly one stratum among the active
+#' samples and biallelic markers in a GDS. Allele counts are calculated from
+#' active diploid dosages; absence means a count of zero, not missing data.
+#'
+#' Results include call rate and allele count so a private allele supported by
+#' one chromosome can be distinguished from a well-supported private allele.
+#' Use `min.allele.count` and `min.call.rate` to define minimum evidence.
+#'
+#' @param data A GDS filepath or open `SeqVarGDSClass` object.
+#' @param strata Optional sample metadata containing `INDIVIDUALS` and
+#'   `group.column`. If `NULL`, metadata are read from the GDS.
+#' @param group.column Metadata column defining the strata.
+#' @param min.allele.count Minimum allele count in its only observed stratum.
+#' @param min.call.rate Minimum marker call rate required in every stratum.
+#' @param chunk.size Number of variants read at a time.
+#' @param write.files Write result tables.
+#' @param verbose Display progress and summary messages.
+#' @param ... Common arguments: `path.folder` and `internal`.
+#' @return A `private_alleles` object with `private.alleles`,
+#' `stratum.summary`, `marker.statistics`, and output information.
+#' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
+#' @export
 #' @examples
 #' \dontrun{
-#' corals.private.alleles.by.pop <- radr::private_alleles(data = tidy, strata = strata.pop)
+#' private <- radr::private_alleles(
+#'   "study.gds", strata = "sample_metadata.tsv"
+#' )
 #' }
-
-
-
-#' @rdname private_alleles
-#' @export
-
-#' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
-
-private_alleles <- function(data, strata = NULL, verbose = TRUE) {
-
-  # Cleanup---------------------------------------------------------------------
-  tgbase::function_header(f.name = "private_alleles", verbose = verbose)
-  file.date <- format(Sys.time(), "%Y%m%d@%H%M")
-  if (verbose) message("Execution date@time: ", file.date)
-  old.dir <- getwd()
-  opt.change <- getOption("width")
-  options(width = 70)
-  timing <- tgbase::tic()
-  res <- list()
-  #back to the original directory and options
-  on.exit(setwd(old.dir), add = TRUE)
-  on.exit(options(width = opt.change), add = TRUE)
-  on.exit(tgbase::toc(timing), add = TRUE)
-  on.exit(tgbase::function_header(f.name = "private_alleles", start = FALSE, verbose = verbose), add = TRUE)
-
-
-  # Checking for missing and/or default arguments ------------------------------
-  if (missing(data)) rlang::abort("Input file missing")
-
-  # Detect format --------------------------------------------------------------
-  data.type <- genometranslator::detect_genomic_format(data)
-  if (!data.type %in% c("tbl_df", "fst.file", "SeqVarGDSClass", "gds.file")) {
-    rlang::abort("Input not supported for this function: read function documentation")
+private_alleles <- function(
+    data, strata = NULL, group.column = "STRATA",
+    min.allele.count = 1L, min.call.rate = 0,
+    chunk.size = 2000L, write.files = TRUE, verbose = TRUE, ...
+) {
+  min.allele.count <- .paralog_check_count(
+    min.allele.count, "min.allele.count", 1L
+  )
+  .paralog_check_probability(min.call.rate, "min.call.rate")
+  context <- .analysis_gds_start(
+    data, "private_alleles", write.files, verbose, ...
+  )
+  on.exit(.analysis_gds_finish(context), add = TRUE)
+  gds <- context$gds
+  if (!genometranslator::detect_biallelic_markers(gds)) {
+    rlang::abort("Private-allele analysis requires active biallelic markers.")
   }
-
-  # Import data ---------------------------------------------------------------
-  if (verbose) message("Importing data ...")
-  if (data.type %in% c("tbl_df", "fst.file")) {
-    if (is.vector(data)) data <- genometranslator::read_genome(data, import.metadata = TRUE)
-    data.type <- "tbl_df"
-
-    if (is.null(strata)) {
-      if (rlang::has_name(data, "POP_ID") || rlang::has_name(data, "STRATA")) {
-        if (rlang::has_name(data, "POP_ID")) data %<>% dplyr::rename(STRATA = POP_ID)
-        strata <- genometranslator::generate_strata(data = data)
-      } else {
-        rlang::abort("strata required and if not provided a STRATA or POP_ID column in the data...")
-      }
-    } else {
-      strata <- genometranslator::read_strata(strata = strata) %$% strata
-      data %<>% genometranslator::join_strata(data = ., strata = strata)
-    }
-
-    if (rlang::has_name(data, "GT_VCF_NUC")) {
-      private <- dplyr::filter(data, GT_VCF_NUC != "./.") %>%
-        dplyr::distinct(STRATA, MARKERS, GT_VCF_NUC) %>%
-        genometranslator::separate_gt(x = ., gt = "GT_VCF_NUC", exclude = c("MARKERS", "STRATA"), split.chunks = 1L) %>%
-        dplyr::select(-ALLELES_GROUP) %>%
-        dplyr::distinct(MARKERS, STRATA, ALLELES)
-    } else if (rlang::has_name(data, "GT")) {
-      private <- dplyr::filter(data, GT != "000000") %>%
-        dplyr::distinct(STRATA, MARKERS, GT) %>%
-        genometranslator::separate_gt(x = ., gt = "GT",exclude = c("MARKERS", "STRATA"), split.chunks = 1L) %>%
-        dplyr::select(-ALLELES_GROUP) %>%
-        dplyr::distinct(MARKERS, STRATA, ALLELES)
-    } else {
-      # work with ALT_DOSAGE
-      private <- dplyr::filter(data, !is.na(ALT_DOSAGE)) %>%
-        dplyr::distinct(STRATA, MARKERS, ALT_DOSAGE) %>%
-        genometranslator::separate_gt(x = ., gt = "ALT_DOSAGE",exclude = c("MARKERS", "STRATA"), split.chunks = 1L) %>%
-        dplyr::select(-ALLELES_GROUP) %>%
-        dplyr::distinct(MARKERS, STRATA, ALLELES)
-
-        #
-        # dplyr::mutate(
-        #   ALLELE = dplyr::case_when(
-        #     ALT_DOSAGE == 0 ~ "REFREF",
-        #     ALT_DOSAGE == 1 ~ "REFALT",
-        #     ALT_DOSAGE == 2 ~ "ALTALT"
-        #   ),
-        #   ALT_DOSAGE = NULL
-        # ) %>%
-        # genometranslator::separate_gt(x = ., gt = "ALLELE", exclude = c("MARKERS", "STRATA")) %>%
-        # dplyr::select(-ALLELE_GROUP, ALLELE = HAPLOTYPES) %>%
-        # dplyr::distinct(MARKERS, STRATA, ALLELE)
-    }
+  stats <- summarise_genomic_data(
+    gds, strata = strata, group.column = group.column, by.strata = TRUE,
+    chunk.size = chunk.size, write.files = FALSE, verbose = FALSE,
+    internal = TRUE, path.folder = context$path.folder
+  )$stratum.statistics |>
+    dplyr::filter(.data$GROUP != "OVERALL")
+  groups <- unique(stats$GROUP)
+  if (length(groups) < 2L) {
+    rlang::abort("At least two strata are required to detect private alleles.")
   }
-
-  if (data.type %in% c("SeqVarGDSClass", "gds.file")) {
-    if (data.type == "gds.file") {
-      data <- genometranslator::read_genome(data, verbose = verbose)
-      data.type <- "SeqVarGDSClass"
-    }
-    strata <- genometranslator::extract_individuals_metadata(
-      gds = data,
-      ind.field.select = c("INDIVIDUALS", "STRATA"),
-      whitelist = TRUE
+  eligible <- stats |>
+    dplyr::group_by(.data$VARIANT_ID) |>
+    dplyr::summarise(
+      ALL_GROUPS_CALLABLE = all(.data$CALL_RATE >= min.call.rate),
+      .groups = "drop"
     )
-    private <- genometranslator::generate_gt_vcf_nuc(data) %>%
-      magrittr::set_rownames(x = ., value = SeqArray::seqGetData(gdsobj = data, "sample.id")) %>%
-      magrittr::set_colnames(
-        x = .,
-        value = genometranslator::extract_markers_metadata(
-          gds = data,
-          markers.meta.select = "MARKERS",
-          whitelist = TRUE
-          ) %$%
-          MARKERS
-      ) %>%
-      tibble::as_tibble(x = ., rownames = "INDIVIDUALS") %>%
-      tgbase::trans_long(
-        x = .,
-        cols = "INDIVIDUALS",
-        names_to = "MARKERS",
-        values_to = "GT_VCF_NUC",
-        variable_factor = FALSE
-      ) %>%
-      genometranslator::separate_gt(x = ., gt = "GT_VCF_NUC", exclude = c("MARKERS", "STRATA"), split.chunks = 1L) %>%
-      dplyr::select(-ALLELES_GROUP)
-
-    private %<>%
-      genometranslator::join_strata(data = ., strata = strata, verbose = FALSE) %>%
-      dplyr::distinct(MARKERS, STRATA, ALLELES)
+  long <- dplyr::bind_rows(
+    stats |>
+      dplyr::transmute(
+        VARIANT_ID = .data$VARIANT_ID, GROUP = .data$GROUP,
+        ALLELE = "REF", ALLELE_COUNT = .data$REF_ALLELE_COUNT,
+        ALLELE_FREQUENCY = .data$REF_FREQUENCY,
+        CALL_RATE = .data$CALL_RATE
+      ),
+    stats |>
+      dplyr::transmute(
+        VARIANT_ID = .data$VARIANT_ID, GROUP = .data$GROUP,
+        ALLELE = "ALT", ALLELE_COUNT = .data$ALT_ALLELE_COUNT,
+        ALLELE_FREQUENCY = .data$ALT_FREQUENCY,
+        CALL_RATE = .data$CALL_RATE
+      )
+  )
+  private <- long |>
+    dplyr::group_by(.data$VARIANT_ID, .data$ALLELE) |>
+    dplyr::mutate(N_STRATA_OBSERVED = sum(.data$ALLELE_COUNT > 0)) |>
+    dplyr::ungroup() |>
+    dplyr::filter(
+      .data$N_STRATA_OBSERVED == 1L,
+      .data$ALLELE_COUNT >= min.allele.count
+    ) |>
+    dplyr::left_join(eligible, by = "VARIANT_ID") |>
+    dplyr::filter(.data$ALL_GROUPS_CALLABLE) |>
+    dplyr::arrange(.data$GROUP, .data$VARIANT_ID, .data$ALLELE)
+  marker.metadata <- .sex_marker_metadata(
+    gds, SeqArray::seqGetData(gds, "variant.id")
+  )
+  private <- private |>
+    dplyr::left_join(marker.metadata, by = "VARIANT_ID") |>
+    dplyr::select(
+      dplyr::any_of(c("VARIANT_ID", "MARKERS", "CHROM", "POS")),
+      dplyr::everything()
+    )
+  summary <- private |>
+    dplyr::count(.data$GROUP, .data$ALLELE, name = "N_PRIVATE_ALLELES") |>
+    dplyr::group_by(.data$GROUP) |>
+    dplyr::mutate(GROUP_TOTAL = sum(.data$N_PRIVATE_ALLELES)) |>
+    dplyr::ungroup()
+  output.files <- character()
+  if (write.files) {
+    output.files <- file.path(context$path.folder, c(
+      "private_alleles.tsv", "private_alleles_by_stratum.tsv"
+    ))
+    readr::write_tsv(private, output.files[[1L]], na = "NA")
+    readr::write_tsv(summary, output.files[[2L]], na = "NA")
   }
-
-  data <- NULL
-  private.search <- private %>%
-    dplyr::group_by(MARKERS, ALLELES) %>%
-    dplyr::tally(.) %>%
-    dplyr::filter(n == 1) %>%
-    dplyr::distinct(MARKERS, ALLELES) %>%
-    dplyr::left_join(private, by = c("MARKERS", "ALLELES")) %>%
-    dplyr::ungroup(.) %>%
-    dplyr::select(STRATA, MARKERS, ALLELES) %>%
-    dplyr::arrange(STRATA, MARKERS, ALLELES) %>%
-    readr::write_tsv(x = ., file = "private.alleles.tsv")
-
-  private.summary <- private.search %>%
-    dplyr::group_by(STRATA) %>%
-    dplyr::tally(.) %>%
-    dplyr::ungroup(.) %>%
-    tibble::add_row(.data = ., STRATA = "OVERALL", n = sum(.$n)) %>%
-    dplyr::rename(PRIVATE_ALLELES = n) %>%
-    readr::write_tsv(x = ., file = "private.alleles.summary.tsv")
-
-  if (nrow(private.summary) > 0) {
-    message("Number of private alleles per strata:")
-    priv.message <- dplyr::mutate(private.summary, PRIVATE = stringi::stri_join(STRATA, PRIVATE_ALLELES, sep = " = "))
-    message(stringi::stri_join(priv.message$PRIVATE, collapse = "\n"))
-    res <- list(private.alleles = private.search, private.alleles.summary = private.summary)
-  } else {
-    message("Private allele(s) found: 0")
-    res <- "0 private allele"
+  if (verbose) {
+    .summary_message("Private alleles retained: ", nrow(private), ".")
   }
-
-  return(res)
-}#End private_alleles
+  restored <- .analysis_gds_restore(context)
+  out <- list(
+    private.alleles = private, stratum.summary = summary,
+    marker.statistics = stats, path.folder = context$path.folder,
+    output.files = tibble::tibble(files = output.files),
+    active.selection.restored = restored
+  )
+  class(out) <- c("private_alleles", class(out))
+  out
+}
