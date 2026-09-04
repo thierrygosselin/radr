@@ -391,7 +391,11 @@
       verbose = verbose)
 
     # create a strata.df
-    strata <- genometranslator::generate_strata(data = data, pop.id = FALSE)
+    strata <- dplyr::ungroup(data) |>
+      dplyr::transmute(STRATA = .data[[if ("POP_ID" %in% names(data))
+        "POP_ID" else "STRATA"]], INDIVIDUALS = .data$INDIVIDUALS) |>
+      dplyr::distinct() |>
+      dplyr::arrange(.data$STRATA, .data$INDIVIDUALS)
 
     if (is.factor(strata$STRATA)) {
       pop.id.levels <- levels(strata$STRATA)

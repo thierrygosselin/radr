@@ -12,12 +12,13 @@
 #'
 #' The estimator uses only markers with at least one observed genotype in every
 #' included population. This common-marker requirement does not modify the GDS
-#' or input table. It ensures that all reported population estimates use the
+#' file. It ensures that all reported population estimates use the
 #' same loci and the same population reference.
 #'
-#' @param data A GDS filepath, an open `SeqVarGDSClass` object, or a tidy data
-#' frame containing `MARKERS`, `INDIVIDUALS`, `STRATA`, and
-#' `ALT_DOSAGE`.
+#' @param data A `.gds` filepath or an open `SeqVarGDSClass` object.
+#' Import other formats first with [genometranslator::read_genome()]. Active
+#' sample and marker filters are respected and restored. Files opened here are
+#' closed on exit; supplied open GDS objects remain open.
 #' @param strata Optional strata filepath or data frame used to add or replace
 #' population assignments. It must contain `INDIVIDUALS` and `STRATA`.
 #' Default: \code{strata = NULL}.
@@ -37,12 +38,9 @@
 #' @param filename Optional output prefix. When supplied, three tab-delimited
 #' files are written with suffixes `_beta.tsv`, `_within_population.tsv`, and
 #' `_between_populations.tsv`. Default: \code{filename = NULL}.
-#' @param chunk.size Number of markers processed at once for GDS and tidy input.
+#' @param chunk.size Number of markers processed at once from the GDS.
 #' Smaller chunks reduce peak memory use but may increase computation time.
 #' Default: \code{chunk.size = 10000L}.
-#' @param parallel.core Number of processor cores passed to
-#' [genometranslator::read_genome()] when file input must be imported.
-#' Default: \code{parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE)}.
 #' @param verbose Logical. Display progress and a population-specific FST
 #' summary. Default: \code{verbose = TRUE}.
 #'
@@ -143,7 +141,6 @@ beta_estimator <- function(
     random.mating = FALSE,
     filename = NULL,
     chunk.size = 10000L,
-    parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE),
     verbose = TRUE
 ) {
   .start <- tgbase::startup(
@@ -161,14 +158,10 @@ beta_estimator <- function(
       is.na(random.mating)) {
     rlang::abort("`random.mating` must be TRUE or FALSE.")
   }
-  if (!is.numeric(parallel.core) || length(parallel.core) != 1L ||
-      is.na(parallel.core) || parallel.core < 1) {
-    rlang::abort("`parallel.core` must be one positive number.")
-  }
-  parallel.core <- as.integer(parallel.core)
   if (!is.numeric(chunk.size) || length(chunk.size) != 1L ||
-      is.na(chunk.size) || chunk.size < 1) {
-    rlang::abort("`chunk.size` must be one positive number.")
+      !is.finite(chunk.size) || chunk.size < 1 ||
+      chunk.size > .Machine$integer.max || chunk.size != floor(chunk.size)) {
+    rlang::abort("`chunk.size` must be one positive integer.")
   }
   chunk.size <- as.integer(chunk.size)
   if (!is.null(filename) &&
@@ -238,232 +231,118 @@ beta_estimator <- function(
     invisible(NULL)
   }
 
-  gds <- NULL
   close.gds <- FALSE
   if (inherits(data, "SeqVarGDSClass")) {
     gds <- data
-  } else if (is.data.frame(data)) {
-    genotype.data <- tibble::as_tibble(data)
+  } else if (is.character(data) && length(data) == 1L &&
+             !is.na(data) && grepl("\\.gds$", data, ignore.case = TRUE)) {
+    if (!file.exists(data)) rlang::abort("The GDS file does not exist.")
+    gds <- SeqArray::seqOpen(data, readonly = TRUE)
+    close.gds <- TRUE
   } else {
-    if (verbose) message("Importing genomic data with genometranslator...")
-    gds <- genometranslator::read_genome(
-      data = data,
-      strata = strata,
-      parallel.core = parallel.core,
+    rlang::abort(
+      "`data` must be a .gds filepath or an open SeqVarGDSClass object."
+    )
+  }
+  on.exit({
+    if (close.gds) try(SeqArray::seqClose(gds), silent = TRUE)
+  }, add = TRUE)
+  SeqArray::seqSetFilter(gds, action = "push", verbose = FALSE)
+  on.exit(try(SeqArray::seqSetFilter(
+    gds, action = "pop", verbose = FALSE
+  ), silent = TRUE), add = TRUE, after = FALSE)
+
+  if (!isTRUE(genometranslator::detect_biallelic_markers(gds, verbose = FALSE))) {
+    rlang::abort("`beta_estimator()` requires biallelic markers.")
+  }
+
+  active.samples <- SeqArray::seqGetData(gds, "sample.id")
+  individuals <- if (is.null(strata)) {
+    genometranslator::extract_individuals_metadata(
+      gds = gds, ind.field.select = c("INDIVIDUALS", "STRATA"),
+      whitelist = TRUE
+    )
+  } else {
+    genometranslator::join_strata(
+      data = tibble::tibble(INDIVIDUALS = active.samples),
+      strata = strata, verbose = FALSE
+    )
+  }
+  if (!all(c("INDIVIDUALS", "STRATA") %in% names(individuals))) {
+    rlang::abort("Population assignments are missing. Supply GDS strata metadata or `strata`.")
+  }
+  individuals <- dplyr::select(individuals, INDIVIDUALS, STRATA)
+  individuals <- individuals[individuals$INDIVIDUALS %in% active.samples, ]
+  if (anyDuplicated(individuals$INDIVIDUALS) ||
+      anyNA(individuals$STRATA) || any(!nzchar(individuals$STRATA))) {
+    rlang::abort("Each individual must have one non-missing STRATA assignment.")
+  }
+  if (!is.null(populations)) {
+    unknown <- setdiff(populations, unique(as.character(individuals$STRATA)))
+    if (length(unknown) > 0L) {
+      rlang::abort(paste0("Unknown populations: ", paste(unknown, collapse = ", "), "."))
+    }
+    individuals <- dplyr::filter(individuals, STRATA %in% populations)
+  }
+  population.levels <- if (is.null(populations)) {
+    unique(as.character(individuals$STRATA))
+  } else {
+    populations
+  }
+  if (length(population.levels) < 2L) {
+    rlang::abort("At least two populations are required.")
+  }
+
+  marker.ids <- SeqArray::seqGetData(gds, "variant.id")
+  marker.chunks <- split(
+    marker.ids,
+    ceiling(seq_along(marker.ids) / chunk.size)
+  )
+  if (!random.mating) {
+    matching.numerator <- matrix(0, nrow(individuals), nrow(individuals))
+    matching.denominator <- matrix(0, nrow(individuals), nrow(individuals))
+  } else {
+    sum.within <- stats::setNames(numeric(length(population.levels)), population.levels)
+    sum.between <- 0
+  }
+  n.common.markers <- 0L
+  analysis.individuals <- NULL
+  analysis.strata <- NULL
+  for (i in seq_along(marker.chunks)) {
+    variant.chunk <- marker.chunks[[i]]
+    SeqArray::seqSetFilter(
+      gds,
+      sample.id = individuals$INDIVIDUALS,
+      variant.id = variant.chunk,
+      action = "set",
       verbose = FALSE
     )
-    close.gds <- TRUE
-    on.exit(try(SeqArray::seqClose(gds), silent = TRUE), add = TRUE)
-  }
-
-  if (!is.null(gds)) {
-    if (!isTRUE(genometranslator::detect_biallelic_markers(gds, verbose = FALSE))) {
-      rlang::abort("`beta_estimator()` requires biallelic markers.")
-    }
-
-    individuals <- genometranslator::extract_individuals_metadata(
-      gds = gds,
-      ind.field.select = c("INDIVIDUALS", "STRATA"),
-      whitelist = TRUE
+    sample.order <- SeqArray::seqGetData(gds, "sample.id")
+    dosage.list <- SeqArray::seqApply(
+      gds,
+      "$dosage_alt",
+      FUN = function(x) as.numeric(x),
+      margin = "by.variant",
+      as.is = "list"
     )
-    if (!is.null(strata) && !close.gds) {
-      individuals <- genometranslator::join_strata(
-        data = dplyr::select(individuals, INDIVIDUALS),
-        strata = strata,
-        verbose = FALSE
-      )
+    dosage <- do.call(rbind, dosage.list)
+    sample.strata <- individuals$STRATA[
+      match(sample.order, individuals$INDIVIDUALS)
+    ]
+    if (is.null(analysis.individuals)) {
+      analysis.individuals <- sample.order
+      analysis.strata <- as.character(sample.strata)
     }
-    if (!all(c("INDIVIDUALS", "STRATA") %in% names(individuals))) {
-      rlang::abort("Population assignments are missing. Supply GDS strata metadata or `strata`.")
-    }
-    individuals <- dplyr::select(individuals, INDIVIDUALS, STRATA)
-    if (!is.null(populations)) {
-      unknown <- setdiff(populations, unique(as.character(individuals$STRATA)))
-      if (length(unknown) > 0L) {
-        rlang::abort(paste0("Unknown populations: ", paste(unknown, collapse = ", "), "."))
-      }
-      individuals <- dplyr::filter(individuals, STRATA %in% populations)
-    }
-    population.levels <- if (is.null(populations)) {
-      unique(as.character(individuals$STRATA))
-    } else {
-      populations
-    }
-    if (length(population.levels) < 2L) {
-      rlang::abort("At least two populations are required.")
-    }
-
-    markers.meta <- genometranslator::extract_markers_metadata(
-      gds = gds,
-      markers.meta.select = c("VARIANT_ID", "MARKERS"),
-      whitelist = TRUE
+    keep <- common_in_chunk(dosage, sample.strata, population.levels)
+    update_statistics(
+      dosage = dosage[keep, , drop = FALSE],
+      sample.strata = sample.strata,
+      population.levels = population.levels
     )
-    if (!all(c("VARIANT_ID", "MARKERS") %in% names(markers.meta))) {
-      rlang::abort("GDS marker metadata must contain `VARIANT_ID` and `MARKERS`.")
-    }
-
-    original.samples <- SeqArray::seqGetData(gds, "sample.id")
-    original.variants <- SeqArray::seqGetData(gds, "variant.id")
-    on.exit(
-      try(SeqArray::seqSetFilter(
-        gds,
-        sample.id = original.samples,
-        variant.id = original.variants,
-        action = "set",
-        verbose = FALSE
-      ), silent = TRUE),
-      add = TRUE
-    )
-
-    marker.chunks <- split(
-      markers.meta$VARIANT_ID,
-      ceiling(seq_len(nrow(markers.meta)) / chunk.size)
-    )
-    if (!random.mating) {
-      matching.numerator <- matrix(0, nrow(individuals), nrow(individuals))
-      matching.denominator <- matrix(0, nrow(individuals), nrow(individuals))
-    } else {
-      sum.within <- stats::setNames(numeric(length(population.levels)), population.levels)
-      sum.between <- 0
-    }
-    n.common.markers <- 0L
-    analysis.individuals <- NULL
-    analysis.strata <- NULL
-    for (i in seq_along(marker.chunks)) {
-      variant.chunk <- marker.chunks[[i]]
-      SeqArray::seqSetFilter(
-        gds,
-        sample.id = individuals$INDIVIDUALS,
-        variant.id = variant.chunk,
-        action = "set",
-        verbose = FALSE
-      )
-      sample.order <- SeqArray::seqGetData(gds, "sample.id")
-      variant.order <- SeqArray::seqGetData(gds, "variant.id")
-      dosage.list <- SeqArray::seqApply(
-        gds,
-        "$dosage_alt",
-        FUN = function(x) as.numeric(x),
-        margin = "by.variant",
-        as.is = "list"
-      )
-      dosage <- do.call(rbind, dosage.list)
-      sample.strata <- individuals$STRATA[
-        match(sample.order, individuals$INDIVIDUALS)
-      ]
-      if (is.null(analysis.individuals)) {
-        analysis.individuals <- sample.order
-        analysis.strata <- as.character(sample.strata)
-      }
-      keep <- common_in_chunk(dosage, sample.strata, population.levels)
-      update_statistics(
-        dosage = dosage[keep, , drop = FALSE],
-        sample.strata = sample.strata,
-        population.levels = population.levels
-      )
-      if (verbose && length(marker.chunks) > 1L) {
-        message("  Marker chunk ", i, " of ", length(marker.chunks), " completed")
-      }
-    }
-  } else {
-    if (!is.null(strata)) {
-      genotype.data <- genometranslator::join_strata(
-        data = genotype.data,
-        strata = strata,
-        verbose = FALSE
-      )
-    }
-    required.columns <- c("MARKERS", "INDIVIDUALS", "STRATA", "ALT_DOSAGE")
-    missing.columns <- setdiff(required.columns, names(genotype.data))
-    if (length(missing.columns) > 0L) {
-      rlang::abort(paste0(
-        "The input is missing required columns: ",
-        paste(missing.columns, collapse = ", "), "."
-      ))
-    }
-    genotype.data <- dplyr::select(
-      genotype.data, MARKERS, INDIVIDUALS, STRATA, ALT_DOSAGE
-    )
-    if (anyNA(genotype.data$MARKERS) || anyNA(genotype.data$INDIVIDUALS) ||
-        anyNA(genotype.data$STRATA)) {
-      rlang::abort("`MARKERS`, `INDIVIDUALS`, and `STRATA` cannot contain missing values.")
-    }
-    observed.dosage <- genotype.data$ALT_DOSAGE[!is.na(genotype.data$ALT_DOSAGE)]
-    if (length(observed.dosage) == 0L) {
-      rlang::abort("No observed `ALT_DOSAGE` values are available.")
-    }
-    if (!is.numeric(observed.dosage) || any(!observed.dosage %in% c(0, 1, 2))) {
-      rlang::abort("`ALT_DOSAGE` must contain only diploid biallelic dosages 0, 1, 2, or NA.")
-    }
-    duplicated.genotypes <- dplyr::count(
-      genotype.data, MARKERS, INDIVIDUALS, name = "N"
-    ) |>
-      dplyr::filter(N > 1L)
-    if (nrow(duplicated.genotypes) > 0L) {
-      rlang::abort("The input contains more than one genotype for a marker-individual pair.")
-    }
-    if (!is.null(populations)) {
-      unknown <- setdiff(populations, unique(as.character(genotype.data$STRATA)))
-      if (length(unknown) > 0L) {
-        rlang::abort(paste0("Unknown populations: ", paste(unknown, collapse = ", "), "."))
-      }
-      genotype.data <- dplyr::filter(genotype.data, STRATA %in% populations)
-    }
-    population.levels <- if (is.null(populations)) {
-      unique(as.character(genotype.data$STRATA))
-    } else {
-      populations
-    }
-    if (length(population.levels) < 2L) {
-      rlang::abort("At least two populations are required.")
-    }
-
-    individual.info <- genotype.data |>
-      dplyr::distinct(INDIVIDUALS, STRATA) |>
-      dplyr::arrange(INDIVIDUALS)
-    if (anyDuplicated(individual.info$INDIVIDUALS)) {
-      rlang::abort("Each individual must belong to exactly one `STRATA` value.")
-    }
-    analysis.individuals <- individual.info$INDIVIDUALS
-    analysis.strata <- as.character(individual.info$STRATA)
-    if (!random.mating) {
-      matching.numerator <- matrix(0, nrow(individual.info), nrow(individual.info))
-      matching.denominator <- matrix(0, nrow(individual.info), nrow(individual.info))
-    } else {
-      sum.within <- stats::setNames(numeric(length(population.levels)), population.levels)
-      sum.between <- 0
-    }
-    n.common.markers <- 0L
-
-    marker.levels <- unique(genotype.data$MARKERS)
-    marker.chunks <- split(
-      marker.levels,
-      ceiling(seq_along(marker.levels) / chunk.size)
-    )
-    for (marker.chunk in marker.chunks) {
-      chunk <- genotype.data |>
-        dplyr::filter(MARKERS %in% marker.chunk) |>
-        dplyr::mutate(
-          MARKERS = factor(MARKERS, levels = marker.chunk),
-          INDIVIDUALS = factor(INDIVIDUALS, levels = analysis.individuals)
-        ) |>
-        tidyr::complete(MARKERS, INDIVIDUALS) |>
-        dplyr::arrange(MARKERS, INDIVIDUALS)
-      dosage <- matrix(
-        chunk$ALT_DOSAGE,
-        nrow = length(marker.chunk),
-        ncol = length(analysis.individuals),
-        byrow = TRUE
-      )
-      keep <- common_in_chunk(dosage, analysis.strata, population.levels)
-      update_statistics(
-        dosage = dosage[keep, , drop = FALSE],
-        sample.strata = analysis.strata,
-        population.levels = population.levels
-      )
+    if (verbose && length(marker.chunks) > 1L) {
+      message("  Marker chunk ", i, " of ", length(marker.chunks), " completed")
     }
   }
-
   if (n.common.markers == 0L) {
     rlang::abort("No marker has observed genotypes in every included population.")
   }

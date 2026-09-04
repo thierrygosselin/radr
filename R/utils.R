@@ -44,14 +44,22 @@ strip_rad <- function(
 
   # STRATA ----------
   if (rlang::has_name(x, "POP_ID")) {
-    strata <- genometranslator::generate_strata(data = x, pop.id = TRUE) %>%
+    strata <- dplyr::ungroup(x) |>
+      dplyr::transmute(POP_ID = .data[[if ("POP_ID" %in% names(x))
+        "POP_ID" else "STRATA"]], INDIVIDUALS = .data$INDIVIDUALS) |>
+      dplyr::distinct() |>
+      dplyr::arrange(.data$POP_ID, .data$INDIVIDUALS) %>%
       dplyr::mutate(
         ID_SEQ = seq_len(length.out = dplyr::n()),
         STRATA_SEQ = as.integer(factor(x = POP_ID, levels = unique(POP_ID)))
       )
     pop.levels <- as.character(unique(strata$POP_ID))
   } else {#STRATA
-    strata <- genometranslator::generate_strata(data = x, pop.id = FALSE) %>%
+    strata <- dplyr::ungroup(x) |>
+      dplyr::transmute(STRATA = .data[[if ("POP_ID" %in% names(x))
+        "POP_ID" else "STRATA"]], INDIVIDUALS = .data$INDIVIDUALS) |>
+      dplyr::distinct() |>
+      dplyr::arrange(.data$STRATA, .data$INDIVIDUALS) %>%
       dplyr::mutate(
         ID_SEQ = seq_len(length.out = dplyr::n()),
         STRATA_SEQ = as.integer(factor(x = STRATA, levels = unique(STRATA)))
@@ -176,5 +184,4 @@ join_rad <- function(x, s, m, g, env.arg = NULL) {
   env.arg$strata.bk <- env.arg$markers.meta.bk <- NULL
   return(x)
 }#End join_rad
-
 

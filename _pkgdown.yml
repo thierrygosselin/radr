@@ -64,12 +64,10 @@ reference:
   - filter_snp_number
   - filter_snp_position_read
 
-- title: Whitelists and blacklists
-  desc: Retain or exclude selected samples, markers, and individual genotypes.
+- title: Whitelists
+  desc: Retain selected markers.
   contents:
   - filter_whitelist
-  - filter_blacklist_genotypes
-  - read_blacklist_genotypes
 
 - title: Filter VCF files with bcftools
   desc: Apply selected filters directly to VCF files before or outside the GDS workflow.

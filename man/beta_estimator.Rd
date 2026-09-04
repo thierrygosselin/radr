@@ -11,14 +11,14 @@ beta_estimator(
   random.mating = FALSE,
   filename = NULL,
   chunk.size = 10000L,
-  parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE),
   verbose = TRUE
 )
 }
 \arguments{
-\item{data}{A GDS filepath, an open \code{SeqVarGDSClass} object, or a tidy data
-frame containing \code{MARKERS}, \code{INDIVIDUALS}, \code{STRATA}, and
-\code{ALT_DOSAGE}.}
+\item{data}{A \code{.gds} filepath or an open \code{SeqVarGDSClass} object.
+Import other formats first with \code{\link[genometranslator:read_genome]{genometranslator::read_genome()}}. Active
+sample and marker filters are respected and restored. Files opened here are
+closed on exit; supplied open GDS objects remain open.}
 
 \item{strata}{Optional strata filepath or data frame used to add or replace
 population assignments. It must contain \code{INDIVIDUALS} and \code{STRATA}.
@@ -43,13 +43,9 @@ Default: \code{random.mating = FALSE}.}
 files are written with suffixes \verb{_beta.tsv}, \verb{_within_population.tsv}, and
 \verb{_between_populations.tsv}. Default: \code{filename = NULL}.}
 
-\item{chunk.size}{Number of markers processed at once for GDS and tidy input.
+\item{chunk.size}{Number of markers processed at once from the GDS.
 Smaller chunks reduce peak memory use but may increase computation time.
 Default: \code{chunk.size = 10000L}.}
-
-\item{parallel.core}{Number of processor cores passed to
-\code{\link[genometranslator:read_genome]{genometranslator::read_genome()}} when file input must be imported.
-Default: \code{parallel.core = max(1L, parallel::detectCores() - 1L, na.rm = TRUE)}.}
 
 \item{verbose}{Logical. Display progress and a population-specific FST
 summary. Default: \code{verbose = TRUE}.}
@@ -79,7 +75,7 @@ input, biallelic status is checked before genotype chunks are read.
 
 The estimator uses only markers with at least one observed genotype in every
 included population. This common-marker requirement does not modify the GDS
-or input table. It ensures that all reported population estimates use the
+file. It ensures that all reported population estimates use the
 same loci and the same population reference.
 }
 \details{
