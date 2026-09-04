@@ -1,0 +1,185 @@
+---
+title: "Candidate copy-number variation"
+author: "Thierry Gosselin"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Candidate copy-number variation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## What this diagnostic does
+
+`detect_cnv()` screens retained read depth for **candidate relative-depth
+variation**. It does not establish absolute copy number, call breakpoints,
+or prove a duplication. Paralogy, allele dosage and copy-number variation
+are related but distinct: a duplicated locus can have constant copy number
+across every individual.
+
+McKinney et al. (2017) provide the conceptual foundation for combining
+heterozygosity and allelic read-ratio evidence to investigate paralogy.
+The supporting imbalance summary here is not their full HDplot statistic.
+The primary candidate flag currently uses relative depth, not HDplot
+classification. McKinney et al. (2018) extend this topic to allele-dosage
+inference; their likelihood model is not implemented here.
+
+Dorant et al. (2020) demonstrate the value of examining duplicated loci in
+marine Rapture data. Their normalized-depth approach motivates exploration,
+but radr does not reproduce that pipeline or its threshold classifications.
+Jiang et al. (2018) highlight why normalization must be treated as part of
+inference. The implementation here is a transparent median-ratio screen,
+not TMM, CODEX2, or a validated CNV genotyper.
+
+## Input and timing
+
+Use a biallelic GDS retaining per-sample depth. Genotype calls alone are
+insufficient. Run after sample QC, but before permanently discarding all
+high-depth/paralogous loci. Previously excluded loci are not reactivated.
+
+```{r, eval=FALSE}
+cnv <- radr::detect_cnv(
+  data = "study.gds",
+  strata = "sample_metadata.tsv",
+  batch.columns = c("PLATE", "PROJECT"),
+  locus.columns = c("CHROM", "LOCUS")
+)
+cnv$statistics
+cnv$metadata.associations
+cnv$group.batch.counts
+```
+
+Locus identity must be explicit. `LOCUS` is the original read/assembly locus,
+not necessarily a reference coordinate. The smallest active `VARIANT_ID`
+represents each locus. Multiple SNPs sharing reads are not summed. This avoids
+inflating support with SNP density, but representative-SNP depth can miss
+within-locus differences. Do not substitute individual variant identifiers
+for genuine locus metadata merely to make a RADseq analysis run.
+
+## Normalization and interpretation
+
+The geometric mean of positive depths is calculated per eligible locus.
+Each sample's median ratio to these means estimates its library factor.
+Scaled depths are divided by each locus's cohort median. Defaults require
+100 positive-depth baseline loci per sample and 10 samples per baseline locus.
+These are safeguards, not proof of adequate power or an unbiased baseline.
+
+Missing depth remains missing; observed zero remains zero. Zero cohort-median
+loci are uninformative because no relative baseline can be estimated. The
+baseline assumes most loci have stable copy number. Global ploidy changes and
+widespread copy-number differences can be normalized away.
+
+At least three samples with relative depth at or above 1.5, or at or below
+1/1.5, flag a candidate by default. These are **screening thresholds**, not
+statistical tests. A ratio of two does not establish four genomic copies.
+The output provides raw depth, relative depth, sample factors and representative
+variants so each signal can be traced back to its evidence.
+
+Allele imbalance is supporting evidence from called heterozygotes. It uses
+absolute deviation from 0.5, independent of REF/ALT orientation. Missing allele
+depth produces missing evidence, not a false zero imbalance.
+
+## Technical confounding and follow-up
+
+Metadata eta-squared is a descriptive association with log2(1 + relative depth),
+not a p-value. Categories with few samples can inflate it. Review the
+group-by-batch tables: if populations and plates coincide, an association does
+not identify its cause. No automatic batch correction is performed.
+
+Restriction-site mutations, capture efficiency, mapping ambiguity, DNA quality
+and library preparation can mimic copy-number signals. Validate promising
+loci using independent libraries, segregation, targeted assays or suitable
+whole-genome/long-read evidence. WGS CNV discovery requires genomic coverage
+and alignment evidence beyond a filtered SNP GDS.
+
+## Safeguards: evidence is not the same as technical reliability
+
+Dallaire et al. (2023) show why depth, heterozygosity and allele ratios must
+be scrutinized together. A deviant locus may represent a biological duplication,
+a mapping problem, or both. This diagnostic does not run ngsParalog and does
+not automatically discard deviant loci from CNV discovery.
+
+- `evidence` describes relative-depth candidates and availability of allele
+  balance; it does not assign absolute copy numbers.
+- `stratum.statistics` reports observed/expected heterozygosity, called sample
+  counts, heterozygotes with allele depth, and imbalance separately per stratum.
+  Small sample counts limit interpretation. These are descriptive summaries,
+  not a calibrated deviant-SNP likelihood test.
+- `technical.risks` separates supplied paralogy, repeat and mappability flags
+  from observed batch associations. Unknown checks are `NOT_ASSESSED`.
+- Independent validation can be recorded as `INDEPENDENT_SUPPORT`; it is never
+  inferred from the depth threshold alone.
+- Read-mapping audits and normalization-sensitivity benchmarking remain
+  `NOT_ASSESSED`; having a risk table is not equivalent to performing them.
+
+Supply a locus-level annotation table using exactly the same locus keys as
+the GDS, with one row per locus. Flags must be logical `TRUE`, `FALSE`, or `NA`.
+For example, reviewed `detect_paralogs()` results can contribute `PARALOG_FLAG`.
+Aggregate SNP-level results deliberately: a negative flag requires adequate
+assessment, not simply the absence of a positive SNP. Ensure assembly, sample
+selection and locus definitions are appropriate; these cannot be verified
+automatically from a bare flag table.
+
+```{r, eval=FALSE}
+annotations <- data.frame(
+  CHROM = c("1", "1"), LOCUS = c("locus_a", "locus_b"),
+  PARALOG_FLAG = c(TRUE, NA),
+  LOW_MAPPABILITY = c(NA, FALSE),
+  REPEAT_OVERLAP = c(TRUE, FALSE)
+)
+cnv <- radr::detect_cnv("study.gds", strata = "samples.tsv",
+  batch.columns = "PLATE", risk.annotations = annotations)
+cnv$evidence
+cnv$technical.risks
+cnv$stratum.statistics
+```
+
+## Why compare other methods?
+
+Comparing approaches is good scientific practice: distinct models expose
+different assumptions and failure modes. Dorant motivates the RAD/capture
+application; McKinney distinguishes paralogy detection from dosage inference;
+CODEX2 addresses coverage normalization; CNVpytor combines WGS depth with allele
+imbalance; Genome STRiP supports population-scale multiallelic CNV inference.
+Schrider and Hahn provide evolutionary context. Citing these methods does not
+mean radr implements them or has completed comparative benchmarking. The
+current screen should be evaluated against suitable alternatives and independent
+validation before drawing biological conclusions.
+
+## References
+
+McKinney, G. J., Waples, R. K., Seeb, L. W., and Seeb, J. E. (2017).
+Paralogs are revealed by proportion of heterozygotes and deviations in read
+ratios in genotyping-by-sequencing data from natural populations.
+*Molecular Ecology Resources*, 17, 656-669.
+<https://doi.org/10.1111/1755-0998.12613>
+
+McKinney, G. J., Waples, R. K., Pascal, C. E., Seeb, L. W., and Seeb, J. E.
+(2018). Resolving allele dosage in duplicated loci using genotyping-by-sequencing
+data: A path forward for population genetic analysis.
+*Molecular Ecology Resources*, 18, 570-579.
+<https://doi.org/10.1111/1755-0998.12763>
+
+Dorant, Y., et al. (2020). Copy number variants outperform SNPs to reveal
+genotype-temperature association in a marine species. *Molecular Ecology*.
+<https://doi.org/10.1111/mec.15565>
+
+Jiang, Y., et al. (2018). CODEX2: full-spectrum copy number variation detection
+by high-throughput DNA sequencing. *Genome Biology*, 19, 202.
+<https://doi.org/10.1186/s13059-018-1578-y>
+
+Dallaire, X., et al. (2023). Widespread Deviant Patterns of Heterozygosity in
+Whole-Genome Sequencing Due to Autopolyploidy, Repeated Elements, and Duplication.
+*Genome Biology and Evolution*, 15, evad229.
+<https://doi.org/10.1093/gbe/evad229>
+
+Suvakov, M., Panda, A., Diesh, C., Holmes, I., and Abyzov, A. (2021).
+CNVpytor: a tool for copy number variation detection and analysis from read depth
+and allele imbalance in whole-genome sequencing. *GigaScience*, 10, giab074.
+<https://doi.org/10.1093/gigascience/giab074>
+
+Handsaker, R. E., et al. (2015). Large multiallelic copy number variations in
+humans. *Nature Genetics*, 47, 296-303. <https://doi.org/10.1038/ng.3200>
+
+Schrider, D. R., and Hahn, M. W. (2010). Gene copy-number polymorphism in nature.
+*Proceedings of the Royal Society B*, 277, 3213-3221.
+<https://doi.org/10.1098/rspb.2010.1180>

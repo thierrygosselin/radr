@@ -38,6 +38,7 @@ reference:
   - detect_all_missing
   - detect_allele_problems
   - detect_biallelic_problems
+  - detect_cnv
   - detect_duplicate_genomes
   - detect_het_outliers
   - detect_inversions
@@ -92,7 +93,6 @@ reference:
   - detect_microsatellites
   - sexy_markers
   - run_bayescan
-  - check_bayescan
   - install_bayescan
 
 - title: Superseded interfaces

@@ -32,3 +32,4 @@ The normalized BayeScan executable path.
 Searches an explicit path, the system \code{PATH}, and optionally a Conda
 environment for a BayeScan 2.1 executable.
 }
+\keyword{internal}

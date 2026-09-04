@@ -31,6 +31,36 @@ make_popgen_gds <- function(readonly = TRUE) {
   )
 }
 
+test_that("MCMC is stratified, reproducible, and skips insufficient groups", {
+  fixture <- make_popgen_gds()
+  on.exit({
+    SeqArray::seqClose(fixture$gds)
+    unlink(fixture$files)
+  }, add = TRUE)
+  before <- SeqArray::seqGetFilter(fixture$gds)
+  run <- function(...) detect_het_outliers(
+    fixture$gds, fixture$metadata, nreps = 30, burn.in = 10,
+    min.mcmc.samples = 4, min.mcmc.markers = 1,
+    write.files = FALSE, verbose = FALSE, ...
+  )
+  result <- run()
+  expect_setequal(result$posterior.summary$GROUP, c("A", "B"))
+  expect_true(all(result$posterior.summary$N_SAMPLES == 6))
+  expect_true(all(result$posterior.summary$STATUS == "FITTED"))
+  expect_equal(nrow(result$mcmc.trace), 60)
+  expect_false(any(vapply(result$mcmc.variant.id, function(x) 2L %in% x,
+                          logical(1))))
+  expect_equal(result$mcmc.trace, run()$mcmc.trace)
+  expect_identical(SeqArray::seqGetFilter(fixture$gds), before)
+  skipped <- detect_het_outliers(
+    fixture$gds, fixture$metadata, nreps = 30, burn.in = 10,
+    write.files = FALSE, verbose = FALSE
+  )
+  expect_true(all(skipped$posterior.summary$STATUS == "INSUFFICIENT_SAMPLES"))
+  expect_equal(nrow(skipped$mcmc.trace), 0)
+  expect_null(skipped$trace.plot)
+})
+
 test_that("modern population diagnostics are GDS-native and restore filters", {
   skip_if_not_installed("SeqArray")
   fixture <- make_popgen_gds()

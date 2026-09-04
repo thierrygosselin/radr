@@ -82,7 +82,7 @@ locate_bayescan_in_conda <- function(conda.env, conda = NULL) {
 #' Default: \code{verbose = TRUE}.
 #'
 #' @return The normalized BayeScan executable path.
-#' @export
+#' @keywords internal
 check_bayescan <- function(
   bayescan.path = NULL,
   conda.env = "genomics",

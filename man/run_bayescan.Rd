@@ -79,7 +79,7 @@ Default: \code{iteration.subsample = 1}.}
 Default: \code{parallel.core = parallel::detectCores() - 1}.}
 
 \item{bayescan.path}{Character. Full path to the BayeScan executable. When
-\code{NULL}, \code{check_bayescan()} searches the system \code{PATH} and the
+\code{NULL}, the function searches the system \code{PATH} and the
 environment specified by \code{conda.env}.
 Default: \code{bayescan.path = NULL}. See details.}
 

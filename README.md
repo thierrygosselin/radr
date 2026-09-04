@@ -90,8 +90,9 @@ visibility:
 ``` r
 Sys.which(c("bcftools", "bayescan"))
 radr::radr_dependencies()
-radr::check_bayescan()
 ```
+
+BayeScan is located and validated automatically by `run_bayescan()`.
 
 ## A minimal workflow
 

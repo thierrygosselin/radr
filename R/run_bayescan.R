@@ -96,7 +96,7 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' Default: \code{parallel.core = parallel::detectCores() - 1}.
 
 #' @param bayescan.path Character. Full path to the BayeScan executable. When
-#' \code{NULL}, \code{check_bayescan()} searches the system \code{PATH} and the
+#' \code{NULL}, the function searches the system \code{PATH} and the
 #' environment specified by \code{conda.env}.
 #' Default: \code{bayescan.path = NULL}. See details.
 #' @param conda.env Conda environment name or prefix used when discovering
