@@ -42,18 +42,22 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' on the computer (\href{http://cmpg.unibe.ch/software/BayeScan/download.html}{install instructions}).
 #' For UNIX machines, please install the 64bits version.
 
-#' @param data BayeScan input file, GDS file or open GDS object, or tidy genomic
-#' data.
+#' @param data BayeScan input file, GDS file or open GDS object.
 #' \enumerate{
 #' \item Path to BayeScan input file.
 #' Generate this with \code{\link[genometranslator]{write_bayescan}}.
 #' \item GDS file or open GDS object. Population assignments are obtained from
 #' the individual metadata stored in the GDS.
-#' \item Tidy genomic data file or object. Tidy data and GDS input can be used
-#' with \code{subsample} and \code{iteration.subsample}.
+#' \item Subsampling requires GDS input and temporarily selects samples without
+#' converting the full dataset to a tidy table. Original selections are restored.
 #' }
 #' @param n Integer. Number of output iterations.
 #' Default: \code{n = 5000}.
+#' @section Execution safety:
+#' Sampling parameters and prior odds are validated before execution. File paths
+#' are quoted, nonzero exit status stops the analysis, and exactly one FST results
+#' file is required. The input GDS is not modified. Exported allele counts and
+#' marker/population dictionaries are retained in each results directory.
 #' @param thin Integer. Thinning interval.
 #' Default: \code{thin = 10}.
 #' @param nbp Integer. Number of pilot runs.
@@ -414,6 +418,17 @@ run_bayescan <- function(
     rlang::abort("fdr must be a single number greater than 0 and less than 1")
   }
 
+  for (name in c("n", "thin", "nbp", "pilot", "burn",
+      "iteration.subsample", "parallel.core")) {
+    value <- get(name)
+    if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
+        value < 1 || value != floor(value))
+      rlang::abort(paste(name, "must be a positive integer."))
+  }
+  if (!is.numeric(pr_odds) || length(pr_odds) != 1L ||
+      !is.finite(pr_odds) || pr_odds <= 0)
+    rlang::abort("pr_odds must be a positive finite number.")
+
   # Results folder and reproducibility log ------------------------------------
   path.folder <- tgbase::generate_folder(
     folder = "run_bayescan",
@@ -440,50 +455,30 @@ run_bayescan <- function(
   # For a direct GDS run, generate the BayeScan input in the results folder.
   if (is.null(subsample) &&
       data.type %in% c("SeqVarGDSClass", "gds.file")) {
-    bayescan.prefix <- file.path(path.folder, "radr_bayescan_input")
-    genometranslator::write_bayescan(
-      data = data,
-      filename = bayescan.prefix,
-      parallel.core = parallel.core,
-      verbose = verbose
-    )
-    data <- paste0(bayescan.prefix, "_bayescan.txt")
+    exported <- genometranslator::write_bayescan(
+      data = data, filename = "radr_bayescan_input",
+      path.folder = path.folder, verbose = verbose)
+    data <- exported$files[1]
   }
 
   # Subsampling ----------------------------------------------------------------
   if (!is.null(subsample)) {
     message("Subsampling: selected")
-    if (data.type %in% c("SeqVarGDSClass", "gds.file")) {
-      data <- genometranslator::tidy_genome(
-        data = data,
-        pop.id = FALSE,
-        calibrate.alleles = FALSE,
-        parallel.core = parallel.core,
-        close.gds = identical(data.type, "gds.file")
-      )
-    } else if (data.type %in% c("fst.file", "parquet.file", "tbl_df", "data.frame")) {
-      data <- genometranslator::read_genome(data = data, import.metadata = TRUE)
-    } else if (is.vector(data)) {
-      rlang::abort(
-        "Subsampling requires a GDS file/object or tidy genomic data."
-      )
-    }
-
-    { # Validate tidy data
-      columns.tidy <- colnames(data)
-      want <- c("GT_VCF", "GT_VCF_NUC", "GT", "ALT_DOSAGE")
-      want.check <- TRUE %in% (unique(want %in% columns.tidy))
-      want.more <- c("MARKERS", "INDIVIDUALS", "STRATA")
-      want.more.check <- isTRUE(unique(want.more %in% columns.tidy))
-      is.tidy <- isTRUE(unique(c(want.check, want.more.check)))
-      if (!is.tidy) {
-        rlang::abort(
-          "Subsampling requires MARKERS, INDIVIDUALS, STRATA and genotypes."
-        )
-      }
-    }
-
-    ind.pop.df <- dplyr::distinct(.data = data, STRATA, INDIVIDUALS)
+    if (!data.type %in% c("SeqVarGDSClass", "gds.file"))
+      rlang::abort("Subsampling requires a GDS file or object.")
+    owned.gds <- identical(data.type, "gds.file")
+    if (owned.gds) data <- SeqArray::seqOpen(data, readonly = TRUE)
+    SeqArray::seqFilterPush(data)
+    on.exit({
+      SeqArray::seqFilterPop(data)
+      if (owned.gds) SeqArray::seqClose(data)
+    }, add = TRUE)
+    ind.pop.df <- genometranslator::extract_individuals_metadata(data)
+    active.ids <- as.character(SeqArray::seqGetData(data, "sample.id"))
+    ind.pop.df <- ind.pop.df[ind.pop.df$INDIVIDUALS %in% active.ids, ]
+    ind.pop.df <- dplyr::select(ind.pop.df, STRATA, INDIVIDUALS)
+    if (anyNA(ind.pop.df$STRATA) || anyDuplicated(ind.pop.df$INDIVIDUALS))
+      rlang::abort("Subsampling requires unique sample IDs and population assignments.")
 
     # Print some statistics ----------------------------------------------------
     strata.stats <- ind.pop.df %>%
@@ -496,19 +491,15 @@ run_bayescan <- function(
     message("Number of populations: ", n.pop)
     message("Number of individuals: ", n.ind)
     message("Number of ind/pop:\n", stringi::stri_join(strata.stats$STRATA, collapse = "\n"))
-    message("Number of markers: ", dplyr::n_distinct(data$MARKERS))
+    message("Number of markers: ", length(SeqArray::seqGetData(data, "variant.id")))
 
 
-    if (subsample == "min") {
-      subsample <- ind.pop.df %>%
-        dplyr::group_by(STRATA) %>%
-        dplyr::tally(.) %>%
-        dplyr::filter(n == min(n)) %>%
-        dplyr::ungroup(.) %>%
-        dplyr::select(n) %>%
-        purrr::flatten_int(.)
-      message("\nSubsample used: ", subsample)
-    }
+    if (identical(subsample, "min")) subsample <- min(table(ind.pop.df$STRATA))
+    if (!is.numeric(subsample) || length(subsample) != 1L ||
+        !is.finite(subsample) || subsample <= 0 ||
+        (subsample >= 1 && subsample != floor(subsample)) ||
+        subsample > min(table(ind.pop.df$STRATA)))
+      rlang::abort("subsample must be 'min', a fraction, or a feasible sample count.")
     subsample.list <- purrr::map(
       .x = 1:iteration.subsample,
       .f = subsampling_data,
@@ -836,12 +827,14 @@ subsampling_data <- function(
       set.seed(random.seed)
     }
 
-    if (subsample > 1) {# integer
+    if (subsample >= 1) {# integer
       subsample.select <- ind.pop.df %>%
         dplyr::group_by(STRATA) %>%
         dplyr::sample_n(tbl = ., size = subsample, replace = FALSE)# sampling individuals for each pop
     }
     if (subsample < 1) { # proportion
+      if (any(round(table(ind.pop.df$STRATA) * subsample) < 1L))
+        rlang::abort("The subsampling fraction would leave an empty population.")
       subsample.select <- ind.pop.df %>%
         dplyr::group_by(STRATA) %>%
         dplyr::sample_frac(tbl = ., size = subsample, replace = FALSE)# sampling individuals for each pop
@@ -915,17 +908,14 @@ bayescan_one <- function(
     # Keep only the subsample
     bayescan.filename <- stringi::stri_join(
       "radr_bayescan_subsample_", subsample.id)
-    bayescan.data <- dplyr::semi_join(
-      data,
-      x,
-      by = c("STRATA", "INDIVIDUALS")
-    )
-    bayescan.sub <- genometranslator::write_bayescan(
-      data = bayescan.data,
-      parallel.core = parallel.core.bk,
-      filename = bayescan.filename)
+    SeqArray::seqFilterPush(data)
+    bayescan.sub <- tryCatch({
+      SeqArray::seqSetFilter(data, sample.id = x$INDIVIDUALS, verbose = FALSE)
+      genometranslator::write_bayescan(data = data,
+        filename = bayescan.filename, path.folder = path.folder.subsample)
+    }, finally = SeqArray::seqFilterPop(data))
     x <- NULL #unused object
-    data <- paste0(bayescan.filename, "_bayescan.txt")
+    data <- bayescan.sub$files[1]
   }
 
   # Moving input file in folder
@@ -974,25 +964,21 @@ bayescan_one <- function(
   }
   pop.dic.file <- markers.dic.file <- bayescan.sub <- NULL
   # command --------------------------------------------------------------------
-  command.arguments <- paste(new.data, output.folder, all.trace, parallel.core, n, thin, nbp, pilot, burn, pr.odds)
-
-  os <- Sys.info()[['sysname']]
-
-  if (os == "Windows") {
-    system(command = paste0(bayescan.path, command.arguments))
-  } else {
-    system2(
-      command = bayescan.path,
-      args = command.arguments,
-      stderr = log.file, stdout = log.file
-    )
-  }
-
+  command.arguments <- paste(shQuote(new.data), "-od", shQuote(path.folder.subsample),
+    all.trace, parallel.core, n, thin, nbp, pilot, burn, pr.odds)
+  status <- system2(command = bayescan.path, args = command.arguments,
+    stderr = log.file, stdout = log.file)
+  if (!identical(as.integer(status), 0L))
+    rlang::abort(paste("BayeScan failed; inspect", log.file))
+  result.files <- list.files(path.folder.subsample,
+    pattern = "_fst\\.txt$", full.names = TRUE)
+  if (length(result.files) != 1L)
+    rlang::abort("Expected exactly one BayeScan FST results file.")
 
   # Importing BayeScan file  ---------------------------------------------------
   message("Importing BayeScan results")
   res$bayescan <- suppressWarnings(readr::read_table2(
-    file = list.files(path = path.folder.subsample, pattern = "_fst.txt", full.names = TRUE),
+    file = result.files,
     skip = 1,
     col_names = c("BAYESCAN_MARKERS", "POST_PROB", "LOG10_PO", "Q_VALUE", "ALPHA", "FST"),
     col_types = c("iddddd"))) %>%

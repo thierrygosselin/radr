@@ -23,15 +23,14 @@ run_bayescan(
 )
 }
 \arguments{
-\item{data}{BayeScan input file, GDS file or open GDS object, or tidy genomic
-data.
+\item{data}{BayeScan input file, GDS file or open GDS object.
 \enumerate{
 \item Path to BayeScan input file.
 Generate this with \code{\link[genometranslator]{write_bayescan}}.
 \item GDS file or open GDS object. Population assignments are obtained from
 the individual metadata stored in the GDS.
-\item Tidy genomic data file or object. Tidy data and GDS input can be used
-with \code{subsample} and \code{iteration.subsample}.
+\item Subsampling requires GDS input and temporarily selects samples without
+converting the full dataset to a tidy table. Original selections are restored.
 }}
 
 \item{n}{Integer. Number of output iterations.
@@ -276,6 +275,14 @@ downloaded the last BayeScan version, I would try this :
 
 Make sure to give permission: \code{sudo chmod 777 /usr/local/bin/bayescan}
 }
+\section{Execution safety}{
+
+Sampling parameters and prior odds are validated before execution. File paths
+are quoted, nonzero exit status stops the analysis, and exactly one FST results
+file is required. The input GDS is not modified. Exported allele counts and
+marker/population dictionaries are retained in each results directory.
+}
+
 \examples{
 \dontrun{
 # library(radr)
