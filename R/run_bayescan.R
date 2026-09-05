@@ -23,7 +23,9 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' @title Run a BayeScan genome scan
 #' @description Run BayeScan, import its results, classify loci using a chosen
 #' false-discovery-rate threshold, and generate diagnostic tables, figures,
-#' whitelists, and blacklists.
+#' whitelists, and blacklists. BayeScan is retained as a legacy FST-outlier
+#' method for complementary and sensitivity analyses; its candidates should not
+#' be treated as confirmed targets of selection from this analysis alone.
 #'
 #' \strong{Function highlights:}
 #'
@@ -58,6 +60,23 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' are quoted, nonzero exit status stops the analysis, and exactly one FST results
 #' file is required. The input GDS is not modified. Exported allele counts and
 #' marker/population dictionaries are retained in each results directory.
+#'
+#' BayeScan 2.1 itself performs limited validation of its input and command-line
+#' values. Its native reader assumes complete population blocks, consecutive
+#' population and locus indices, identical allele classes and allele ordering
+#' among populations, and internally consistent non-negative allele counts.
+#' Malformed external files may therefore fail unclearly or be interpreted
+#' incorrectly. The implementation also does not expose a reproducible random
+#' seed, and exact MCMC reproduction can be affected by multicore execution.
+#'
+#' Supplying GDS input is safer because this function delegates conversion to
+#' \code{\link[genometranslator]{write_bayescan}}. That writer validates
+#' population assignments, polymorphism, call availability, partial genotypes,
+#' global allele ordering, and integer allele counts, and retains identifier
+#' dictionaries. A pre-existing BayeScan file is accepted for compatibility,
+#' but these guarantees cannot be made for a file produced elsewhere. Inspect
+#' BayeScan's verification file and confirm the counts against their source
+#' before interpreting such a run.
 #' @param thin Integer. Thinning interval.
 #' Default: \code{thin = 10}.
 #' @param nbp Integer. Number of pilot runs.
@@ -213,7 +232,7 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' produce valid p-values, including a typical pcadapt workflow.
 #'
 #' \strong{Limitations and complementary genome scans:}
-#' BayeScan is an FST-outlier method. Its results depend on how well the model
+#' BayeScan is a legacy FST-outlier method. Its results depend on how well the model
 #' represents population history and sampling. Hierarchical population
 #' structure, isolation by distance, range expansion, bottlenecks, unequal
 #' effective population sizes, admixture, linked markers, low-information
@@ -266,6 +285,9 @@ classify_bayescan_selection <- function(alpha, q.value, fdr = 0.05) {
 #' with \code{\link[genometranslator]{write_pcadapt}}. Environmental association
 #' or haplotype-aware methods may provide additional evidence when suitable
 #' covariates or genomic information are available.
+#' Retaining BayeScan is useful for comparison with earlier studies and as one
+#' analysis with a distinct model, but it should not be the only modern genome
+#' scan reported.
 #'
 #' Comparisons among genome-scan methods are conditional on the scenarios used
 #' to evaluate them. For example, the elevated false-discovery rate and reduced
