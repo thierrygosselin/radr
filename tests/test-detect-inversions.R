@@ -118,6 +118,15 @@ stopifnot(all(result$arrangement.genotypes$arrangement_confidence >= 0.5))
 stopifnot(nrow(result$homokaryotype.whitelist) > 0L)
 stopifnot(dir.exists(result$path.folder))
 stopifnot(file.exists(file.path(result$path.folder, "inversion_windows.tsv")))
+strata.files <- list.files(
+  result$path.folder,
+  pattern = "_arrangement_by_strata\\.tsv$",
+  full.names = TRUE
+)
+stopifnot(length(strata.files) >= 1L)
+strata.arrangements <- readr::read_tsv(strata.files[1L], show_col_types = FALSE)
+stopifnot(all(c("individual", "STRATA", "arrangement") %in%
+  names(strata.arrangements)))
 stopifnot(file.exists(file.path(
   result$path.folder, "inversion_arrangement_genotypes.tsv"
 )))

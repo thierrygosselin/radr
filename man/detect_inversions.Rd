@@ -187,6 +187,9 @@ arrangement differentiation, and optional LD matrices;
 putative arrangement genotype and relative assignment confidence;
 \item \code{homokaryotype.whitelist}: candidate-specific \code{AA} and \code{BB}
 individuals, plus \code{homokaryotype.all.candidates} for the intersection;
+when \code{strata} includes \code{STRATA}, candidate output folders also contain
+arrangement tables with \code{individual}, \code{STRATA}, and inferred \code{AA}, \code{AB},
+or \code{BB} assignments;
 \item \code{sensitivity}: optional summaries for additional fixed-SNP window
 sizes;
 \item \code{chromosome.pca}: independent chromosome or linkage-group PCA
@@ -308,6 +311,20 @@ Scores of 0--2 are labelled \code{weak}, 3--4 \code{moderate}, and 5 \code{stron
 labels prioritise review; they do not convert a candidate into a structurally
 confirmed inversion. Known-region overlaps are reported separately and do
 not increase or decrease the evidence score.
+}
+
+\section{Differentiation and centromere alternatives}{
+
+A high differentiation peak is not specific to an inversion. Akopyan et al.
+(2025) showed that broad inversion haploblocks can combine elevated FST,
+regional PCA separation, suppressed recombination, and sometimes elevated
+Dxy, whereas putative centromeres can produce narrower FST peaks with reduced
+diversity and low Dxy. Accordingly, FST is treated here as regional contrast,
+not as structural confirmation. Candidate interpretation should combine the
+PCA, LD, boundary, diversity, Dxy, recombination, centromere, repeat, and
+assembly-context evidence where those annotations are available. The
+Akopyan et al. analysis is a downstream methodological reference; it is not
+duplicated as a second inversion-discovery workflow in this function.
 
 Every candidate is described conservatively. A local-PCA signal can reflect
 a putative inversion-associated haploblock, but it can also arise near a
@@ -440,6 +457,11 @@ from DNA sequence data. Genetics, 132, 583-589.
 Bhatia G, Patterson N, Sankararaman S, Price AL (2013). Estimating and
 interpreting FST: the impact of rare variants. Genome Research, 23,
 1514-1521. \doi{10.1101/gr.154831.113}.
+
+Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025). Genetic
+Differentiation is Constrained to Chromosomal Inversions and Putative
+Centromeres in Locally Adapted Populations With Higher Gene Flow. Molecular
+Biology and Evolution, 42, msaf092. \doi{10.1093/molbev/msaf092}.
 }
 \author{
 Thierry Gosselin \email{Thierry.Gosselin@csiro.au}

@@ -320,6 +320,9 @@
 #'     putative arrangement genotype and relative assignment confidence;
 #'   \item `homokaryotype.whitelist`: candidate-specific `AA` and `BB`
 #'     individuals, plus `homokaryotype.all.candidates` for the intersection;
+#'     when `strata` includes `STRATA`, candidate output folders also contain
+#'     arrangement tables with `individual`, `STRATA`, and inferred `AA`, `AB`,
+#'     or `BB` assignments;
 #'   \item `sensitivity`: optional summaries for additional fixed-SNP window
 #'     sizes;
 #'   \item `chromosome.pca`: independent chromosome or linkage-group PCA
@@ -925,6 +928,15 @@ detect_inversions <- function(
       mean_heterozygote_allele_balance = numeric(),
       assignment_stability = numeric()
     )
+  }
+  if (!is.null(sample.metadata) && "STRATA" %in% names(sample.metadata)) {
+    arrangement.genotypes <- arrangement.genotypes |>
+      dplyr::left_join(
+        sample.metadata |>
+          dplyr::select(.data$INDIVIDUALS, .data$STRATA) |>
+          dplyr::rename(individual = .data$INDIVIDUALS),
+        by = "individual"
+      )
   }
   homokaryotype.whitelist <- arrangement.genotypes |>
     dplyr::filter(.data$arrangement_dosage %in% c(0L, 2L)) |>
@@ -3017,6 +3029,19 @@ detect_inversions <- function(
         dplyr::select(.data$individual, .data$arrangement),
       paste0(prefix, "_homokaryotypes_whitelist.tsv")
     )
+    if ("STRATA" %in% names(arrangement.genotypes)) {
+      write_table(
+        arrangement.table |>
+          dplyr::left_join(
+            arrangement.genotypes |>
+              dplyr::filter(.data$candidate_id == diagnostic$candidate_id) |>
+              dplyr::select(.data$individual, .data$STRATA),
+            by = "individual"
+          ) |>
+          dplyr::select(.data$individual, .data$STRATA, .data$arrangement),
+        paste0(prefix, "_arrangement_by_strata.tsv")
+      )
+    }
   })
 
   plots <- list()
