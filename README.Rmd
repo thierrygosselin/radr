@@ -32,6 +32,35 @@ developed into two packages occupying distinct computational niches.
 * [`radr`](https://thierrygosselin.github.io/radr/) explores, diagnoses, visualizes, and filters individual genomic data created by
 [`genometranslator`](https://thierrygosselin.github.io/genometranslator/).
 
+## Where radr excels
+
+**radr swims in a much less forgiving genomic universe than the large,
+highly curated human datasets for which many genomic tools were designed.**
+It is built for the realities of population genomics in model and non-model
+organisms, including:
+
+* RADseq and other reduced-representation datasets;
+* fragmented or incomplete reference assemblies;
+* uneven sequencing depth;
+* small or unbalanced populations;
+* allele dropout and locus dropout;
+* batch, plate, and project effects;
+* population-structured missingness; and
+* weak differentiation, where technical effects may resemble biological
+  structure.
+
+These conditions change what **robust** means. In species with low
+\(F_{\mathrm{ST}}\), small technical biases can be comparable in magnitude to
+the biological signal under investigation. Missingness therefore cannot safely
+be treated only as a computational inconvenience: it may itself be a biological
+or experimental covariate.
+
+Accordingly, radr emphasizes transparent diagnostics, recalculation after
+samples or markers are removed, strata-aware summaries, and explicit warnings
+when technical structure may affect biological interpretation. It does not
+assume that upstream genotyping produced a uniformly complete or perfectly
+balanced dataset.
+
 ## Installation
 
 Starting from a basic R installation, install the CRAN installer and required

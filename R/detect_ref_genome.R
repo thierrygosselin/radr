@@ -148,6 +148,27 @@ detect_ref_genome <- function(data = NULL, verbose = TRUE) {
     data.type <- "SeqVarGDSClass"
   }
 
+  # GDS files written by genometranslator store this decision as a scalar
+  # metadata node. Read it directly and avoid an expensive fallback scan.
+  translator.ref.node <- gdsfmt::index.gdsn(
+    node = data,
+    path = "genometranslator/reference.genome",
+    silent = TRUE
+  )
+  if (!is.null(translator.ref.node)) {
+    translator.ref <- tryCatch(gdsfmt::read.gdsn(translator.ref.node),
+                               error = function(e) NULL)
+    if (length(translator.ref) == 1L &&
+        (is.logical(translator.ref) ||
+         (is.numeric(translator.ref) && translator.ref %in% c(0, 1)))) {
+      if (verbose) message(
+        "Reads assembly: ",
+        if (isTRUE(translator.ref)) "reference-assisted" else "de novo"
+      )
+      return(isTRUE(as.logical(translator.ref)))
+    }
+  }
+
   # Check GDS for radr node ------------------------------------------------
   try.seq.summary <- FALSE
   try.more        <- FALSE
@@ -489,4 +510,3 @@ extract_ref_genome <- function(data = NULL, verbose = FALSE) {
   if (verbose) message("No reference genome filename detected in GDS.")
   return(NULL)
 }#END extract_ref_genome
-

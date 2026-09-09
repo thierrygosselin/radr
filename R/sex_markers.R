@@ -58,6 +58,8 @@
 #'   biological background, guidance on discovery data, SilicoDArT and VCF
 #'   workflows, interpretation, alternative methods, and validation.
 #' @export
+#' @author Floriaan Devloo-Delva \email{Floriaan.Devloo-Delva@@csiro.au} and Thierry Gosselin \email{Thierry.Gosselin@@csiro.au}
+
 #' @examples
 #' \dontrun{
 #' result <- radr::sexy_markers(

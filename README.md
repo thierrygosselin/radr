@@ -7,7 +7,7 @@
 state and is being actively
 developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
 [![packageversion](https://img.shields.io/badge/Package%20version-0.0.0.9000-orange.svg)](commits/main)
-[![Last-changedate](https://img.shields.io/badge/last%20change-2026--09--05-brightgreen.svg)](/commits/main)
+[![Last-changedate](https://img.shields.io/badge/last%20change-2026--09--08-brightgreen.svg)](/commits/main)
 <!-- badges: end -->
 
 ## Origin of the name
@@ -28,6 +28,35 @@ computational niches.
 - [`radr`](https://thierrygosselin.github.io/radr/) explores, diagnoses,
   visualizes, and filters individual genomic data created by
   [`genometranslator`](https://thierrygosselin.github.io/genometranslator/).
+
+## Where radr excels
+
+**radr swims in a much less forgiving genomic universe than the large,
+highly curated human datasets for which many genomic tools were
+designed.** It is built for the realities of population genomics in
+model and non-model organisms, including:
+
+- RADseq and other reduced-representation datasets;
+- fragmented or incomplete reference assemblies;
+- uneven sequencing depth;
+- small or unbalanced populations;
+- allele dropout and locus dropout;
+- batch, plate, and project effects;
+- population-structured missingness; and
+- weak differentiation, where technical effects may resemble biological
+  structure.
+
+These conditions change what **robust** means. In species with low
+$F_{\mathrm{ST}}$, small technical biases can be comparable in magnitude
+to the biological signal under investigation. Missingness therefore
+cannot safely be treated only as a computational inconvenience: it may
+itself be a biological or experimental covariate.
+
+Accordingly, radr emphasizes transparent diagnostics, recalculation
+after samples or markers are removed, strata-aware summaries, and
+explicit warnings when technical structure may affect biological
+interpretation. It does not assume that upstream genotyping produced a
+uniformly complete or perfectly balanced dataset.
 
 ## Installation
 
@@ -152,7 +181,7 @@ for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
 > data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-05.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-08.
 
 ## Website and support
 

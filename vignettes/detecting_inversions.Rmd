@@ -298,6 +298,14 @@ insufficient data. Where dense sequence data and defensible population groups
 are available, $F_{ST}$, diversity, and $d_{XY}$ provide valuable downstream
 validation alongside the `radr` candidate scan.
 
+Akopyan et al. analysed approximately 1.4x whole-genome Illumina data with
+genotype likelihoods in ANGSD. This is a useful model for a later validation
+stage when coverage is low: uncertainty-aware estimates of differentiation,
+diversity and absolute divergence can complement the hard-genotype regional
+PCA and LD screening performed here. It should not be read as meaning that
+`detect_inversions()` accepts ANGSD likelihoods directly; likelihood-based
+downstream analyses require an appropriate likelihood-aware workflow.
+
 ### Cross-reference candidates with chromosome-resolved $F_{ST}$
 
 Population differentiation is most informative when it is plotted along each
@@ -1061,6 +1069,7 @@ Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025) Genetic
 differentiation is constrained to chromosomal inversions and putative
 centromeres in locally adapted populations with higher gene flow.
 *Molecular Biology and Evolution*, 42, msaf092.
+[https://doi.org/10.1093/molbev/msaf092](https://doi.org/10.1093/molbev/msaf092)
 
 Campbell MA, Anderson EC, Garza JC, Pearse DE (2021) Polygenic basis and the
 role of genome duplication in adaptation to similar selective environments.

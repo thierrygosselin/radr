@@ -117,3 +117,6 @@ Run \code{vignette("detecting_sex_linked_markers", package = "radr")} for the
 biological background, guidance on discovery data, SilicoDArT and VCF
 workflows, interpretation, alternative methods, and validation.
 }
+\author{
+Floriaan Devloo-Delva \email{Floriaan.Devloo-Delva@csiro.au} and Thierry Gosselin \email{Thierry.Gosselin@csiro.au}
+}
