@@ -14,6 +14,7 @@ filter_hwe(
   min.samples = 10L,
   min.call.rate = 0.8,
   chunk.size = 2000L,
+  interactive.filter = FALSE,
   verbose = TRUE,
   ...
 )
@@ -38,6 +39,9 @@ is performed independently within each stratum.}
 \item{min.call.rate}{Minimum marker call rate within a stratum.}
 
 \item{chunk.size}{Number of variants read at a time.}
+
+\item{interactive.filter}{If \code{TRUE}, write the HWE summaries first and ask
+for the mid-p and strata thresholds before applying the filter.}
 
 \item{verbose}{Display progress and summary messages.}
 

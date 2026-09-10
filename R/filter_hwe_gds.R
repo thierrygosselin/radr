@@ -20,6 +20,8 @@
 #' @param min.samples Minimum samples in a stratum.
 #' @param min.call.rate Minimum marker call rate within a stratum.
 #' @param chunk.size Number of variants read at a time.
+#' @param interactive.filter If `TRUE`, write the HWE summaries first and ask
+#'   for the mid-p and strata thresholds before applying the filter.
 #' @param verbose Display progress and summary messages.
 #' @param ... Common argument `path.folder`.
 #' @return The filtered open GDS connection with evidence and audit files.
@@ -40,10 +42,14 @@ filter_hwe <- function(
     data, strata = NULL, group.column = "STRATA", p.threshold = 1e-4,
     strata.threshold = 1L, adjustment = c("BH", "none"),
     min.samples = 10L, min.call.rate = 0.8, chunk.size = 2000L,
-    verbose = TRUE, ...
+    interactive.filter = FALSE, verbose = TRUE, ...
 ) {
   force(data)
   adjustment <- match.arg(adjustment)
+  if (!is.logical(interactive.filter) || length(interactive.filter) != 1L ||
+      is.na(interactive.filter)) {
+    rlang::abort("`interactive.filter` must be TRUE or FALSE.")
+  }
   .paralog_check_probability(p.threshold, "p.threshold")
   .paralog_check_probability(min.call.rate, "min.call.rate")
   min.samples <- .paralog_check_count(min.samples, "min.samples", 2L)
@@ -135,6 +141,48 @@ filter_hwe <- function(
   readr::write_tsv(tests, file.path(path.folder, "hwe_stratum_tests.tsv"), na = "NA")
   readr::write_tsv(evidence, file.path(path.folder, "hwe_filter_evidence.tsv"), na = "NA")
   readr::write_tsv(sensitivity, file.path(path.folder, "hwe_sensitivity.tsv"), na = "NA")
+  sensitivity.plot <- ggplot2::ggplot(
+    sensitivity,
+    ggplot2::aes(
+      x = .data$P_THRESHOLD, y = .data$N_MARKERS,
+      colour = factor(.data$STRATA_THRESHOLD)
+    )
+  ) +
+    ggplot2::geom_line() +
+    ggplot2::scale_x_log10() +
+    ggplot2::labs(
+      x = "Mid-p threshold", y = "Markers removed",
+      colour = "Strata threshold"
+    ) +
+    ggplot2::theme_bw()
+  ggplot2::ggsave(
+    filename = file.path(path.folder, "hwe_sensitivity.png"),
+    plot = sensitivity.plot, width = 8, height = 5, dpi = 300
+  )
+  if (interactive.filter) {
+    message("HWE summaries and sensitivity figure written to: ", path.folder)
+    p.answer <- readline(
+      paste0("mid-p threshold [", format(p.threshold, scientific = TRUE), "]: ")
+    )
+    strata.answer <- readline(
+      paste0("strata threshold [", strata.threshold, "]: ")
+    )
+    if (nzchar(trimws(p.answer))) p.threshold <- as.numeric(p.answer)
+    if (nzchar(trimws(strata.answer))) strata.threshold <- as.numeric(strata.answer)
+    .paralog_check_probability(p.threshold, "p.threshold")
+    if (!is.finite(strata.threshold) || strata.threshold <= 0) {
+      rlang::abort("`strata.threshold` must be positive.")
+    }
+    evidence <- evidence |>
+      dplyr::mutate(REMOVE = if (strata.threshold < 1) {
+        .data$PROPORTION_DEPARTING >= strata.threshold
+      } else .data$N_DEPARTING_STRATA >= strata.threshold)
+    remove <- evidence$VARIANT_ID[evidence$REMOVE]
+  }
+  # Re-write evidence after an interactive threshold choice.
+  if (interactive.filter) {
+    readr::write_tsv(evidence, file.path(path.folder, "hwe_filter_evidence.tsv"), na = "NA")
+  }
   .filter_gds_apply_markers(
     gds, remove, "filter.hwe", path.folder, .start$file.date,
     "p / strata / adjustment",

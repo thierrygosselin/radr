@@ -443,18 +443,14 @@ explore_genomes <- function(
     internal = FALSE)
 
   # Filter HWE -----------------------------------------------------------------
-  gds <- filter_hwe(
-    data = gds,
-    interactive.filter = interactive.filter,
-    filter.hwe = filter.hwe.bk,
-    strata = NULL,
-    hw.pop.threshold = hw.pop.threshold.bk,
-    midp.threshold = midp.threshold.bk,
-    parallel.core = parallel.core,
-    parameters = filters.parameters,
-    path.folder = wf,
-    verbose = verbose,
-    internal = FALSE)
+  if (interactive.filter || isTRUE(filter.hwe.bk)) {
+    gds <- filter_hwe(
+      data = gds,
+      interactive.filter = interactive.filter,
+      strata = NULL,
+      path.folder = wf,
+      verbose = verbose)
+  }
 
 
   # Final Sync GDS -----------------------------------------------------------
