@@ -1161,7 +1161,12 @@ detect_inversions <- function(
     )
   } else {
     if (is.character(x) && length(x) == 1L && file.exists(x)) {
-      x <- vroom::vroom(x, show_col_types = FALSE, progress = FALSE)
+      # Chromosome tables are normalized after import; read fields as text so
+      # mixed identifiers and large lengths do not trigger lossy type guesses.
+      x <- vroom::vroom(
+        x, col_types = vroom::cols(.default = "c"),
+        show_col_types = FALSE, progress = FALSE
+      )
     }
     if (!is.data.frame(x)) {
       rlang::abort(
@@ -1366,6 +1371,7 @@ detect_inversions <- function(
     if (!file.exists(strata)) rlang::abort("The `strata` file does not exist.")
     strata <- vroom::vroom(
       strata,
+      col_types = vroom::cols(.default = "c"),
       show_col_types = FALSE,
       progress = FALSE
     )

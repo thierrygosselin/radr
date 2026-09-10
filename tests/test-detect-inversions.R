@@ -155,3 +155,27 @@ stopifnot(all(vapply(result$diagnostics, function(x) {
         "middle_heterozygosity_excess", "homokaryotype_mean_ld_r2") %in%
       names(x))
 }, logical(1))))
+
+# Regression: metadata and chromosome tables with mixed identifiers are read as
+# character fields first, avoiding vroom's lossy type-guessing warnings.
+mixed.strata <- tempfile(fileext = ".tsv")
+mixed.lengths <- tempfile(fileext = ".tsv")
+on.exit(unlink(c(mixed.strata, mixed.lengths)), add = TRUE)
+readr::write_tsv(data.frame(
+  INDIVIDUALS = sample.id, STRATA = rep(c("A", "B"), length.out = n.samples),
+  BATCH = c(rep("01", n.samples - 1L), "batch-X")
+), mixed.strata)
+readr::write_tsv(data.frame(
+  CHROM = c("1", "NC_054476.1"), LENGTH = c("1000000", "171616000")
+), mixed.lengths)
+metadata.warning <- NULL
+length.warning <- NULL
+withCallingHandlers(
+  radr:::.inversion_read_sample_metadata(mixed.strata, sample.id),
+  warning = function(w) { metadata.warning <<- w; invokeRestart("muffleWarning") }
+)
+withCallingHandlers(
+  radr:::.inversion_read_length_table(mixed.lengths, "test"),
+  warning = function(w) { length.warning <<- w; invokeRestart("muffleWarning") }
+)
+stopifnot(is.null(metadata.warning), is.null(length.warning))
