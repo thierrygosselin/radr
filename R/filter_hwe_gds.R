@@ -42,7 +42,7 @@ filter_hwe <- function(
     data, strata = NULL, group.column = "STRATA", p.threshold = 1e-4,
     strata.threshold = 1L, adjustment = c("BH", "none"),
     min.samples = 10L, min.call.rate = 0.8, chunk.size = 2000L,
-    interactive.filter = FALSE, verbose = TRUE, ...
+    interactive.filter = FALSE, verbose = TRUE, internal = FALSE, ...
 ) {
   force(data)
   adjustment <- match.arg(adjustment)
@@ -57,13 +57,16 @@ filter_hwe <- function(
       is.na(strata.threshold) || strata.threshold <= 0) {
     rlang::abort("`strata.threshold` must be positive.")
   }
-  .start <- tgbase::startup(package = "radr", f.name = "filter_hwe", verbose = verbose)
+  .start <- tgbase::startup(
+    package = "radr", f.name = "filter_hwe",
+    verbose = isTRUE(verbose) && !isTRUE(internal)
+  )
   on.exit(tgbase::teardown(.start), add = TRUE)
   dots <- rlang::dots_list(..., .homonyms = "error", .check_assign = TRUE)
   unknown <- setdiff(names(dots), "path.folder")
   if (length(unknown)) rlang::abort(paste0("Unknown argument(s): ", paste(unknown, collapse = ", "), "."))
   path.folder <- radr_folder(
-    rad.folder = paste0("filter_hwe_", .start$file.date),
+    rad.folder = "filter_hwe",
     path.folder = dots$path.folder %||% getwd(), prefix.int = TRUE
   )
   opened <- .filter_gds_open(data)
@@ -162,7 +165,7 @@ filter_hwe <- function(
   if (interactive.filter) {
     message("HWE summaries and sensitivity figure written to: ", path.folder)
     p.answer <- readline(
-      paste0("mid-p threshold [", format(p.threshold, scientific = TRUE), "]: ")
+      paste0("mid-p threshold [", format(p.threshold, scientific = FALSE, trim = TRUE), "]: ")
     )
     strata.answer <- readline(
       paste0("strata threshold [", strata.threshold, "]: ")

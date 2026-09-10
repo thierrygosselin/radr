@@ -16,6 +16,7 @@ filter_hwe(
   chunk.size = 2000L,
   interactive.filter = FALSE,
   verbose = TRUE,
+  internal = FALSE,
   ...
 )
 }

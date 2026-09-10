@@ -449,7 +449,8 @@ explore_genomes <- function(
       interactive.filter = interactive.filter,
       strata = NULL,
       path.folder = wf,
-      verbose = verbose)
+      verbose = verbose,
+      internal = TRUE)
   }
 
 
