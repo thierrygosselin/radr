@@ -49,6 +49,9 @@ several SNP records belong to one RAD locus.}
 \item{filter.long.ld}{(optional, double) The threshold to prune SNP based on
 Long Distance Linkage Disequilibrium. The argument filter.long.ld is
 the absolute value of measurement.
+With \code{ld.method = "r2"}, this is a squared-correlation threshold in
+both pruning branches. The basic SNPRelate branch converts it internally
+to a correlation threshold; the supplied value is retained for reporting.
 Default: \code{filter.long.ld = NULL}.}
 
 \item{parallel.core}{Number of workers available for parallel operations.

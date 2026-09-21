@@ -58,6 +58,9 @@
 #' @param filter.long.ld (optional, double) The threshold to prune SNP based on
 #' Long Distance Linkage Disequilibrium. The argument filter.long.ld is
 #' the absolute value of measurement.
+#' With \code{ld.method = "r2"}, this is a squared-correlation threshold in
+#' both pruning branches. The basic SNPRelate branch converts it internally
+#' to a correlation threshold; the supplied value is retained for reporting.
 #' Default: \code{filter.long.ld = NULL}.
 
 #' @param filename (optional, character) File name prefix for file written in
@@ -876,12 +879,9 @@ filter_ld <- function(
           x = "\nEnter the long LD threshold (filter.long.ld threshold, double/proportion):", minmax = c(0,1))
       }
 
-      if (ld.method == "r2") {
-        ld.m <- "r"
-        # filter.long.ld <- sqrt(filter.long.ld)
-      } else {
-        ld.m <- ld.method
-      }
+      # SNPRelate compares |r|, whereas our r2 plots and user threshold use r^2.
+      # Keep the original threshold unchanged for logs and saved parameters.
+      pruning.parameters <- .ld_pruning_parameters(ld.method, filter.long.ld)
 
       id <- genometranslator::extract_individuals_metadata(
         gds = data,
@@ -899,8 +899,8 @@ filter_ld <- function(
         remove.monosnp = TRUE,
         maf = NaN,
         missing.rate = NaN,
-        method = ld.m,
-        ld.threshold = filter.long.ld,
+        method = pruning.parameters$method,
+        ld.threshold = pruning.parameters$threshold,
         num.thread = 1L,# more not supported
         verbose = TRUE) %>%
         unlist(.)
@@ -1645,3 +1645,10 @@ ld_missing <- function(
     return(NULL)
   }
 }#End ld_missing
+
+# Convert only at the SNPRelate pruning boundary. Matrix-based r2 pruning
+# already squares its estimates and must not apply this conversion again.
+.ld_pruning_parameters <- function(method, threshold) {
+  list(method = if (method == "r2") "r" else method,
+       threshold = if (method == "r2") sqrt(threshold) else threshold)
+}

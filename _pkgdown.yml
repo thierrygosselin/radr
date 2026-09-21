@@ -46,6 +46,7 @@ reference:
   - detect_mixed_genomes
   - detect_paralogs
   - detect_ref_genome
+  - diagnostic_pca
 
 - title: Filter samples and markers
   desc: Apply explicit quality-control and marker-selection decisions to GDS data.
