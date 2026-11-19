@@ -3,7 +3,7 @@
 \name{detect_duplicate_genomes}
 \alias{detect_duplicate_genomes}
 \title{Compute pairwise genome similarity or distance between individuals
-to highligh potential duplicate individuals}
+to highlight potential duplicate individuals}
 \usage{
 detect_duplicate_genomes(
   data,
@@ -16,6 +16,7 @@ detect_duplicate_genomes(
   blacklist.duplicates = FALSE,
   parallel.core = parallel::detectCores() - 1,
   verbose = TRUE,
+  diff.pop.remove = TRUE,
   ...
 )
 }
@@ -30,16 +31,19 @@ detect_duplicate_genomes(
 Use \code{\link[genometranslator]{read_genome}} to import supported formats
 and \code{\link[genometranslator]{tidy_genome}} when a tidy table is needed.}
 
-\item{interactive.filter}{Logical indicating whether an interactive filtering
-session may display diagnostics and ask for thresholds.
-Default: \code{interactive.filter = TRUE}.}
+\item{interactive.filter}{Logical. When \code{TRUE}, an interactive R session
+offers filtering prompts if no positive \code{dup.threshold} is supplied.
+Default: \code{TRUE}.}
 
 \item{detect.duplicate.genomes}{(optional, logical) For use inside radr pipelines.
 Default: \code{detect.duplicate.genomes = TRUE}.}
 
-\item{dup.threshold}{Similarity or distance threshold used to identify
-duplicate genomes. A value of zero turns off filtering.
-Default: \code{dup.threshold = 0}.}
+\item{dup.threshold}{Numeric cutoff between 0 and 1. A positive value applies
+filtering without prompts. When the distance method is enabled, pairs with
+relative distance strictly below the cutoff qualify. To filter on genome
+similarity, set \code{distance.method = NULL} and \code{genome = TRUE}.
+Pairs with a proportion of identical genotypes strictly above the cutoff
+qualify. The default, \code{0}, does no automatic filtering.}
 
 \item{distance.method}{(character) Depending on input data, 2 different methods
 are used (give similar results):
@@ -70,11 +74,10 @@ e.g. 2 samples might have 100\% markers in common, but if they only have
 30\% of their genotyped markers in common, this is a poor fit.
 Default: \code{threshold.common.markers = NULL}.}
 
-\item{blacklist.duplicates}{(optional, logical)
-With \code{blacklist.duplicates = TRUE}, after visualization,
-the user is asked to enter a threshold to filter out duplicates.
-With the default, the function has no interaction with the user.
-Default: \code{blacklist.duplicates = FALSE}.}
+\item{blacklist.duplicates}{Logical. With no positive cutoff, \code{TRUE}
+offers filtering prompts in an interactive R session even with
+\code{interactive.filter = FALSE}. In a batch session, supply a positive
+cutoff when requesting blacklisting. Default: \code{FALSE}.}
 
 \item{parallel.core}{Number of workers available for parallel operations.
 Default: \code{parallel.core = parallel::detectCores() - 1}.}
@@ -82,31 +85,24 @@ Default: \code{parallel.core = parallel::detectCores() - 1}.}
 \item{verbose}{Logical indicating whether progress messages are emitted.
 Default: \code{verbose = TRUE}.}
 
+\item{diff.pop.remove}{Logical. For automatic filtering, remove all individuals
+in a duplicate group if any qualifying pair spans different strata
+(\code{TRUE}, the default). Otherwise, keep one individual per duplicate
+group, preferring the one with the most genotyped markers.}
+
 \item{...}{Additional arguments passed to lower-level screening or filtering
 functions.}
 }
 \value{
-A list with potentially 8 objects:
-\itemize{
-\item \code{$distance }: results of the distance method.
-\item \code{$distance.stats}: Summary statistics of the distance method.
-\item \code{$pairwise.genome.similarity}: results of the genome method.
-\item \code{$genome.stats}: Summary statistics of the genome method.
-\item \code{$violin.plot.distance}: violin plot showing the distribution of pairwise distances.
-\item \code{$manhattan.plot.distance}: same info different visual with manhattan plot.
-\item \code{$violin.plot.genome}: violin plot showing the distribution of pairwise genome similarities.
-\item \code{$manhattan.plot.genome}: same info different visual with manhattan plot.
-\item \code{$blacklist.id.similar}: blacklisted duplicates.
-}
-
-Saved in the working directory:
-individuals.pairwise.dist.tsv, individuals.pairwise.distance.stats.tsv,
-individuals.pairwise.genome.similarity.tsv, individuals.pairwise.genome.stats.tsv,
-blackliste.id.similar.tsv, blacklist.pairs.threshold.tsv
+The genomic data, with blacklisted individuals excluded. The function
+returns an open Genomic Data Structure (GDS) object for GDS input and a
+tidy tibble for tidy input. Pairwise results, summary statistics and figures
+are written in the output directory. The individual blacklist, when generated,
+is written to \code{blacklist.id.similar.tsv}.
 }
 \description{
 The function can compute two methods
-to highligh potential duplicate individuals.
+to highlight potential duplicate individuals.
 \enumerate{
 \item distance between individuals and/or
 \item pairwise genome similarity
@@ -148,54 +144,22 @@ an extremely low number of genotypes...}
 }
 \examples{
 \dontrun{
-# First run and simplest way (if you have the tidy tibble):
-dup <- radr::detect_duplicate_genomes(data = "wombat_tidy.rad")
+# Generate pairwise distance diagnostics for choosing a cutoff.
+radr::detect_duplicate_genomes(data = gds, interactive.filter = FALSE)
 
-# This will use by default:
-# distance.method = "manhattan"
-# genome = FALSE
-# parallel.core = all my CPUs - 1
+# Filter automatically with an example relative distance cutoff.
+filtered <- radr::detect_duplicate_genomes(
+  data = gds, interactive.filter = FALSE, dup.threshold = 0.02
+)
 
-# If you need a tidy tibble: use one of radr \code{tidy_} function or
-# \code{genometranslator::tidy_genome}
-
-
-# To view the manhattan plot:
-dup$manhattan.plot.distance
-
-# to view the data stats
-dup.data.stats <- dup$distance.stats
-
-# to view the data
-dup.data <- dup$distance
-
-# Based on the look of the distribution using both manhattan and boxplot,
-# I can filter the dataset to highlight potential duplicates.
-
-# To run the distance (with euclidean distance instead of the default manhattan,
-# and also carry the second analysis (with the genome method):
-dup <- genometranslator::tidy_genome(
-    data = wombat_tidy_object,
-    strata = "wombat.strata.tsv",
-    vcf.metadata = FALSE
-) \%>\%
-radr::detect_duplicate_genomes(
-    data = .,
-    distance.method = "euclidean",
-    genome = TRUE
-    )
-
-# to view the data of the genome data
-dup.data <- dup$pairwise.genome.similarity
-
-# Based on the look of the distribution using both manhattan and boxplot,
-# I can filter the dataset based on 98\% of identical genotype proportion,
-# to highlight potential duplicates:
-dup.filtered <- dplyr::filter(.data = dup.data, PROP_IDENTICAL > 0.98)
-
-# Get the list of duplicates id
-dup.list.names <- data.frame(INDIVIDUALS = unique(c(dup.filtered$ID1, dup.filtered$ID2)))
+# Filter by genome similarity with example cutoffs for shared markers
+# and the proportion of identical genotypes.
+filtered <- radr::detect_duplicate_genomes(
+  data = gds, interactive.filter = FALSE, distance.method = NULL,
+  genome = TRUE, threshold.common.markers = 0.8, dup.threshold = 0.98
+)
 }
+
 }
 \author{
 Thierry Gosselin \email{thierrygosselin@icloud.com}

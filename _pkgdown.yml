@@ -63,6 +63,7 @@ reference:
   - filter_common_markers
   - filter_dart_reproducibility
   - filter_snp_number
+  - filter_genomic_range
   - filter_snp_position_read
 
 - title: Whitelists

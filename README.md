@@ -6,8 +6,8 @@
 [![Project Status: Active – The project has reached a stable, usable
 state and is being actively
 developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
-[![packageversion](https://img.shields.io/badge/Package%20version-0.0.0.9000-orange.svg)](commits/main)
-[![Last-changedate](https://img.shields.io/badge/last%20change-2026--09--08-brightgreen.svg)](/commits/main)
+[![packageversion](https://img.shields.io/badge/Package%20version-0.0.0.1-orange.svg)](commits/main)
+[![Last-changedate](https://img.shields.io/badge/last%20change-2026--11--19-brightgreen.svg)](/commits/main)
 <!-- badges: end -->
 
 ## Origin of the name
@@ -180,8 +180,8 @@ Until a dedicated publication or DOI is available, cite the version and,
 for a development build, record the Git commit and access date:
 
 > Gosselin, T. (2026). *radr: Explore, diagnose and filter genomic
-> data*. R package version 0.0.0.9000.
-> <https://github.com/thierrygosselin/radr>. Accessed 2026-09-08.
+> data*. R package version 0.0.0.1.
+> <https://github.com/thierrygosselin/radr>. Accessed 2026-11-19.
 
 ## Website and support
 

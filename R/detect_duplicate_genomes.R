@@ -2,9 +2,9 @@
 
 #' @name detect_duplicate_genomes
 #' @title Compute pairwise genome similarity or distance between individuals
-#' to highligh potential duplicate individuals
+#' to highlight potential duplicate individuals
 #' @description The function can compute two methods
-#' to highligh potential duplicate individuals.
+#' to highlight potential duplicate individuals.
 #' \enumerate{
 #' \item distance between individuals and/or
 #' \item pairwise genome similarity
@@ -62,36 +62,34 @@
 #' 30% of their genotyped markers in common, this is a poor fit.
 #' Default: \code{threshold.common.markers = NULL}.
 #'
-#' @param dup.threshold Similarity or distance threshold used to identify
-#' duplicate genomes. A value of zero turns off filtering.
-#' Default: \code{dup.threshold = 0}.
-
-#' @param blacklist.duplicates (optional, logical)
-#' With \code{blacklist.duplicates = TRUE}, after visualization,
-#' the user is asked to enter a threshold to filter out duplicates.
-#' With the default, the function has no interaction with the user.
-#' Default: \code{blacklist.duplicates = FALSE}.
-
-#' @inheritParams radr_common_arguments
-
-#' @return A list with potentially 8 objects:
-#' \itemize{
-#' \item \code{$distance }: results of the distance method.
-#' \item \code{$distance.stats}: Summary statistics of the distance method.
-#' \item \code{$pairwise.genome.similarity}: results of the genome method.
-#' \item \code{$genome.stats}: Summary statistics of the genome method.
-#' \item \code{$violin.plot.distance}: violin plot showing the distribution of pairwise distances.
-#' \item \code{$manhattan.plot.distance}: same info different visual with manhattan plot.
-#' \item \code{$violin.plot.genome}: violin plot showing the distribution of pairwise genome similarities.
-#' \item \code{$manhattan.plot.genome}: same info different visual with manhattan plot.
-#' \item \code{$blacklist.id.similar}: blacklisted duplicates.
-#' }
+#' @param interactive.filter Logical. When \code{TRUE}, an interactive R session
+#' offers filtering prompts if no positive \code{dup.threshold} is supplied.
+#' Default: \code{TRUE}.
+#' @param dup.threshold Numeric cutoff between 0 and 1. A positive value applies
+#' filtering without prompts. When the distance method is enabled, pairs with
+#' relative distance strictly below the cutoff qualify. To filter on genome
+#' similarity, set \code{distance.method = NULL} and \code{genome = TRUE}.
+#' Pairs with a proportion of identical genotypes strictly above the cutoff
+#' qualify. The default, \code{0}, does no automatic filtering.
 #'
-#' Saved in the working directory:
-#' individuals.pairwise.dist.tsv, individuals.pairwise.distance.stats.tsv,
-#' individuals.pairwise.genome.similarity.tsv, individuals.pairwise.genome.stats.tsv,
-#' blackliste.id.similar.tsv, blacklist.pairs.threshold.tsv
-
+#' @param blacklist.duplicates Logical. With no positive cutoff, \code{TRUE}
+#' offers filtering prompts in an interactive R session even with
+#' \code{interactive.filter = FALSE}. In a batch session, supply a positive
+#' cutoff when requesting blacklisting. Default: \code{FALSE}.
+#'
+#' @param diff.pop.remove Logical. For automatic filtering, remove all individuals
+#' in a duplicate group if any qualifying pair spans different strata
+#' (\code{TRUE}, the default). Otherwise, keep one individual per duplicate
+#' group, preferring the one with the most genotyped markers.
+#'
+#' @inheritParams radr_common_arguments
+#'
+#' @return The genomic data, with blacklisted individuals excluded. The function
+#' returns an open Genomic Data Structure (GDS) object for GDS input and a
+#' tidy tibble for tidy input. Pairwise results, summary statistics and figures
+#' are written in the output directory. The individual blacklist, when generated,
+#' is written to \code{blacklist.id.similar.tsv}.
+#'
 #' @details
 #' Strategically, run the default first (\code{distance.method},
 #' no \code{genome})
@@ -132,55 +130,22 @@
 
 #' @examples
 #' \dontrun{
-#' # First run and simplest way (if you have the tidy tibble):
-#' dup <- radr::detect_duplicate_genomes(data = "wombat_tidy.rad")
+#' # Generate pairwise distance diagnostics for choosing a cutoff.
+#' radr::detect_duplicate_genomes(data = gds, interactive.filter = FALSE)
 #'
-#' # This will use by default:
-#' # distance.method = "manhattan"
-#' # genome = FALSE
-#' # parallel.core = all my CPUs - 1
+#' # Filter automatically with an example relative distance cutoff.
+#' filtered <- radr::detect_duplicate_genomes(
+#'   data = gds, interactive.filter = FALSE, dup.threshold = 0.02
+#' )
 #'
-#' # If you need a tidy tibble: use one of radr \code{tidy_} function or
-#' # \code{genometranslator::tidy_genome}
-#'
-#'
-#' # To view the manhattan plot:
-#' dup$manhattan.plot.distance
-#'
-#' # to view the data stats
-#' dup.data.stats <- dup$distance.stats
-#'
-#' # to view the data
-#' dup.data <- dup$distance
-#'
-#' # Based on the look of the distribution using both manhattan and boxplot,
-#' # I can filter the dataset to highlight potential duplicates.
-#'
-#' # To run the distance (with euclidean distance instead of the default manhattan,
-#' # and also carry the second analysis (with the genome method):
-#' dup <- genometranslator::tidy_genome(
-#'     data = wombat_tidy_object,
-#'     strata = "wombat.strata.tsv",
-#'     vcf.metadata = FALSE
-#' ) %>%
-#' radr::detect_duplicate_genomes(
-#'     data = .,
-#'     distance.method = "euclidean",
-#'     genome = TRUE
-#'     )
-#'
-#' # to view the data of the genome data
-#' dup.data <- dup$pairwise.genome.similarity
-#'
-#' # Based on the look of the distribution using both manhattan and boxplot,
-#' # I can filter the dataset based on 98% of identical genotype proportion,
-#' # to highlight potential duplicates:
-#' dup.filtered <- dplyr::filter(.data = dup.data, PROP_IDENTICAL > 0.98)
-#'
-#' # Get the list of duplicates id
-#' dup.list.names <- data.frame(INDIVIDUALS = unique(c(dup.filtered$ID1, dup.filtered$ID2)))
+#' # Filter by genome similarity with example cutoffs for shared markers
+#' # and the proportion of identical genotypes.
+#' filtered <- radr::detect_duplicate_genomes(
+#'   data = gds, interactive.filter = FALSE, distance.method = NULL,
+#'   genome = TRUE, threshold.common.markers = 0.8, dup.threshold = 0.98
+#' )
 #' }
-
+#'
 #' @author Thierry Gosselin \email{thierrygosselin@@icloud.com}
 
 detect_duplicate_genomes <- function(
@@ -196,6 +161,7 @@ detect_duplicate_genomes <- function(
   blacklist.duplicates = FALSE,
   parallel.core = parallel::detectCores() - 1,
   verbose = TRUE,
+  diff.pop.remove = TRUE,
   ...
 ) {
 
@@ -217,11 +183,27 @@ detect_duplicate_genomes <- function(
   # parameters = NULL
   # internal <- FALSE
 
-  if (interactive.filter || detect.duplicate.genomes) {
-    if (interactive.filter) {
-      verbose <- TRUE
-      blacklist.duplicates <- TRUE
+  if (isTRUE(detect.duplicate.genomes) || (interactive() && isTRUE(interactive.filter))) {
+    # Some pipelines supply NULL when no cutoff was specified.
+    if (is.null(dup.threshold)) dup.threshold <- 0
+    if (!is.numeric(dup.threshold) || length(dup.threshold) != 1L ||
+        !is.finite(dup.threshold) || dup.threshold < 0 || dup.threshold > 1) {
+      rlang::abort("dup.threshold must be a single number between 0 and 1.")
     }
+    use.threshold <- dup.threshold > 0
+    can.prompt <- !use.threshold && interactive() &&
+      (isTRUE(interactive.filter) || isTRUE(blacklist.duplicates))
+
+    if (isTRUE(blacklist.duplicates) && !use.threshold && !can.prompt) {
+      rlang::abort("Supply a positive dup.threshold to blacklist duplicates without prompts.")
+    }
+    if (is.null(distance.method) && !genome && (use.threshold || can.prompt)) {
+      rlang::abort("Enable a distance method or genome similarity to blacklist duplicates.")
+    }
+    if (use.threshold && !(isTRUE(diff.pop.remove) || identical(diff.pop.remove, FALSE))) {
+      rlang::abort("diff.pop.remove must be TRUE or FALSE.")
+    }
+    if (can.prompt) verbose <- TRUE
 
     # Common startup -----------------------------------------------------------
     .start <- tgbase::startup(
@@ -607,44 +589,24 @@ detect_duplicate_genomes <- function(
 
     # Compute genome similarity -------------------------------------------------
     if (genome) {
-
-
-      # check data type
-      if (data.type %in% c("SeqVarGDSClass", "gds.file")) {
-        if (data.type == "gds.file") {
-          data <- genometranslator::read_genome(data, verbose = verbose)
-          data.type <- "SeqVarGDSClass"
-        }
-
-        data <- genometranslator::tidy_genome(
-          data = data,
-          pop.id = FALSE) %>%
+      genome.data <- data
+      if (data.type == "SeqVarGDSClass") {
+        genome.data <- genometranslator::tidy_genome(data = data, pop.id = FALSE) %>%
           dplyr::select(INDIVIDUALS, STRATA, MARKERS, ALT_DOSAGE)
-
-        if (rlang::has_name(data, "ALT_DOSAGE")) {
-          gt.field <- "ALT_DOSAGE"
-        } else {
-          gt.field <- "GT"
-        }
-
-        n.markers <- dplyr::n_distinct(data$MARKERS)
-
-
+        gt.field <- "ALT_DOSAGE"
+        n.markers <- dplyr::n_distinct(genome.data$MARKERS)
       }
-
-      # If ALT_DOSAGE available, we need a new input.prep (not the same as dist method)
-
-
 
       if (gt.field == "ALT_DOSAGE") {
-        input.prep <- dplyr::filter(.data = data, !is.na(ALT_DOSAGE))
+        input.prep <- dplyr::filter(genome.data, !is.na(ALT_DOSAGE))
       }
+      genome.data <- NULL
 
       # all combination of individual pair
       all.pairs <- utils::combn(unique(input.prep$INDIVIDUALS), 2, simplify = TRUE) %>%
-        t %>%
-        tibble::as_tibble(.) %>%
-        magrittr::set_colnames(x = ., value = c("ID1", "ID2")) %>%
+        t() %>%
+        magrittr::set_colnames(c("ID1", "ID2")) %>%
+        tibble::as_tibble() %>%
         dplyr::mutate(
           PAIRS = seq(from = 1, to = n(), by = 1),
           MARKERS_TOTAL = rep(n.markers, n()) # just n.markers works
@@ -731,33 +693,30 @@ detect_duplicate_genomes <- function(
       input.prep <- id.pairwise <- NULL # no longer needed
 
       if (verbose) message("Generating summary statistics")
-      if (nrow(res$pairwise.genome.similarity) == 0) {
-        data.import <- readr::read_tsv(file = pairwise.filename, col_types = "d____c___i__d___c_")
-        new.pairwise <- nrow(data.import)
-        res$genome.stats <- data.import %>%
-          dplyr::summarise(
-            MEAN = mean(IDENTICAL_PROP, na.rm = TRUE),
-            MEDIAN = stats::median(IDENTICAL_PROP, na.rm = TRUE),
-            SE = round(sqrt(stats::var(IDENTICAL_PROP, na.rm = TRUE)/length(stats::na.omit(IDENTICAL_PROP))), 2),
-            MIN = round(min(IDENTICAL_PROP, na.rm = TRUE), 2),
-            MAX = round(max(IDENTICAL_PROP, na.rm = TRUE), 2),
-            QUANTILE25 = stats::quantile(IDENTICAL_PROP, 0.25), # quantile25
-            QUANTILE75 = stats::quantile(IDENTICAL_PROP, 0.75)# quantile75
+      data.import <- res$pairwise.genome.similarity
+      if (nrow(data.import) == 0L) {
+        data.import <- readr::read_tsv(
+          pairwise.filename,
+          col_types = readr::cols_only(
+            PAIRWISE = readr::col_character(),
+            IDENTICAL_PROP = readr::col_double(),
+            POP_COMP = readr::col_character(),
+            MARKERS_MISSING = readr::col_integer()
           )
-      } else {
-        new.pairwise <- nrow(res$pairwise.genome.similarity)
-        # Stats
-        res$genome.stats <- res$pairwise.genome.similarity%>%
-          dplyr::summarise(
-            MEAN = mean(IDENTICAL_PROP, na.rm = TRUE),
-            MEDIAN = stats::median(IDENTICAL_PROP, na.rm = TRUE),
-            SE = round(sqrt(stats::var(IDENTICAL_PROP, na.rm = TRUE)/length(stats::na.omit(IDENTICAL_PROP))), 2),
-            MIN = round(min(IDENTICAL_PROP, na.rm = TRUE), 2),
-            MAX = round(max(IDENTICAL_PROP, na.rm = TRUE), 2),
-            QUANTILE25 = stats::quantile(IDENTICAL_PROP, 0.25), # quantile25
-            QUANTILE75 = stats::quantile(IDENTICAL_PROP, 0.75)# quantile75
-          )
+        )
       }
+      new.pairwise <- nrow(data.import)
+      res$genome.stats <- data.import %>%
+        dplyr::filter(is.finite(IDENTICAL_PROP)) %>%
+        dplyr::summarise(
+          MEAN = mean(IDENTICAL_PROP),
+          MEDIAN = stats::median(IDENTICAL_PROP),
+          SE = round(sqrt(stats::var(IDENTICAL_PROP) / n()), 2),
+          MIN = if (n() > 0L) round(min(IDENTICAL_PROP), 2) else NA_real_,
+          MAX = if (n() > 0L) round(max(IDENTICAL_PROP), 2) else NA_real_,
+          QUANTILE25 = stats::quantile(IDENTICAL_PROP, 0.25),
+          QUANTILE75 = stats::quantile(IDENTICAL_PROP, 0.75)
+        )
       discarded.pairs <- number.pairwise - new.pairwise
       if (discarded.pairs > 0) {
         message("Number of discarded pairs based on threshold: ", round(discarded.pairs, 2))
@@ -775,48 +734,14 @@ detect_duplicate_genomes <- function(
       # Visualization ------------------------------------------------------------
       message("Generating the plots")
 
-      if (nrow(res$pairwise.genome.similarity) == 0) {
-        res$violin.plot.genome <- ggplot2::ggplot(
-          data = data.import,
-          ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP, na.rm = TRUE))
-        res$manhattan.plot.genome <- ggplot2::ggplot(
-          data = data.import,
-          ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP, colour = POP_COMP,
-                       size = MARKERS_MISSING)) +
-          ggplot2::geom_blank(data = data.frame(IDENTICAL_PROP = c(0, 1), PAIRWISE = NA),
-                              mapping = ggplot2::aes(y = IDENTICAL_PROP))
-      } else {
-        res$violin.plot.genome <- ggplot2::ggplot(
-          data = res$pairwise.genome.similarity,
-          ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP, na.rm = TRUE))
-
-        # res$manhattan.plot.genome <- ggplot2::ggplot(
-        #   data = res$pairwise.genome.similarity,
-        #   ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP, colour = POP_COMP,
-        #                size = MARKERS_MISSING)) +
-        #   ggplot2::geom_blank(data = data.frame(IDENTICAL_PROP = c(0, 1), PAIRWISE = NA),
-        #                       mapping = ggplot2::aes(y = IDENTICAL_PROP))
-
-
-        res$manhattan.plot.genome <- ggplot2::ggplot(
-          data = res$pairwise.genome.similarity,
-          ggplot2::aes(
-            x = PAIRWISE,
-            y = IDENTICAL_PROP,
-            colour = POP_COMP,
-            size = MARKERS_MISSING
-          )
-        ) +
-          ggplot2::geom_blank(
-            data = data.frame(
-              PAIRWISE = c(min(res$pairwise.genome.similarity$PAIRWISE, na.rm = TRUE),
-                           max(res$pairwise.genome.similarity$PAIRWISE, na.rm = TRUE)),
-              IDENTICAL_PROP = c(0, 1)
-            ),
-            ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP),
-            inherit.aes = FALSE
-          )
-      }
+      res$violin.plot.genome <- ggplot2::ggplot(
+        data.import,
+        ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP))
+      res$manhattan.plot.genome <- ggplot2::ggplot(
+        data.import,
+        ggplot2::aes(x = PAIRWISE, y = IDENTICAL_PROP, colour = POP_COMP,
+                     size = MARKERS_MISSING)
+      ) + ggplot2::expand_limits(y = c(0, 1))
 
       # violin plot
       res$violin.plot.genome <- res$violin.plot.genome +
@@ -870,125 +795,89 @@ detect_duplicate_genomes <- function(
 
     } # end genome method
 
-    # Filtering --------
-    # Removing duplicates ------------------------------------------------------
-    if (blacklist.duplicates || interactive.filter) {
-      check.mono <- FALSE
+    # Filtering -----------------------------------------------------------------
+    analysis <- if (is.null(distance.method)) "genome" else "distance"
+    blacklist.id.similar <- tibble::tibble(INDIVIDUALS = character())
 
+    if (can.prompt) {
       message("\nInspect tables and figures to decide if some individual(s) need to be blacklisted")
       remove.id <- tgbase::question(
         x = "    Do you need to blacklist individual(s) (y/n): ", answer.opt = c("y", "n"))
 
       if (remove.id == "y") {
         message("\n2 options to remove duplicates:")
-        message("    1. threshold: using the figure you choose a threshold. It's more powerful to fully remove duplicates")
-        message("    2. manually: the function generate a blacklist that you have to complete")
-        message("    Note: not sure ? Use option 1, it's more powerful to fully remove duplicates")
+        message("    1. Threshold: use the figures to choose a cutoff")
+        message("    2. Manually: fill in a blacklist file")
         remove.dup <- tgbase::question(
-          x = "    Enter the option to remove duplicates (1/2): ", minmax = c(1,2))
+          x = "    Enter the option to remove duplicates (1/2): ", minmax = c(1, 2))
 
         if (remove.dup == 2) {
-          readr::write_tsv(
-            x = tibble::tibble(INDIVIDUALS = as.character()),
-            file = file.path(path.folder, "blacklist.id.similar.tsv"),
-            append = FALSE, col_names = TRUE)
+          blacklist.file <- file.path(path.folder, "blacklist.id.similar.tsv")
+          readr::write_tsv(blacklist.id.similar, blacklist.file)
           message("    An empty blacklist file was generated: blacklist.id.similar.tsv")
-          message("    Keep column name, just add the individual(s) to blacklist(s)")
-          blacklist.id.similar <- "check blacklist.id.similar.tsv file"
+          message("    Keep the column name and add the individuals to blacklist")
 
-          finished <- tgbase::question(
+          tgbase::question(
             x = "    When finished filling the blacklist type `y`:",
             answer.opt = c("y", "Y", "yes", "Yes", "YES"))
 
-          blacklist.id.similar <- readr::read_tsv(
-            file = file.path(path.folder, "blacklist.id.similar.tsv"),
-            col_types = "c")
+          blacklist.id.similar <- readr::read_tsv(blacklist.file, col_types = "c")
           dup.threshold <- "blacklist generated manually"
-        } else {# with threshold
-          # message("Use the distance or genome analysis to blacklist duplicates ? (distance/genome): ")
-          # analysis <- as.character(readLines(n = 1))
-
-          if (data.type == "SeqVarGDSClass") {
-            analysis <- "distance"
-          } else {
-            if (!is.null(distance.method) && genome) {
-              analysis <- tgbase::question(
-                x = "\nChoose the analysis method to blacklist duplicates? (distance/genome): ",
-                answer.opt = c("distance", "genome")
-              )
-            } else if (genome) {
-              analysis <- "genome"
-            } else {
-              analysis <- "distance"
-            }
-          }
-
-          if (analysis == "distance") {
-            data.dup <-  "individuals.pairwise.dist.tsv"
-          } else {
-            data.dup <-  "individuals.pairwise.genome.similarity.tsv"
+        } else {
+          if (!is.null(distance.method) && genome) {
+            analysis <- tgbase::question(
+              x = "\nChoose the analysis method to blacklist duplicates? (distance/genome): ",
+              answer.opt = c("distance", "genome"))
           }
           dup.threshold <- tgbase::question(
             x = "\nEnter the threshold to remove duplicates: (between 0 and 1)", minmax = c(0, 1))
+          use.threshold <- dup.threshold > 0
 
-          message("\n2 options to remove duplicates involved in pairs from different strata/group:")
-          message("    (the black points on the figure, above your threshold)")
-          message("    1: blacklist both samples in the pair")
-          message("    2: blacklist only 1 sample, based on missingness")
-          diff.pop.remove <- tgbase::question(
-            x = "    Enter 1/2: ", minmax = c(1, 2))
-
-
-          if (diff.pop.remove == 2) {
-            diff.pop.remove <- FALSE
-          } else {
-            diff.pop.remove <- TRUE
+          if (use.threshold) {
+            message("\n2 options for duplicate pairs from different strata:")
+            message("    1: blacklist both samples in the pair")
+            message("    2: retain the sample with the most genotyped markers")
+            diff.pop.remove <- tgbase::question(
+              x = "    Enter 1/2: ", minmax = c(1, 2)) == 1
           }
-          blacklist.id.similar <- remove_duplicates(
-            data = data.dup,
-            stats = "genotyped.statistics.tsv",
-            dup.threshold = dup.threshold,
-            diff.pop.remove = diff.pop.remove,
-            path.folder = path.folder) %$% blacklist.id
         }
-        n.ind.blacklisted <- nrow(blacklist.id.similar)
+      }
+    }
+
+    if (use.threshold) {
+      data.dup <- if (analysis == "distance") {
+        "individuals.pairwise.dist.tsv"
       } else {
-        dup.threshold <- 0L
-        n.ind.blacklisted <- 0L
+        "individuals.pairwise.genome.similarity.tsv"
       }
+      blacklist.id.similar <- remove_duplicates(
+        data = data.dup,
+        stats = "genotyped.statistics.tsv",
+        dup.threshold = dup.threshold,
+        diff.pop.remove = diff.pop.remove,
+        path.folder = path.folder
+      )$blacklist.id
+    }
 
-      if (n.ind.blacklisted > 0) {
-        check.mono <- TRUE
-        if (verbose) message("Blacklisted individuals: ", n.ind.blacklisted, " ind.")
-        if (verbose) message("    Filtering with blacklist of individuals")
+    n.ind.blacklisted <- nrow(blacklist.id.similar)
+    if (n.ind.blacklisted > 0L) {
+      if (verbose) message("Blacklisted individuals: ", n.ind.blacklisted, " ind.")
+      if (verbose) message("    Filtering with blacklist of individuals")
 
-        if (data.type == "tbl_df") {
-          data  %<>% dplyr::filter(!INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS)
-        } else {
-          id.info <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-            dplyr::mutate(
-              FILTERS = dplyr::if_else(
-                INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS,
-                "filter.individuals.duplicates", FILTERS
-              )
+      if (data.type == "tbl_df") {
+        data <- dplyr::filter(data, !INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS)
+      } else {
+        id.info <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
+          dplyr::mutate(
+            FILTERS = dplyr::if_else(
+              INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS,
+              "filter.individuals.duplicates", FILTERS
             )
-          genometranslator::update_genome_gds(gds = data, node.name = "individuals.meta", value = id.info, sync = TRUE)
-
-          # id.info <- extract_individuals_metadata(gds = data)
-          # bl <- id.info %>% dplyr::filter(INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS) %>%
-          #   dplyr::distinct(INDIVIDUALS) %>%
-          #   dplyr::mutate(FILTER = "filter.individuals.duplicates")
-          # bl.i <- update_bl_individuals(gds = data, update = bl)
-
-          # id.info %<>% dplyr::filter(!INDIVIDUALS %in% blacklist.id.similar$INDIVIDUALS)
-        }
-        blacklist.id.similar <- NULL
+          )
+        genometranslator::update_genome_gds(
+          gds = data, node.name = "individuals.meta", value = id.info, sync = TRUE)
       }
-    } else {
-      dup.threshold <- 0L
-      n.ind.blacklisted <- 0L
-      check.mono <- FALSE
-    }# End blacklist.duplicates
+    }
 
     # updating parameters --------------------------------------------------
     filters.parameters <- filter_parameters(
@@ -1014,7 +903,7 @@ detect_duplicate_genomes <- function(
     )
 
     # MONOMORPHIC MARKERS --------------------------------------------------
-    if (check.mono) {
+    if (n.ind.blacklisted > 0L) {
       data <- filter_monomorphic(
         data = data,
         parallel.core = parallel.core,
@@ -1069,7 +958,10 @@ distance_individuals <- function(
       ind.field.select = "INDIVIDUALS",
       whitelist = TRUE) %$%
       INDIVIDUALS
-    # x.bk <- x
+    # snpgdsIBS can change the active GDS marker selection.
+    gds <- x
+    SeqArray::seqFilterPush(gds)
+    on.exit(SeqArray::seqFilterPop(gds), add = TRUE)
     x <- SNPRelate::snpgdsIBS(
       gdsobj = x,
       autosome.only = FALSE,
@@ -1106,6 +998,7 @@ distance_individuals <- function(
 
   x <- dplyr::bind_cols(x, ID1.pop, ID2.pop) %>%
     dplyr::mutate(
+      DISTANCE_RELATIVE = dplyr::if_else(DISTANCE == 0, 0, DISTANCE_RELATIVE),
       POP_COMP = dplyr::if_else(ID1_POP == ID2_POP, "same pop", "different pop"),
       POP_COMP = factor(POP_COMP, levels = c("same pop", "different pop"), ordered = TRUE),
       PAIRWISE = rep("pairwise", n()),
@@ -1201,7 +1094,6 @@ genome_similarity <- carrier::crate(function(
         #   ID1 = as.character(),
         #   ID2 = as.character())
       } else {
-        message("blacklisted pairs")
         res$blacklist.pairs.threshold <- dplyr::select(res$genome.comparison, PAIRS, ID1, ID2)
         res$genome.comparison <- NULL
       }
@@ -1339,15 +1231,20 @@ remove_duplicates <- function(
   data <-  file.path(path.folder, data)
   stats <-  file.path(path.folder, stats)
 
-  dup.filtered <- suppressWarnings(suppressMessages(readr::read_tsv(data))) %>%
-    dplyr::mutate(ID1 = as.character(ID1), ID2 = as.character(ID2))
+  dup.filtered <- readr::read_tsv(
+    data,
+    col_types = readr::cols(ID1 = readr::col_character(), ID2 = readr::col_character())
+  )
 
   if (rlang::has_name(dup.filtered, "DISTANCE_RELATIVE")) {
-    dup.filtered <- dup.filtered %>%
-      dplyr::filter(DISTANCE_RELATIVE < dup.threshold)
+    dup.filtered <- dplyr::filter(dup.filtered, DISTANCE_RELATIVE < dup.threshold)
   } else {
-    dup.filtered <- dup.filtered %>%
-      dplyr::filter(PROP_IDENTICAL > dup.threshold)
+    similarity <- if (rlang::has_name(dup.filtered, "IDENTICAL_PROP")) {
+      "IDENTICAL_PROP"
+    } else {
+      "PROP_IDENTICAL"
+    }
+    dup.filtered <- dplyr::filter(dup.filtered, .data[[similarity]] > dup.threshold)
   }
 
 
