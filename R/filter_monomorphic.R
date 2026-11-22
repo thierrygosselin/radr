@@ -181,18 +181,19 @@ filter_monomorphic <- function(
         verbose = verbose)
 
       # Scanning for monomorphic markers------------------------------------------
-      n.markers.before <- filters.parameters$info$n.snp
       bl <- count_monomorphic(x = data, parallel.core = parallel.core)
-      n.markers.removed <- length(bl)
-      want <- c("VARIANT_ID", "MARKERS", "CHROM", "LOCUS", "POS")
-      markers.meta <- genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE)
 
-      if (n.markers.removed > 0) {
-        n.markers.after <- n.markers.before - n.markers.removed
-        markers.meta %<>%
-          dplyr::mutate(
-            FILTERS = dplyr::if_else(VARIANT_ID %in% bl, "filter.monomorphic", FILTERS)
-          )
+      # Read all metadata rows, including variants outside a temporary selection.
+      SeqArray::seqFilterPush(data)
+      markers.meta <- tryCatch({
+        SeqArray::seqResetFilter(data, sample = FALSE, variant = TRUE, verbose = FALSE)
+        genometranslator::extract_markers_metadata(gds = data, whitelist = FALSE)
+      }, finally = SeqArray::seqFilterPop(data))
+
+      remove <- markers.meta$VARIANT_ID %in% bl & markers.meta$FILTERS %in% "whitelist"
+      if (any(remove)) {
+        markers.meta$FILTERS <- as.character(markers.meta$FILTERS)
+        markers.meta$FILTERS[remove] <- "filter.monomorphic"
         tgbase::write_tgbase_tsv(
           data = markers.meta %>% dplyr::filter(FILTERS == "filter.monomorphic"),
           path.folder = path.folder,
@@ -203,17 +204,16 @@ filter_monomorphic <- function(
           verbose = verbose
         )
 
-
-        # wl %<>% dplyr::filter(!MARKERS %in% bl$MARKERS)
-
-
-        # Update GDS
         genometranslator::update_genome_gds(
           gds = data,
           node.name = "markers.meta",
           value = markers.meta,
-          sync = TRUE,
+          sync = FALSE,
           verbose = verbose
+        )
+        SeqArray::seqSetFilter(
+          data, variant.id = markers.meta$VARIANT_ID[markers.meta$FILTERS %in% "whitelist"],
+          action = "intersect", verbose = FALSE
         )
       }
 

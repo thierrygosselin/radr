@@ -30,7 +30,7 @@ Imports:
     dplyr (>= 1.0.0),
     gdsfmt,
     ggplot2,
-    genometranslator,
+    genometranslator (>= 0.0.0.9001),
     HardyWeinberg,
     magrittr,
     matrixStats,

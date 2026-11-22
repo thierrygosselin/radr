@@ -2,7 +2,7 @@
 % Please edit documentation in R/detect_inversions.R
 \name{detect_inversions}
 \alias{detect_inversions}
-\title{Detect candidate inversion-associated genomic regions}
+\title{Detect candidate inversion-associated genomic intervals}
 \usage{
 detect_inversions(
   data,
@@ -10,6 +10,7 @@ detect_inversions(
   chromosome = NULL,
   chromosome.lengths = NULL,
   reference.genome = NULL,
+  reference.id = NULL,
   window.snps = 100L,
   step.snps = window.snps,
   window.bp = NULL,
@@ -26,6 +27,7 @@ detect_inversions(
   min.call.rate = 0.8,
   min.candidate.windows = 1L,
   cluster.k = 3L,
+  cluster.model.max.k = 5L,
   stability.replicates = 0L,
   stability.fraction = 0.8,
   parallel.core = 1L,
@@ -64,6 +66,11 @@ lengths stored in the GDS.}
 filepath used to recover chromosome lengths. When a FASTA is supplied, its
 accompanying \code{FASTA.fai} file must already exist. This is unnecessary when
 the GDS retains a VCF contig dictionary with declared sequence lengths.}
+
+\item{reference.id}{Optional human-readable reference assembly identifier,
+version, or accession (for example, \code{"GCA_012345678.2"}). It is recorded in
+the returned settings and the reference-provenance table. It does not alter
+marker coordinates or sequence lengths.}
 
 \item{window.snps}{Number of SNPs per window.}
 
@@ -118,6 +125,11 @@ required to form a candidate region.}
 for a common polymorphic inversion is often three, representing the two
 homokaryotypes and their heterokaryotype, but this is diagnostic rather
 than proof.}
+
+\item{cluster.model.max.k}{Largest number of regional-PC1 clusters compared
+by the approximate Gaussian BIC diagnostic. Values greater than three can
+flag complex, nested, or multiallelic haploblocks. They never generate
+additional arrangement genotypes automatically. Default: \code{5}.}
 
 \item{stability.replicates}{Number of SNP-resampling replicates used to test
 arrangement-assignment stability within every candidate. Use \code{0} to skip.
@@ -177,6 +189,7 @@ An object of class \code{detect_inversions} containing:
 \item \code{windows}: coordinates, quality statistics, MDS coordinates, robust
 scores, and candidate flags for all analysed windows;
 \item \code{candidates}: one row per contiguous candidate region;
+\item \code{intervals}: the same candidate table under interval terminology;
 \item \code{candidate.summaries}: concise narrative summaries of the evidence,
 arrangement groups, regional LD, and boundary caution for each candidate;
 \item \code{diagnostics}: regional PCA scores, cluster assignments,
@@ -188,7 +201,7 @@ putative arrangement genotype and relative assignment confidence;
 \item \code{homokaryotype.whitelist}: candidate-specific \code{AA} and \code{BB}
 individuals, plus \code{homokaryotype.all.candidates} for the intersection;
 when \code{strata} includes \code{STRATA}, candidate output folders also contain
-arrangement tables with \code{individual}, \code{STRATA}, and inferred \code{AA}, \code{AB},
+arrangement tables with \code{INDIVIDUALS}, \code{STRATA}, and inferred \code{AA}, \code{AB},
 or \code{BB} assignments;
 \item \code{sensitivity}: optional summaries for additional fixed-SNP window
 sizes;
@@ -197,6 +210,8 @@ scores and summaries. Candidate-region arrangement labels are joined
 only for plotting and never influence these chromosome-wide PCAs;
 \item \code{chromosome.lengths}: declared or estimated chromosome lengths,
 observed marker maxima, and the provenance of each length;
+\item \code{reference.context}: reference identifier, reference path,
+chromosome-length sources, and coordinate conventions;
 \item \code{path.folder} and \code{output.files}: locations of written results;
 \item \code{settings}: the effective analysis settings.
 }
@@ -207,15 +222,16 @@ structure differs from the genomic background. The implementation follows
 the local-PCA principle: each window is represented by a low-rank covariance
 matrix among individuals, distances are calculated between those matrices,
 and classical multidimensional scaling (MDS) is used to identify unusual
-windows. Candidate regions are then summarised using regional PCA,
+windows. Contiguous candidate windows are represented as genomic intervals
+and then summarised using regional PCA,
 heterozygosity, and linkage disequilibrium (LD).
 }
 \details{
 Run this screen before LD pruning. LD pruning can remove the extended
 correlation pattern that makes an inversion-associated haploblock
 detectable. After candidates have been reviewed, repeat downstream analyses
-with the complete genome, with candidate regions excluded, and within each
-candidate region or inferred arrangement.
+with the complete genome, with candidate intervals excluded, and within each
+candidate interval or inferred arrangement.
 
 This is a screening method. A candidate region is not proof of a physical
 inversion, and the returned coordinates describe an inversion-associated
@@ -429,12 +445,51 @@ putative heterokaryotypes. This is useful before haplotype scans: \code{selscan}
 for example, does not accept missing genotype or haplotype data.
 }
 
+\section{Intervals, reference coordinates, and structural status}{
+
+Windows are computational units used to scan local population structure.
+A structural variant is not a point or a window, so the user-facing candidate
+output represents every joined signal as an interval with a chromosome,
+start, and end. The TSV uses the one-based GDS marker coordinates. A BED file
+is also written using zero-based, half-open coordinates. These marker-defined
+intervals remain approximate and must not be reported as breakpoints.
+
+\code{reference.id} records the assembly name, version, or accession without
+changing the data. \code{reference_assembly_context.tsv} records that identifier,
+the reference path when available, chromosome-length provenance, and the
+coordinate conventions. This matters because an SV type, placement, and even
+detectability can change with the reference assembly.
+
+\code{evidence_strength} remains a screening grade. The separate
+\code{structural_status} field is \code{"unvalidated SNP-supported haploblock"} because
+the function has no breakpoint or orientation evidence. A best-supported
+regional-PC1 model with more than three clusters triggers
+\code{complex_haploblock_warning}; it does not create additional AA/AB/BB labels.
+}
+
+\section{When this function is not enough}{
+
+\code{detect_inversions()} prioritises SNP-supported haploblocks; it is not a
+general structural-variant caller. For de novo SV discovery, population
+resequencing ideally uses at least approximately 15--20x whole-genome
+coverage with short reads, long reads, or both. PacBio HiFi or Oxford
+Nanopore long reads are preferable for difficult insertions, repeats, and
+breakpoint resolution.
+
+A catalogue-then-genotype design can discover SVs with long reads or genome
+assemblies and then genotype many individuals with medium-coverage or even
+low-coverage short-read WGS. Linked-read or haplotagging approaches are a
+cost-effective option for population-scale haplotypes and large inversions.
+Definitive confirmation may require breakpoint-spanning reads, comparative
+assemblies, junction PCR, linkage mapping, optical mapping, or cytogenetics.
+}
+
 \section{Output and plotting}{
 
 Following other \code{radr} detection functions, each call creates a dated
 \code{detect_inversions} results folder in the working directory (or below the
 parent supplied with \code{path.folder}). It records the function arguments,
-window and candidate tables, individual PCA scores, cluster summaries, LD
+window and candidate-interval tables, individual PCA scores, cluster summaries, LD
 summaries, and standard diagnostic plots. PNG and PDF are written by default.
 }
 
@@ -462,6 +517,11 @@ Akopyan M, Tigano A, Jacobs A, Wilder AP, Therkildsen NO (2025). Genetic
 Differentiation is Constrained to Chromosomal Inversions and Putative
 Centromeres in Locally Adapted Populations With Higher Gene Flow. Molecular
 Biology and Evolution, 42, msaf092. \doi{10.1093/molbev/msaf092}.
+
+Stuart KC, Oomen RA, Tigano A, Wellenreuther M, Wold J, Field DL, Mérot C
+(2026). A Beginner's Guide to Structural Variants in Eco-Evolutionary
+Population Genomics. Molecular Ecology, 35, e70216.
+\doi{10.1111/mec.70216}.
 }
 \author{
 Thierry Gosselin \email{Thierry.Gosselin@csiro.au}

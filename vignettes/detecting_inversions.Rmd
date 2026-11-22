@@ -19,6 +19,11 @@ interpretation, and empirical work combining genotype groups, LD,
 recombination, diversity, and structural evidence. These references should be
 read before treating a local-structure signal as an inversion.
 
+Stuart, Oomen, Tigano, Wellenreuther, Wold, Field, and Mérot (2026) provide the
+broader structural-variant framework used here: SVs are genomic intervals,
+their apparent type depends on the reference and discovery technology, and
+population-genomic signals must be separated from structural confirmation.
+
 `detect_inversions()` is a screening tool for finding genomic regions whose
 local population structure is unusual relative to the rest of a GDS dataset.
 It is designed for diploid, biallelic SNP data, including carefully filtered
@@ -69,12 +74,20 @@ used in `radr`. In particular, `detect_inversions()`:
 * combines local covariance PCA with contiguous-window candidate detection;
 * evaluates regional PCA groups quantitatively instead of treating a requested
   three-group k-means solution as evidence by itself;
+* represents joined candidate signals as genomic intervals and exports both a
+  one-based TSV and a zero-based, half-open BED file;
 * summarises heterozygosity, overall and within-group LD, candidate boundaries,
   flanking windows, internal transitions, and window-size sensitivity;
 * returns ordered putative arrangement genotypes, relative call confidence,
   arrangement-specific whitelists, and homokaryotype-only sensitivity sets;
 * accepts centromere, low-recombination, repeat, and assembly-gap annotations
   without allowing them to determine the candidate calls;
+* records the reference assembly identifier, reference path, chromosome-length
+  provenance, and coordinate conventions;
+* separates screening strength from the structural status
+  `unvalidated SNP-supported haploblock`;
+* warns when more than three regional-PC1 clusters better describe a candidate,
+  without inventing additional arrangement genotypes;
 * explicitly records the consequences of missing-data filtering and temporary
   mean imputation for RADseq interpretation; and
 * writes reproducible tables and publication-ready `ggplot2` diagnostics to a
@@ -418,7 +431,7 @@ The analysis is not one PCA per linkage group. Instead:
 4. distances between window representations are calculated;
 5. multidimensional scaling (MDS) places similar windows together and unusual
    windows farther from the genomic background;
-6. contiguous unusual windows are joined into candidate regions;
+6. contiguous unusual windows are joined into candidate intervals;
 7. a regional PCA, clustering, heterozygosity summary, and LD summary are
    calculated for each candidate.
 
@@ -488,7 +501,7 @@ inv$path.folder
 ```
 
 The first call is the normal starting point. It scans the filtered genome before
-LD pruning and reports candidate regions without requiring the user to choose a
+LD pruning and reports candidate intervals without requiring the user to choose a
 large set of tuning values. The second call adds SNP-window sensitivity,
 assignment stability, retained LD matrices, and more parallel workers. These
 extra diagnostics are valuable, but they need not be paid for before the basic
@@ -561,9 +574,16 @@ complete FASTA:
 ```{r reference-lengths, eval=FALSE}
 inv <- detect_inversions(
   data = genome,
-  reference.genome = "genome.fasta"
+  reference.genome = "genome.fasta",
+  reference.id = "assembly accession or version"
 )
 ```
+
+`reference.id` is descriptive: it does not alter the GDS or its coordinates.
+The result folder records it in `reference_assembly_context.tsv` together with
+the FASTA path, chromosome-length provenance, and coordinate conventions. This
+information should accompany every reported interval because the apparent SV
+type and its coordinates depend on the reference assembly.
 
 Without declared sequence lengths, the largest observed marker position is
 used only as a labelled fallback. It underestimates chromosome length and can
@@ -728,7 +748,7 @@ candidate1$assignment_stability
 candidate1$metadata_audit
 candidate1$metadata_contingency
 candidate1$scores |>
-  dplyr::select(individual, arrangement, arrangement_dosage,
+  dplyr::select(INDIVIDUALS, arrangement, arrangement_dosage,
                 arrangement_confidence, assignment_stability)
 ```
 
@@ -827,7 +847,7 @@ candidate1$coverage_source
 candidate1$technical_summary
 
 candidate1$scores |>
-  dplyr::select(individual, arrangement, call_rate, mean_depth,
+  dplyr::select(INDIVIDUALS, arrangement, call_rate, mean_depth,
                 mean_heterozygote_allele_balance)
 
 inv$output.files$plots$`INV-CAND-1_coverage_call_rate`
@@ -971,13 +991,22 @@ inversion regions excluded, and with arrangement genotypes included explicitly.
 Otherwise a large haploblock can dominate clustering and make one regional
 feature look like genome-wide structure.
 
-## Interpreting coordinates
+## Interpreting candidate intervals
 
-The candidate `start` and `end` values are the outer marker coordinates of the
-selected windows. They depend on window size, step size, marker density,
+Local-PCA windows are computational units. The biological candidate is reported
+as a genomic **interval**, not as a window or point position. The candidate
+`start` and `end` values are the outer marker coordinates of the selected
+windows. They depend on window size, step size, marker density,
 missingness filters, and the reference assembly. Report them as an approximate
 inversion-associated interval. With RADseq data, there may be a substantial gap
 between the last marker outside the signal and the first marker inside it.
+
+`candidate_inversion_intervals.tsv` retains the one-based GDS marker
+coordinates. `candidate_inversion_intervals.bed` uses standard zero-based,
+half-open BED coordinates and can be intersected with centromeres, repeats,
+genes, recombination maps, assembly gaps, or independently called SVs. These
+files describe marker-supported intervals, not structurally validated
+breakpoints.
 
 A defensible report might state:
 
@@ -1016,6 +1045,13 @@ screening grade. Important columns include:
   inversion-associated haploblock, unresolved haploblock, low-recombination or
   centromeric candidate, technical or assembly-associated region, or another
   structural-variation-associated haploblock; and
+* `structural_status`: explicitly distinguishes the SNP-supported screen from
+  physical confirmation and is initially
+  `unvalidated SNP-supported haploblock`;
+* `complex_haploblock_warning` and `complex_haploblock_reason`: identify a
+  regional-PC1 result for which more than three clusters are preferred and
+  suggest nested or multiallelic SVs, population structure, relatedness, or
+  technical artefacts for review; and
 * `alternative_explanations`: reminders that local PCA can reflect a
   centromere, low recombination, assembly or mapping problems, introgression,
   population-specific missingness, or another structural variant.
@@ -1062,6 +1098,30 @@ Inversions should be detected, annotated, and analysed explicitly. They should
 neither be ignored nor automatically removed. Use "candidate", "putative", or
 "inversion-associated haploblock" until structural evidence justifies a more
 definitive term.
+
+## When `detect_inversions()` is not enough
+
+`detect_inversions()` uses SNPs to prioritise unusual haploblocks. It is not a
+de novo structural-variant caller and it cannot establish reversed chromosome
+orientation. Stuart et al. (2026) provide a useful sequencing hierarchy for the
+next stage:
+
+* **De novo SV discovery:** ideally use at least approximately 15--20x WGS with
+  short reads, long reads, or both.
+* **Difficult insertions, repetitive regions, and breakpoint resolution:** use
+  PacBio HiFi or Oxford Nanopore long reads.
+* **Catalogue then genotype:** discover SVs using long reads or assemblies, then
+  genotype many individuals using medium-coverage or even low-coverage
+  short-read WGS.
+* **Population-scale haplotypes and large inversions:** linked reads or
+  haplotagging provide a cost-effective intermediate strategy.
+* **Definitive confirmation:** seek breakpoint-spanning reads, assembly
+  comparison, junction PCR, linkage mapping, optical mapping, or cytogenetics.
+
+The appropriate endpoint depends on the question. A robust population-genomic
+association may justify reporting an inversion-associated haploblock, whereas
+claims about breakpoint position, orientation, inversion type, or molecular
+mechanism require direct structural evidence.
 
 ## References
 
@@ -1120,6 +1180,11 @@ Rondeau EB, Brieuc MSO, Sandve SR, Miller MR, Cedillo L, Baruch K, Hernandez AG,
 Ben-Zvi G, Shem-Tov D, Barad O, Kuzishchin K, Garza JC, Lindley ST, Koop BF,
 Thorgaard GH, Palti Y, Lien S (2019) Sex-dependent dominance maintains migration
 supergene in rainbow trout. *Nature Ecology & Evolution*, 3, 1731-1742.
+
+Stuart KC, Oomen RA, Tigano A, Wellenreuther M, Wold J, Field DL, Mérot C (2026)
+A beginner's guide to structural variants in eco-evolutionary population
+genomics. *Molecular Ecology*, 35, e70216.
+[https://doi.org/10.1111/mec.70216](https://doi.org/10.1111/mec.70216)
 
 Thompson NF, Anderson EC, Clemento AJ, Campbell MA, Pearse DE, Hearsey JW,
 Kinziger AP, Garza JC (2020) A complex phenotype in salmon controlled by a

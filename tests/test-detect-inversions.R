@@ -64,6 +64,7 @@ sample.metadata <- data.frame(
 result <- suppressWarnings(detect_inversions(
   data = gds.file,
   strata = sample.metadata,
+  reference.id = "synthetic-test-assembly-v1",
   window.snps = 100L,
   sensitivity.window.snps = c(100L, 200L),
   outlier.quantile = 0.80,
@@ -89,12 +90,14 @@ stopifnot(sum(
     result$windows$start >= 201000 & result$windows$end <= 400000
 ) == 2L)
 stopifnot(nrow(result$candidates) >= 1L)
+stopifnot(identical(result$intervals, result$candidates))
 stopifnot(all(c(
   "size_bp", "cluster_separation", "cluster_compactness",
   "middle_heterozygosity_excess", "homokaryotype_mean_ld_r2",
   "flanking_mean_ld_r2", "boundary_contrast", "internal_transition_max",
   "known_region_overlap", "evidence_score", "evidence_strength",
-  "candidate_class", "alternative_explanations"
+  "structural_status", "complex_haploblock_warning",
+  "complex_haploblock_reason", "candidate_class", "alternative_explanations"
 ) %in% names(result$candidates)))
 candidate <- result$candidates[result$candidates$chromosome == "2", ][1, ]
 stopifnot(candidate$three_cluster_evidence)
@@ -107,17 +110,30 @@ stopifnot(candidate$boundary_contrast > 0)
 stopifnot(candidate$known_region_overlap == "putative_centromere")
 stopifnot(candidate$n_known_region_overlaps == 1L)
 stopifnot(candidate$evidence_strength == "strong")
+stopifnot(candidate$structural_status == "unvalidated SNP-supported haploblock")
+stopifnot(result$reference.context$reference_id == "synthetic-test-assembly-v1")
 stopifnot(nrow(result$sensitivity) > 0L)
 stopifnot(all(c(
-  "candidate_id", "individual", "arrangement", "arrangement_dosage",
+  "candidate_id", "INDIVIDUALS", "arrangement", "arrangement_dosage",
   "arrangement_confidence"
 ) %in% names(result$arrangement.genotypes)))
 stopifnot(all(as.character(result$arrangement.genotypes$arrangement) %in%
   c("AA", "AB", "BB")))
 stopifnot(all(result$arrangement.genotypes$arrangement_confidence >= 0.5))
 stopifnot(nrow(result$homokaryotype.whitelist) > 0L)
+stopifnot(identical(names(result$homokaryotype.all.candidates), "INDIVIDUALS"))
+stopifnot(all(result$arrangement.genotypes$INDIVIDUALS %in% sample.id))
 stopifnot(dir.exists(result$path.folder))
 stopifnot(file.exists(file.path(result$path.folder, "inversion_windows.tsv")))
+stopifnot(file.exists(file.path(
+  result$path.folder, "candidate_inversion_intervals.tsv"
+)))
+stopifnot(file.exists(file.path(
+  result$path.folder, "candidate_inversion_intervals.bed"
+)))
+stopifnot(file.exists(file.path(
+  result$path.folder, "reference_assembly_context.tsv"
+)))
 strata.files <- list.files(
   result$path.folder,
   pattern = "_arrangement_by_strata\\.tsv$",
@@ -125,7 +141,7 @@ strata.files <- list.files(
 )
 stopifnot(length(strata.files) >= 1L)
 strata.arrangements <- readr::read_tsv(strata.files[1L], show_col_types = FALSE)
-stopifnot(all(c("individual", "STRATA", "arrangement") %in%
+stopifnot(all(c("INDIVIDUALS", "STRATA", "arrangement") %in%
   names(strata.arrangements)))
 stopifnot(file.exists(file.path(
   result$path.folder, "inversion_arrangement_genotypes.tsv"

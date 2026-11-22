@@ -66,9 +66,10 @@ reference:
   - filter_genomic_range
   - filter_snp_position_read
 
-- title: Whitelists
-  desc: Retain selected markers.
+- title: Filter by lists
+  desc: Include or exclude selected individuals and markers.
   contents:
+  - filter_lists
   - filter_whitelist
 
 - title: Filter VCF files with bcftools

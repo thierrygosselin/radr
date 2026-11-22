@@ -2,10 +2,9 @@
 
 #' @name filter_individuals
 
-#' @title Filter individuals based on genotyping/missingness rate,
-#' heterozygosity and total coverage
+#' @title Filter individuals by sample ID or quality thresholds
 
-#' @description Remove individuals with bad QC based on:
+#' @description Exclude specified individuals or filter individuals based on:
 #' \itemize{
 #' \item missingness (genotyping rate)
 #' \item heterozygosity
@@ -51,11 +50,23 @@
 #' Integers, below and above, that blacklist individuals (removed from the dataset)
 #' Default: \code{filter.individuals.coverage.iqr = NULL}.
 
+#' @param blacklist.id Character vector of exact GDS sample IDs or path to a
+#'   tab-separated file with one column named \code{INDIVIDUALS}. IDs are read
+#'   as text, including any leading zeros. Unknown IDs cause an error. Newly
+#'   blacklisted samples are labelled \code{filter.individuals.blacklist} in
+#'   the GDS metadata. Previously recorded reasons are retained.
+#'   Default: \code{NULL}.
+#' @param interactive.filter Logical. By default, the quality-control filters
+#'   prompt for thresholds when no blacklist is supplied. With
+#'   \code{blacklist.id}, prompts are off unless explicitly enabled in an
+#'   interactive R session. Use \code{FALSE} for scripted quality thresholds.
+#'
 #' @inheritParams radr_common_arguments
 
 #' @section Interactive version:
-#' The function first displays sample-level missingness, heterozygosity, and
-#' coverage diagnostics. It then proceeds through the following branches:
+#' The function applies any supplied \code{blacklist.id} automatically. It then
+#' displays missingness, heterozygosity, and coverage diagnostics for the
+#' remaining samples and offers the following filters:
 #' \enumerate{
 #' \item Missingness: asks whether to blacklist samples. If yes, choose the
 #' boxplot-outlier statistic or enter the maximum tolerated missing proportion.
@@ -72,6 +83,13 @@
 #' leads to the corresponding minimum and maximum threshold questions. Use
 #' \code{interactive.filter = FALSE} and explicit arguments for a reproducible
 #' analysis.
+#'
+#' @details A blacklist can be used on its own or with quality thresholds. It
+#' is applied before any quality statistics are calculated or thresholds are
+#' requested. Newly excluded samples are written to
+#' \code{blacklist.individuals.by_id.tsv}. If any samples are newly blacklisted,
+#' \code{\link{filter_monomorphic}} checks the remaining samples once, after
+#' all individual filters. This also runs for a blacklist-only call.
 #'
 #' @return The filtered GDS connection. Individual metadata and active samples
 #' are updated in place, so the underlying GDS file is modified. Diagnostic
@@ -90,8 +108,22 @@
 #' \dontrun{
 #' genome <- genometranslator::read_genome("my_genome.gds")
 #'
-#' # Inspect all available sample QC statistics interactively.
-#' genome <- radr::filter_individuals(data = genome)
+#' # Exclude known IDs on a working copy of the GDS.
+#' genome <- radr::filter_individuals(
+#'   data = "my_genome_copy.gds",
+#'   blacklist.id = c("sample_001", "sample_002"),
+#'   interactive.filter = FALSE
+#' )
+#'
+#' # Use a TSV with header INDIVIDUALS.
+#' genome <- radr::filter_individuals(
+#'   data = genome, blacklist.id = "blacklist.tsv", interactive.filter = FALSE
+#' )
+#'
+#' # Apply the blacklist first, then review the remaining samples interactively.
+#' genome <- radr::filter_individuals(
+#'   data = genome, blacklist.id = "outliers.tsv", interactive.filter = TRUE
+#' )
 #'
 #' # Alternatively, start from a separate unfiltered GDS for a scripted run.
 #' scripted_genome <- genometranslator::read_genome("my_genome_scripted.gds")
@@ -127,7 +159,8 @@ filter_individuals <- function(
   filter.individuals.coverage.iqr = NULL,
   parallel.core = parallel::detectCores() - 1,
   verbose = TRUE,
-  ...
+  ...,
+  blacklist.id = NULL
 ) {
 
   # Force piped input before printing this function's startup banner.
@@ -150,13 +183,17 @@ filter_individuals <- function(
   # verbose = TRUE
 
 
-  if (interactive.filter ||
-      !is.null(filter.individuals.missing) ||
-      !is.null(filter.individuals.heterozygosity) ||
-      !is.null(filter.individuals.coverage.total) ||
-      !is.null(filter.individuals.coverage.median) ||
-      !is.null(filter.individuals.coverage.iqr)
-  ) {
+  if (!is.null(blacklist.id) && (missing(interactive.filter) || !interactive())) {
+    interactive.filter <- FALSE
+  }
+  run.qc <- interactive.filter ||
+    !is.null(filter.individuals.missing) ||
+    !is.null(filter.individuals.heterozygosity) ||
+    !is.null(filter.individuals.coverage.total) ||
+    !is.null(filter.individuals.coverage.median) ||
+    !is.null(filter.individuals.coverage.iqr)
+
+  if (run.qc || length(blacklist.id)) {
     if (interactive.filter) verbose <- TRUE
     if (Sys.info()[['sysname']] == "Windows") parallel.core <- 1
 
@@ -184,6 +221,22 @@ filter_individuals <- function(
     # Checking for missing and/or default arguments ----------------------------
     if (missing(data)) rlang::abort("data is missing")
 
+    # Detect format and validate the blacklist before writing outputs ----------
+    data.type <- genometranslator::detect_genomic_format(data)
+    if (!data.type %in% c("SeqVarGDSClass", "gds.file")) {
+      rlang::abort("Input not supported for this function: read function documentation")
+    }
+    if (data.type == "gds.file") {
+      data <- genometranslator::read_genome(data, verbose = verbose)
+      completed <- FALSE
+      on.exit(if (!completed) SeqArray::seqClose(data), add = TRUE)
+    }
+    tgbase::check_package(package = "SeqArray", cran = FALSE, bioc = TRUE)
+
+    if (length(blacklist.id)) {
+      blacklist <- .prepare_individual_blacklist(data, blacklist.id)
+    }
+
     # Folders---------------------------------------------------------------------
     path.folder <- generate_folder(
       rad.folder = "filter_individuals",
@@ -204,28 +257,6 @@ filter_individuals <- function(
     )
 
 
-    # Message about steps taken during the process -----------------------------
-    if (interactive.filter) {
-      message("Interactive mode: on\n")
-      message("Step 1. Visualization")
-      message("Step 2. Missingness")
-      message("Step 3. Heterozygosity")
-      message("Step 4. Coverage (if available)\n\n")
-    }
-
-    # Detect format ------------------------------------------------------------
-    data.type <- genometranslator::detect_genomic_format(data)
-
-    # Import data --------------------------------------------------------------
-    if (!data.type %in% c("SeqVarGDSClass", "gds.file")) {
-      rlang::abort("Input not supported for this function: read function documentation")
-    }
-    if (data.type == "gds.file") {
-      data <- genometranslator::read_genome(data, verbose = verbose)
-      data.type <- "SeqVarGDSClass"
-    }
-    tgbase::check_package(package = "SeqArray", cran = FALSE, bioc = TRUE)
-
     # Filter parameter file: generate and initiate -----------------------------
     filters.parameters <- filter_parameters(
       generate = TRUE,
@@ -238,11 +269,48 @@ filter_individuals <- function(
       internal = internal,
       verbose = verbose)
 
-    # stats  -------------------------------------------------------------------
     filter.monomorphic <- FALSE
+    if (length(blacklist.id)) {
+      removed <- blacklist$metadata[blacklist$exclude, , drop = FALSE]
+      if (nrow(removed)) {
+        genometranslator::update_genome_gds(
+          gds = data, node.name = "individuals.meta",
+          value = blacklist$metadata, sync = FALSE
+        )
+        SeqArray::seqSetFilter(data, sample.id = blacklist$keep, verbose = FALSE)
+        filter.monomorphic <- TRUE
+        readr::write_tsv(
+          removed, file.path(path.folder, "blacklist.individuals.by_id.tsv")
+        )
+        filters.parameters <- filter_parameters(
+          update = TRUE,
+          parameter.obj = filters.parameters,
+          data = data,
+          filter.name = "Filter individuals by ID",
+          param.name = "blacklist.id",
+          values = paste(length(blacklist$ids), "IDs supplied"),
+          path.folder = path.folder,
+          file.date = file.date,
+          internal = internal,
+          verbose = verbose
+        )
+      }
+      if (verbose) message("Newly blacklisted by ID: ", nrow(removed), " individual(s).")
+    }
+
+    if (!run.qc) {
+      data <- filter_monomorphic(
+        data = data, filter.monomorphic = filter.monomorphic,
+        parallel.core = parallel.core, verbose = FALSE,
+        parameters = filters.parameters, path.folder = path.folder, internal = FALSE
+      )
+      completed <- TRUE
+      return(data)
+    }
 
     # Step 1. Visuals ----------------------------------------------------------
     if (interactive.filter) {
+      message("\nInteractive mode: on")
       message("\nStep 1. Visualization of samples QC\n")
     }
 
@@ -263,17 +331,14 @@ filter_individuals <- function(
     )
     print(id.stats$i.fig)
 
-    # experimental qc...
-    # for now it prints and write in the folder
-    # nothing more to do
-    message("\nGenerating suggestions for identifying bad samples: experimental...")
-    experimental.qc <- genometranslator::id_qc_helper(
-      x = id.stats$i.info,
-      x.sum = id.stats$i.stats,
-      path.folder = path.folder
+    # The experimental summary requires total and allele-specific depth.
+    qc.depth <- c("COVERAGE_TOTAL", "REF_DEPTH_MEAN", "ALT_DEPTH_MEAN")
+    if (all(qc.depth %in% names(id.stats$i.info))) {
+      message("\nGenerating suggestions for identifying bad samples: experimental...")
+      genometranslator::id_qc_helper(
+        x = id.stats$i.info, x.sum = id.stats$i.stats, path.folder = path.folder
       )
-
-
+    }
 
     # Step 2. Missingness-----------------------------------------------------------------
     if (interactive.filter) {
@@ -325,19 +390,24 @@ The maximum amount of missingness you tolerate for a sample (e.g. 0.3): ", minma
       bl %<>%
         dplyr::distinct(INDIVIDUALS, .keep_all = TRUE) %>%
         dplyr::mutate(FILTER = "filter.individuals.missing")
+      individuals <- genometranslator::extract_individuals_metadata(
+        gds = data, whitelist = FALSE
+      )
+      eligible <- individuals$FILTERS %in% "whitelist"
+      bl <- dplyr::filter(bl, INDIVIDUALS %in% individuals$INDIVIDUALS[eligible])
       n.bl <- nrow(bl)
 
-      individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-        dplyr::mutate(
-          FILTERS = dplyr::if_else(
-            INDIVIDUALS %in% bl$INDIVIDUALS,
-            "filter.individuals.missing", FILTERS
-          )
+      if (n.bl > 0L) {
+        individuals$FILTERS <- as.character(individuals$FILTERS)
+        individuals$FILTERS[individuals$INDIVIDUALS %in% bl$INDIVIDUALS] <-
+          "filter.individuals.missing"
+        genometranslator::update_genome_gds(
+          gds = data, node.name = "individuals.meta", value = individuals, sync = FALSE
         )
-      genometranslator::update_genome_gds(
-        gds = data, node.name = "individuals.meta", value = individuals, sync = TRUE)
-
-      if (n.bl > 0) {
+        SeqArray::seqSetFilter(
+          data, sample.id = individuals$INDIVIDUALS[individuals$FILTERS %in% "whitelist"],
+          action = "intersect", verbose = FALSE
+        )
         filter.monomorphic <- TRUE
         bl.filename <- stringi::stri_join("blacklist.individuals.missing_", file.date, ".tsv")
         readr::write_tsv(x = bl, file = file.path(path.folder, bl.filename))
@@ -441,18 +511,24 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
         dplyr::filter(!!rlang::parse_expr(filter.het)) %>%
         dplyr::distinct(INDIVIDUALS) %>%
         dplyr::mutate(FILTER = "filter.individuals.heterozygosity")
+      individuals <- genometranslator::extract_individuals_metadata(
+        gds = data, whitelist = FALSE
+      )
+      eligible <- individuals$FILTERS %in% "whitelist"
+      bl <- dplyr::filter(bl, INDIVIDUALS %in% individuals$INDIVIDUALS[eligible])
       n.bl <- nrow(bl)
 
-      individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-        dplyr::mutate(
-          FILTERS = dplyr::if_else(
-            INDIVIDUALS %in% bl$INDIVIDUALS,
-            "filter.individuals.heterozygosity", FILTERS
-          )
+      if (n.bl > 0L) {
+        individuals$FILTERS <- as.character(individuals$FILTERS)
+        individuals$FILTERS[individuals$INDIVIDUALS %in% bl$INDIVIDUALS] <-
+          "filter.individuals.heterozygosity"
+        genometranslator::update_genome_gds(
+          gds = data, node.name = "individuals.meta", value = individuals, sync = FALSE
         )
-      genometranslator::update_genome_gds(gds = data, node.name = "individuals.meta", value = individuals, sync = TRUE)
-
-      if (n.bl > 0) {
+        SeqArray::seqSetFilter(
+          data, sample.id = individuals$INDIVIDUALS[individuals$FILTERS %in% "whitelist"],
+          action = "intersect", verbose = FALSE
+        )
         filter.monomorphic <- TRUE
 
         # if (verbose) message("    number of individuals blacklisted based on heterozygosity: ", n.bl)
@@ -631,18 +707,24 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::filter(!!rlang::parse_expr(filter.cov)) %>%
           dplyr::distinct(INDIVIDUALS) %>%
           dplyr::mutate(FILTER = "filter.individuals.coverage.total")
+        individuals <- genometranslator::extract_individuals_metadata(
+          gds = data, whitelist = FALSE
+        )
+        eligible <- individuals$FILTERS %in% "whitelist"
+        bl <- dplyr::filter(bl, INDIVIDUALS %in% individuals$INDIVIDUALS[eligible])
         n.bl <- nrow(bl)
 
-        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-          dplyr::mutate(
-            FILTERS = dplyr::if_else(
-              INDIVIDUALS %in% bl$INDIVIDUALS,
-              "filter.individuals.coverage.total", FILTERS
-            )
+        if (n.bl > 0L) {
+          individuals$FILTERS <- as.character(individuals$FILTERS)
+          individuals$FILTERS[individuals$INDIVIDUALS %in% bl$INDIVIDUALS] <-
+            "filter.individuals.coverage.total"
+          genometranslator::update_genome_gds(
+            gds = data, node.name = "individuals.meta", value = individuals, sync = FALSE
           )
-        genometranslator::update_genome_gds(gds = data, node.name = "individuals.meta", value = individuals, sync = TRUE)
-
-        if (n.bl > 0) {
+          SeqArray::seqSetFilter(
+            data, sample.id = individuals$INDIVIDUALS[individuals$FILTERS %in% "whitelist"],
+            action = "intersect", verbose = FALSE
+          )
           filter.monomorphic <- TRUE
           bl.filename <- stringi::stri_join("blacklist.individuals.coverate.total_", file.date, ".tsv")
           readr::write_tsv(x = bl, file = file.path(path.folder, bl.filename))
@@ -717,18 +799,24 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::filter(!!rlang::parse_expr(filter.cov)) %>%
           dplyr::distinct(INDIVIDUALS) %>%
           dplyr::mutate(FILTER = "filter.individuals.coverage.median")
+        individuals <- genometranslator::extract_individuals_metadata(
+          gds = data, whitelist = FALSE
+        )
+        eligible <- individuals$FILTERS %in% "whitelist"
+        bl <- dplyr::filter(bl, INDIVIDUALS %in% individuals$INDIVIDUALS[eligible])
         n.bl <- nrow(bl)
 
-        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-          dplyr::mutate(
-            FILTERS = dplyr::if_else(
-              INDIVIDUALS %in% bl$INDIVIDUALS,
-              "filter.individuals.coverage.median", FILTERS
-            )
+        if (n.bl > 0L) {
+          individuals$FILTERS <- as.character(individuals$FILTERS)
+          individuals$FILTERS[individuals$INDIVIDUALS %in% bl$INDIVIDUALS] <-
+            "filter.individuals.coverage.median"
+          genometranslator::update_genome_gds(
+            gds = data, node.name = "individuals.meta", value = individuals, sync = FALSE
           )
-        genometranslator::update_genome_gds(gds = data, node.name = "individuals.meta", value = individuals, sync = TRUE)
-
-        if (n.bl > 0) {
+          SeqArray::seqSetFilter(
+            data, sample.id = individuals$INDIVIDUALS[individuals$FILTERS %in% "whitelist"],
+            action = "intersect", verbose = FALSE
+          )
           filter.monomorphic <- TRUE
           bl.filename <- stringi::stri_join("blacklist.individuals.coverate.median_", file.date, ".tsv")
           readr::write_tsv(x = bl, file = file.path(path.folder, bl.filename))
@@ -803,18 +891,24 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
           dplyr::filter(!!rlang::parse_expr(filter.cov)) %>%
           dplyr::distinct(INDIVIDUALS) %>%
           dplyr::mutate(FILTER = "filter.individuals.coverage.iqr")
+        individuals <- genometranslator::extract_individuals_metadata(
+          gds = data, whitelist = FALSE
+        )
+        eligible <- individuals$FILTERS %in% "whitelist"
+        bl <- dplyr::filter(bl, INDIVIDUALS %in% individuals$INDIVIDUALS[eligible])
         n.bl <- nrow(bl)
 
-        individuals <- genometranslator::extract_individuals_metadata(gds = data, whitelist = FALSE) %>%
-          dplyr::mutate(
-            FILTERS = dplyr::if_else(
-              INDIVIDUALS %in% bl$INDIVIDUALS,
-              "filter.individuals.coverage.iqr", FILTERS
-            )
+        if (n.bl > 0L) {
+          individuals$FILTERS <- as.character(individuals$FILTERS)
+          individuals$FILTERS[individuals$INDIVIDUALS %in% bl$INDIVIDUALS] <-
+            "filter.individuals.coverage.iqr"
+          genometranslator::update_genome_gds(
+            gds = data, node.name = "individuals.meta", value = individuals, sync = FALSE
           )
-        genometranslator::update_genome_gds(gds = data, node.name = "individuals.meta", value = individuals, sync = TRUE)
-
-        if (n.bl > 0) {
+          SeqArray::seqSetFilter(
+            data, sample.id = individuals$INDIVIDUALS[individuals$FILTERS %in% "whitelist"],
+            action = "intersect", verbose = FALSE
+          )
           filter.monomorphic <- TRUE
           bl.filename <- stringi::stri_join("blacklist.individuals.coverate.iqr_", file.date, ".tsv")
           readr::write_tsv(x = bl, file = file.path(path.folder, bl.filename))
@@ -855,6 +949,52 @@ The maximum amount of heterozygosity you tolerate for a sample:", minmax = c(0, 
       parameters = filters.parameters,
       path.folder = path.folder,
       internal = FALSE)
+    completed <- TRUE
   }#before this one
   return(data)
 }#End filter_individuals
+
+
+.prepare_individual_blacklist <- function(gds, ids) {
+  if (!is.character(ids) || !is.null(dim(ids)) || anyNA(ids) ||
+      any(!nzchar(trimws(ids)))) {
+    rlang::abort("blacklist.id must be a character vector of IDs or a TSV path.")
+  }
+  if (length(ids) == 1L && file.exists(ids) && !dir.exists(ids)) {
+    table <- readr::read_tsv(
+      ids,
+      col_types = readr::cols(.default = readr::col_character()),
+      na = "", trim_ws = FALSE, name_repair = "minimal", progress = FALSE
+    )
+    readr::stop_for_problems(table)
+    if (!identical(names(table), "INDIVIDUALS")) {
+      rlang::abort("The blacklist TSV must have one column named INDIVIDUALS.")
+    }
+    ids <- table$INDIVIDUALS
+    if (anyNA(ids) || any(!nzchar(trimws(ids)))) {
+      rlang::abort("The blacklist TSV contains a missing or empty individual ID.")
+    }
+  }
+  ids <- unique(ids)
+
+  active <- SeqArray::seqGetData(gds, "sample.id")
+  SeqArray::seqFilterPush(gds)
+  on.exit(SeqArray::seqFilterPop(gds), add = TRUE)
+  SeqArray::seqResetFilter(gds, sample = TRUE, variant = FALSE, verbose = FALSE)
+  metadata <- genometranslator::extract_individuals_metadata(gds, whitelist = FALSE)
+
+  unknown <- setdiff(ids, metadata$INDIVIDUALS)
+  if (length(unknown)) {
+    rlang::abort(paste0("Unknown individual ID(s) in blacklist.id: ",
+                        paste(unknown, collapse = ", ")))
+  }
+
+  exclude <- metadata$INDIVIDUALS %in% ids & metadata$FILTERS %in% "whitelist"
+  keep <- intersect(active, metadata$INDIVIDUALS[metadata$FILTERS %in% "whitelist" & !exclude])
+  if (any(exclude) && !length(keep)) {
+    rlang::abort("blacklist.id would exclude every active sample.")
+  }
+  metadata$FILTERS <- as.character(metadata$FILTERS)
+  metadata$FILTERS[exclude] <- "filter.individuals.blacklist"
+  list(metadata = metadata, exclude = exclude, keep = keep, ids = ids)
+}

@@ -1,18 +1,19 @@
-#' Detect candidate inversion-associated genomic regions
+#' Detect candidate inversion-associated genomic intervals
 #'
 #' Scan a diploid, biallelic GDS for genomic windows whose local population
 #' structure differs from the genomic background. The implementation follows
 #' the local-PCA principle: each window is represented by a low-rank covariance
 #' matrix among individuals, distances are calculated between those matrices,
 #' and classical multidimensional scaling (MDS) is used to identify unusual
-#' windows. Candidate regions are then summarised using regional PCA,
+#' windows. Contiguous candidate windows are represented as genomic intervals
+#' and then summarised using regional PCA,
 #' heterozygosity, and linkage disequilibrium (LD).
 #'
 #' Run this screen before LD pruning. LD pruning can remove the extended
 #' correlation pattern that makes an inversion-associated haploblock
 #' detectable. After candidates have been reviewed, repeat downstream analyses
-#' with the complete genome, with candidate regions excluded, and within each
-#' candidate region or inferred arrangement.
+#' with the complete genome, with candidate intervals excluded, and within each
+#' candidate interval or inferred arrangement.
 #'
 #' This is a screening method. A candidate region is not proof of a physical
 #' inversion, and the returned coordinates describe an inversion-associated
@@ -204,11 +205,46 @@
 #' putative heterokaryotypes. This is useful before haplotype scans: `selscan`,
 #' for example, does not accept missing genotype or haplotype data.
 #'
+#' @section Intervals, reference coordinates, and structural status:
+#' Windows are computational units used to scan local population structure.
+#' A structural variant is not a point or a window, so the user-facing candidate
+#' output represents every joined signal as an interval with a chromosome,
+#' start, and end. The TSV uses the one-based GDS marker coordinates. A BED file
+#' is also written using zero-based, half-open coordinates. These marker-defined
+#' intervals remain approximate and must not be reported as breakpoints.
+#'
+#' `reference.id` records the assembly name, version, or accession without
+#' changing the data. `reference_assembly_context.tsv` records that identifier,
+#' the reference path when available, chromosome-length provenance, and the
+#' coordinate conventions. This matters because an SV type, placement, and even
+#' detectability can change with the reference assembly.
+#'
+#' `evidence_strength` remains a screening grade. The separate
+#' `structural_status` field is `"unvalidated SNP-supported haploblock"` because
+#' the function has no breakpoint or orientation evidence. A best-supported
+#' regional-PC1 model with more than three clusters triggers
+#' `complex_haploblock_warning`; it does not create additional AA/AB/BB labels.
+#'
+#' @section When this function is not enough:
+#' `detect_inversions()` prioritises SNP-supported haploblocks; it is not a
+#' general structural-variant caller. For de novo SV discovery, population
+#' resequencing ideally uses at least approximately 15--20x whole-genome
+#' coverage with short reads, long reads, or both. PacBio HiFi or Oxford
+#' Nanopore long reads are preferable for difficult insertions, repeats, and
+#' breakpoint resolution.
+#'
+#' A catalogue-then-genotype design can discover SVs with long reads or genome
+#' assemblies and then genotype many individuals with medium-coverage or even
+#' low-coverage short-read WGS. Linked-read or haplotagging approaches are a
+#' cost-effective option for population-scale haplotypes and large inversions.
+#' Definitive confirmation may require breakpoint-spanning reads, comparative
+#' assemblies, junction PCR, linkage mapping, optical mapping, or cytogenetics.
+#'
 #' @section Output and plotting:
 #' Following other `radr` detection functions, each call creates a dated
 #' `detect_inversions` results folder in the working directory (or below the
 #' parent supplied with `path.folder`). It records the function arguments,
-#' window and candidate tables, individual PCA scores, cluster summaries, LD
+#' window and candidate-interval tables, individual PCA scores, cluster summaries, LD
 #' summaries, and standard diagnostic plots. PNG and PDF are written by default.
 #'
 #' @param data A GDS filepath or an open `SeqVarGDSClass` object.
@@ -228,6 +264,10 @@
 #'   filepath used to recover chromosome lengths. When a FASTA is supplied, its
 #'   accompanying `FASTA.fai` file must already exist. This is unnecessary when
 #'   the GDS retains a VCF contig dictionary with declared sequence lengths.
+#' @param reference.id Optional human-readable reference assembly identifier,
+#'   version, or accession (for example, `"GCA_012345678.2"`). It is recorded in
+#'   the returned settings and the reference-provenance table. It does not alter
+#'   marker coordinates or sequence lengths.
 #' @param window.snps Number of SNPs per window.
 #' @param step.snps Number of SNPs between consecutive window starts. Defaults
 #'   to `window.snps` (non-overlapping windows).
@@ -266,6 +306,10 @@
 #'   for a common polymorphic inversion is often three, representing the two
 #'   homokaryotypes and their heterokaryotype, but this is diagnostic rather
 #'   than proof.
+#' @param cluster.model.max.k Largest number of regional-PC1 clusters compared
+#'   by the approximate Gaussian BIC diagnostic. Values greater than three can
+#'   flag complex, nested, or multiallelic haploblocks. They never generate
+#'   additional arrangement genotypes automatically. Default: `5`.
 #' @param stability.replicates Number of SNP-resampling replicates used to test
 #'   arrangement-assignment stability within every candidate. Use `0` to skip.
 #'   Each replicate samples regional SNPs with replacement, repeats PCA and
@@ -310,6 +354,7 @@
 #'   \item `windows`: coordinates, quality statistics, MDS coordinates, robust
 #'     scores, and candidate flags for all analysed windows;
 #'   \item `candidates`: one row per contiguous candidate region;
+#'   \item `intervals`: the same candidate table under interval terminology;
 #'   \item `candidate.summaries`: concise narrative summaries of the evidence,
 #'     arrangement groups, regional LD, and boundary caution for each candidate;
 #'   \item `diagnostics`: regional PCA scores, cluster assignments,
@@ -321,7 +366,7 @@
 #'   \item `homokaryotype.whitelist`: candidate-specific `AA` and `BB`
 #'     individuals, plus `homokaryotype.all.candidates` for the intersection;
 #'     when `strata` includes `STRATA`, candidate output folders also contain
-#'     arrangement tables with `individual`, `STRATA`, and inferred `AA`, `AB`,
+#'     arrangement tables with `INDIVIDUALS`, `STRATA`, and inferred `AA`, `AB`,
 #'     or `BB` assignments;
 #'   \item `sensitivity`: optional summaries for additional fixed-SNP window
 #'     sizes;
@@ -330,6 +375,8 @@
 #'     only for plotting and never influence these chromosome-wide PCAs;
 #'   \item `chromosome.lengths`: declared or estimated chromosome lengths,
 #'     observed marker maxima, and the provenance of each length;
+#'   \item `reference.context`: reference identifier, reference path,
+#'     chromosome-length sources, and coordinate conventions;
 #'   \item `path.folder` and `output.files`: locations of written results;
 #'   \item `settings`: the effective analysis settings.
 #'   }
@@ -358,6 +405,11 @@
 #' Centromeres in Locally Adapted Populations With Higher Gene Flow. Molecular
 #' Biology and Evolution, 42, msaf092. \doi{10.1093/molbev/msaf092}.
 #'
+#' Stuart KC, Oomen RA, Tigano A, Wellenreuther M, Wold J, Field DL, Mérot C
+#' (2026). A Beginner's Guide to Structural Variants in Eco-Evolutionary
+#' Population Genomics. Molecular Ecology, 35, e70216.
+#' \doi{10.1111/mec.70216}.
+#'
 #' @export
 #' @author Thierry Gosselin \email{Thierry.Gosselin@@csiro.au}
 
@@ -367,6 +419,7 @@ detect_inversions <- function(
     chromosome = NULL,
     chromosome.lengths = NULL,
     reference.genome = NULL,
+    reference.id = NULL,
     window.snps = 100L,
     step.snps = window.snps,
     window.bp = NULL,
@@ -383,6 +436,7 @@ detect_inversions <- function(
     min.call.rate = 0.8,
     min.candidate.windows = 1L,
     cluster.k = 3L,
+    cluster.model.max.k = 5L,
     stability.replicates = 0L,
     stability.fraction = 0.8,
     parallel.core = 1L,
@@ -451,6 +505,7 @@ detect_inversions <- function(
     min.window.snps = min.window.snps,
     min.candidate.windows = min.candidate.windows,
     cluster.k = cluster.k,
+    cluster.model.max.k = cluster.model.max.k,
     parallel.core = parallel.core,
     chromosome.pca.max.snps = chromosome.pca.max.snps,
     ld.window.min.snps = ld.window.min.snps,
@@ -479,6 +534,7 @@ detect_inversions <- function(
   min.window.snps <- integer.args$min.window.snps
   min.candidate.windows <- integer.args$min.candidate.windows
   cluster.k <- integer.args$cluster.k
+  cluster.model.max.k <- integer.args$cluster.model.max.k
   parallel.core <- integer.args$parallel.core
   chromosome.pca.max.snps <- integer.args$chromosome.pca.max.snps
   if (length(stability.replicates) != 1L || !is.numeric(stability.replicates) ||
@@ -542,6 +598,16 @@ detect_inversions <- function(
       rlang::abort("`arrangement.labels` must contain three unique non-empty labels.")
     }
     arrangement.labels <- as.character(arrangement.labels)
+  }
+  if (cluster.model.max.k < 3L) {
+    rlang::abort("`cluster.model.max.k` must be at least 3.")
+  }
+  if (!is.null(reference.id)) {
+    if (!is.character(reference.id) || length(reference.id) != 1L ||
+        is.na(reference.id) || !nzchar(trimws(reference.id))) {
+      rlang::abort("`reference.id` must be NULL or one non-empty character value.")
+    }
+    reference.id <- trimws(reference.id)
   }
   if (!is.logical(return.ld) || length(return.ld) != 1L || is.na(return.ld)) {
     rlang::abort("`return.ld` must be TRUE or FALSE.")
@@ -636,6 +702,19 @@ detect_inversions <- function(
     chromosome.lengths = chromosome.lengths,
     reference.genome = reference.genome,
     verbose = verbose
+  )
+  reference.context <- tibble::tibble(
+    reference_id = if (is.null(reference.id)) NA_character_ else reference.id,
+    reference_genome = if (is.null(reference.genome)) {
+      NA_character_
+    } else {
+      normalizePath(reference.genome, winslash = "/", mustWork = FALSE)
+    },
+    chromosome_length_sources = paste(
+      sort(unique(chromosome.length.info$length_source)), collapse = ";"
+    ),
+    gds_coordinate_convention = "1-based marker positions",
+    bed_coordinate_convention = "0-based, half-open intervals"
   )
   windows <- if (window.method == "ld") {
     if (verbose) .inversion_message("Constructing experimental LD-scaled windows...")
@@ -812,6 +891,7 @@ detect_inversions <- function(
         allele.balance = coverage$allele.balance,
         sample.id = sample.id,
         cluster.k = cluster.k,
+        cluster.model.max.k = cluster.model.max.k,
         min.call.rate = min.call.rate,
         ld.max.snps = ld.max.snps,
         return.ld = return.ld,
@@ -878,6 +958,21 @@ detect_inversions <- function(
       }
     }
   }
+  # A regional-PC1 model with more than three modes is incompatible with the
+  # simple biallelic AA/AB/BB interpretation. Report it as a warning rather
+  # than inventing additional arrangement genotypes.
+  candidate.regions$complex_haploblock_warning <-
+    !is.na(candidate.regions$recommended_cluster_k) &
+    candidate.regions$recommended_cluster_k > 3L
+  candidate.regions$complex_haploblock_reason <- ifelse(
+    candidate.regions$complex_haploblock_warning,
+    paste0(
+      "Regional PC1 favours ", candidate.regions$recommended_cluster_k,
+      " clusters; consider nested or multiallelic structural variation, ",
+      "population structure, relatedness, or technical artefacts."
+    ),
+    "none"
+  )
   candidate.regions <- .inversion_evidence_summary(candidate.regions)
   candidate.regions <- .inversion_classify_candidates(candidate.regions)
   candidate.summaries <- .inversion_candidate_summaries(
@@ -894,7 +989,7 @@ detect_inversions <- function(
       chromosome = x$chromosome,
       start = x$start,
       end = x$end,
-      individual = .data$individual,
+      INDIVIDUALS = .data$INDIVIDUALS,
       cluster = .data$cluster,
       arrangement = .data$arrangement,
       arrangement_dosage = .data$arrangement_dosage,
@@ -915,7 +1010,7 @@ detect_inversions <- function(
       chromosome = character(),
       start = numeric(),
       end = numeric(),
-      individual = character(),
+      INDIVIDUALS = character(),
       cluster = integer(),
       arrangement = character(),
       arrangement_dosage = integer(),
@@ -933,21 +1028,20 @@ detect_inversions <- function(
     arrangement.genotypes <- arrangement.genotypes |>
       dplyr::left_join(
         sample.metadata |>
-          dplyr::select(.data$INDIVIDUALS, .data$STRATA) |>
-          dplyr::rename(individual = .data$INDIVIDUALS),
-        by = "individual"
+          dplyr::select(.data$INDIVIDUALS, .data$STRATA),
+        by = "INDIVIDUALS"
       )
   }
   homokaryotype.whitelist <- arrangement.genotypes |>
     dplyr::filter(.data$arrangement_dosage %in% c(0L, 2L)) |>
-    dplyr::distinct(.data$candidate_id, .data$individual, .data$arrangement)
+    dplyr::distinct(.data$candidate_id, .data$INDIVIDUALS, .data$arrangement)
   homokaryotype.all.candidates <- if (nrow(candidate.regions) > 0L) {
     homokaryotype.whitelist |>
-      dplyr::count(.data$individual, name = "n_candidates_homokaryotype") |>
+      dplyr::count(.data$INDIVIDUALS, name = "n_candidates_homokaryotype") |>
       dplyr::filter(.data$n_candidates_homokaryotype == nrow(candidate.regions)) |>
-      dplyr::select(.data$individual)
+      dplyr::select(.data$INDIVIDUALS)
   } else {
-    tibble::tibble(individual = character())
+    tibble::tibble(INDIVIDUALS = character())
   }
 
   sensitivity <- .inversion_window_sensitivity(
@@ -984,6 +1078,7 @@ detect_inversions <- function(
     sensitivity = sensitivity,
     chromosome.pca = chromosome.pca.results,
     chromosome.lengths = chromosome.length.info,
+    reference.context = reference.context,
     threshold = threshold,
     save.plots = save.plots,
     plot.formats = plot.formats,
@@ -1000,6 +1095,7 @@ detect_inversions <- function(
   out <- list(
     windows = tibble::as_tibble(window.table),
     candidates = tibble::as_tibble(candidate.regions),
+    intervals = tibble::as_tibble(candidate.regions),
     diagnostics = diagnostics,
     candidate.summaries = candidate.summaries,
     arrangement.genotypes = arrangement.genotypes,
@@ -1008,11 +1104,13 @@ detect_inversions <- function(
     sensitivity = sensitivity,
     chromosome.pca = chromosome.pca.results,
     chromosome.lengths = chromosome.length.info,
+    reference.context = reference.context,
     path.folder = path.folder,
     output.files = output.files,
     settings = list(
       chromosome = chromosome,
       reference.genome = reference.genome,
+      reference.id = reference.id,
       window.snps = window.snps,
       step.snps = step.snps,
       window.bp = window.bp,
@@ -1035,6 +1133,7 @@ detect_inversions <- function(
       min.call.rate = min.call.rate,
       min.candidate.windows = min.candidate.windows,
       cluster.k = cluster.k,
+      cluster.model.max.k = cluster.model.max.k,
       arrangement.labels = arrangement.labels,
       known.regions = known.regions,
       ld.max.snps = ld.max.snps,
@@ -1516,6 +1615,7 @@ detect_inversions <- function(
 .inversion_classify_candidates <- function(x) {
   if (!nrow(x)) {
     x$candidate_class <- character()
+    x$structural_status <- character()
     x$alternative_explanations <- character()
     return(x)
   }
@@ -1527,9 +1627,11 @@ detect_inversions <- function(
     technical ~ "candidate technical or assembly-associated region",
     recombination ~ "candidate low-recombination or centromeric region",
     structural ~ "candidate structural-variation-associated haploblock",
+    x$complex_haploblock_warning ~ "candidate complex or multiallelic haploblock",
     x$evidence_strength == "strong" ~ "putative inversion-associated haploblock",
     .default = "unresolved candidate haploblock"
   )
+  x$structural_status <- "unvalidated SNP-supported haploblock"
   x$alternative_explanations <- paste(
     "centromere or low recombination; assembly or mapping problem;",
     "introgression; population-specific missingness; other structural variation"
@@ -1995,7 +2097,7 @@ detect_inversions <- function(
   variance <- pca$sdev^2
   tibble::tibble(
     chromosome = as.character(markers$chromosome[1L]),
-    individual = sample.id,
+    INDIVIDUALS = sample.id,
     PC1 = axes[, 1L],
     PC2 = axes[, 2L],
     pc1_variance = variance[1L] / sum(variance),
@@ -2295,6 +2397,7 @@ detect_inversions <- function(
 
 .inversion_region_diagnostics <- function(
     dosage, depth = NULL, allele.balance = NULL, sample.id, cluster.k,
+    cluster.model.max.k,
     min.call.rate, ld.max.snps, return.ld,
     arrangement.labels, sample.metadata = NULL, stability.replicates = 0L,
     stability.fraction = 0.8, verbose = FALSE
@@ -2326,13 +2429,13 @@ detect_inversions <- function(
   pca <- stats::prcomp(centred, center = FALSE, scale. = FALSE, rank. = 2L)
   scores <- as.data.frame(pca$x[, seq_len(min(2L, ncol(pca$x))), drop = FALSE])
   names(scores) <- paste0("PC", seq_len(ncol(scores)))
-  scores$individual <- sample.id
+  scores$INDIVIDUALS <- sample.id
 
   pc1 <- pca$x[, 1L]
   pca.variance <- pca$sdev^2
   pc1.variance <- pca.variance[1L] / sum(pca.variance)
   distinct.pc1 <- length(unique(signif(pc1, digits = 12L)))
-  cluster.models <- .inversion_cluster_models(pc1, max.k = 3L)
+  cluster.models <- .inversion_cluster_models(pc1, max.k = cluster.model.max.k)
   if (distinct.pc1 >= cluster.k) {
     kmeans.fit <- stats::kmeans(
       pc1, centers = cluster.k, nstart = 50L
@@ -2670,7 +2773,7 @@ detect_inversions <- function(
   joined <- dplyr::left_join(
     scores,
     sample.metadata,
-    by = c("individual" = "INDIVIDUALS")
+    by = "INDIVIDUALS"
   )
   variables <- setdiff(names(sample.metadata), "INDIVIDUALS")
   purrr::map_dfr(variables, function(variable) {
@@ -2732,7 +2835,7 @@ detect_inversions <- function(
   dplyr::left_join(
     scores,
     sample.metadata,
-    by = c("individual" = "INDIVIDUALS")
+    by = "INDIVIDUALS"
   )
 }
 
@@ -2925,7 +3028,7 @@ detect_inversions <- function(
     path.folder, window.table, candidate.regions, diagnostics,
     candidate.summaries,
     arrangement.genotypes, homokaryotype.all.candidates, sensitivity,
-    chromosome.pca, chromosome.lengths,
+    chromosome.pca, chromosome.lengths, reference.context,
     threshold, save.plots, plot.formats, verbose
 ) {
   files <- character()
@@ -2936,9 +3039,24 @@ detect_inversions <- function(
     files <<- c(files, path)
   }
   write_table(window.table, "inversion_windows.tsv")
-  write_table(candidate.regions, "candidate_inversion_regions.tsv")
+  write_table(candidate.regions, "candidate_inversion_intervals.tsv")
+  if (nrow(candidate.regions)) {
+    bed <- candidate.regions |>
+      dplyr::transmute(
+        chromosome = as.character(.data$chromosome),
+        start_0_based = pmax(0, floor(.data$start) - 1),
+        end_0_based_exclusive = ceiling(.data$end),
+        name = .data$candidate_id,
+        screening_strength = .data$evidence_strength,
+        structural_status = .data$structural_status
+      )
+    bed.path <- file.path(path.folder, "candidate_inversion_intervals.bed")
+    readr::write_tsv(bed, bed.path, col_names = FALSE, na = ".")
+    files <- c(files, bed.path)
+  }
   write_table(arrangement.genotypes, "inversion_arrangement_genotypes.tsv")
   write_table(chromosome.lengths, "chromosome_length_context.tsv")
+  write_table(reference.context, "reference_assembly_context.tsv")
   write_table(
     homokaryotype.all.candidates,
     "homokaryotypes_all_candidates_whitelist.tsv"
@@ -3010,7 +3128,7 @@ detect_inversions <- function(
     }
     arrangement.table <- diagnostic$scores |>
       dplyr::select(dplyr::all_of(c(
-        "individual", "cluster", "arrangement", "arrangement_dosage",
+        "INDIVIDUALS", "cluster", "arrangement", "arrangement_dosage",
         "arrangement_confidence", "distance_nearest", "distance_second",
         "heterozygosity", "call_rate", "mean_depth",
         "mean_heterozygote_allele_balance", "assignment_stability"
@@ -3024,7 +3142,7 @@ detect_inversions <- function(
         dplyr::filter(
           arrangement.table, as.character(.data$arrangement) == label
         ) |>
-          dplyr::select(.data$individual),
+          dplyr::select(.data$INDIVIDUALS),
         paste0(prefix, "_", label, "_individuals_whitelist.tsv")
       )
     })
@@ -3032,7 +3150,7 @@ detect_inversions <- function(
       dplyr::filter(
         arrangement.table, .data$arrangement_dosage %in% c(0L, 2L)
       ) |>
-        dplyr::select(.data$individual, .data$arrangement),
+        dplyr::select(.data$INDIVIDUALS, .data$arrangement),
       paste0(prefix, "_homokaryotypes_whitelist.tsv")
     )
     if ("STRATA" %in% names(arrangement.genotypes)) {
@@ -3041,10 +3159,10 @@ detect_inversions <- function(
           dplyr::left_join(
             arrangement.genotypes |>
               dplyr::filter(.data$candidate_id == diagnostic$candidate_id) |>
-              dplyr::select(.data$individual, .data$STRATA),
-            by = "individual"
+              dplyr::select(.data$INDIVIDUALS, .data$STRATA),
+            by = "INDIVIDUALS"
           ) |>
-          dplyr::select(.data$individual, .data$STRATA, .data$arrangement),
+          dplyr::select(.data$INDIVIDUALS, .data$STRATA, .data$arrangement),
         paste0(prefix, "_arrangement_by_strata.tsv")
       )
     }
@@ -3280,8 +3398,8 @@ detect_inversions <- function(
         chromosome.scores <- chromosome.pca$scores |>
           dplyr::left_join(
             d$scores |>
-              dplyr::select(.data$individual, .data$arrangement),
-            by = "individual"
+              dplyr::select(.data$INDIVIDUALS, .data$arrangement),
+            by = "INDIVIDUALS"
           )
         chromosome.scores$arrangement <- as.character(
           chromosome.scores$arrangement
@@ -3504,11 +3622,11 @@ detect_inversions <- function(
 
 #' @export
 print.detect_inversions <- function(x, ...) {
-  .inversion_cat("Candidate inversion-associated region scan")
+  .inversion_cat("Candidate inversion-associated interval scan")
   .inversion_cat(
     "  Windows analysed: ", sum(x$windows$valid), " of ", nrow(x$windows)
   )
-  .inversion_cat("  Candidate regions: ", nrow(x$candidates))
+  .inversion_cat("  Candidate intervals: ", nrow(x$intervals))
   .inversion_cat("  Results folder: ", basename(x$path.folder))
   if (length(x$candidate.summaries)) {
     .inversion_cat(
