@@ -36,7 +36,7 @@ reference:
   desc: Investigate missingness, duplicates, mixed samples, marker behaviour, and data origin before filtering.
   contents:
   - detect_all_missing
-  - detect_allele_problems
+  - detect_rare_alleles
   - detect_biallelic_problems
   - detect_cnv
   - detect_duplicate_genomes
